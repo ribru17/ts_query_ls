@@ -7,8 +7,10 @@ use tower_lsp::{jsonrpc::Result, lsp_types::*, Client, LanguageServer, LspServic
 #[derive(Debug)]
 struct Backend {
     client: Client,
-    _document_map: DashMap<Url, Rope>,
+    document_map: DashMap<Url, Rope>,
 }
+
+mod util;
 
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
@@ -33,9 +35,9 @@ impl LanguageServer for Backend {
 
         Ok(InitializeResult {
             capabilities: ServerCapabilities {
-                // text_document_sync: Some(TextDocumentSyncCapability::Kind(
-                //     TextDocumentSyncKind::INCREMENTAL,
-                // )),
+                text_document_sync: Some(TextDocumentSyncCapability::Kind(
+                    TextDocumentSyncKind::INCREMENTAL,
+                )),
                 // hover_provider: Some(HoverProviderCapability::Simple(true)),
                 definition_provider: Some(OneOf::Left(true)),
                 ..Default::default()
@@ -72,6 +74,40 @@ impl LanguageServer for Backend {
             range,
         })))
     }
+
+    async fn did_open(&self, params: DidOpenTextDocumentParams) {
+        self.client
+            .log_message(
+                MessageType::LOG,
+                format!("ts_query_ls did_open: {:?}", params),
+            )
+            .await;
+        let rope = Rope::from_str(&params.text_document.text);
+        self.document_map
+            .insert(params.text_document.uri.clone(), rope.clone());
+    }
+
+    async fn did_change(&self, params: DidChangeTextDocumentParams) {
+        self.client
+            .log_message(
+                MessageType::LOG,
+                format!("ts_query_ls did_change: {:?}", params),
+            )
+            .await;
+        self.document_map
+            .alter(&params.text_document.uri, |_, mut rope| {
+                for change in params.content_changes {
+                    if let Some(range) = change.range {
+                        let rope_range = util::lsp_range_to_rope_range(range, &rope).unwrap();
+                        rope.remove(rope_range.clone());
+                        rope.insert(rope_range.start, &change.text);
+                    } else {
+                        rope = Rope::from_str(&change.text)
+                    }
+                }
+                rope
+            });
+    }
 }
 
 #[tokio::main]
@@ -83,7 +119,7 @@ async fn main() {
 
     let (service, socket) = LspService::build(|client| Backend {
         client,
-        _document_map: DashMap::new(),
+        document_map: DashMap::new(),
     })
     .finish();
 
