@@ -1,0 +1,11 @@
+[package]
+name = "ts_query_ls"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dashmap = "6.1.0"
+env_logger = "0.11.5"
+ropey = "1.6.1"
+tokio = { version = "1.40.0", features = ["rt-multi-thread", "macros", "io-std"] }
+tower-lsp = "0.20.0"
