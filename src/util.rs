@@ -1,5 +1,6 @@
 use ropey::Rope;
 use tower_lsp::lsp_types::*;
+use tree_sitter::Point;
 
 pub fn position_to_index(position: Position, rope: &Rope) -> Result<usize, ropey::Error> {
     let line = position.line as usize;
@@ -7,8 +8,12 @@ pub fn position_to_index(position: Position, rope: &Rope) -> Result<usize, ropey
     Ok(line + position.character as usize)
 }
 
-pub fn index_to_position(index: usize, rope: &Rope) -> Result<Position, ropey::Error> {
-    let line = rope.try_char_to_line(index)?;
+pub fn position_to_byte_offset(position: Position, rope: &Rope) -> Result<usize, ropey::Error> {
+    rope.try_char_to_byte(position_to_index(position, rope)?)
+}
+
+pub fn byte_offset_to_position(index: usize, rope: &Rope) -> Result<Position, ropey::Error> {
+    let line = rope.try_byte_to_line(index)?;
     let char = index - rope.line_to_char(line);
     Ok(Position {
         line: line as u32,
@@ -25,11 +30,9 @@ pub fn lsp_range_to_rope_range(
     Ok(start..end)
 }
 
-pub fn rope_range_to_lsp_range(
-    range: std::ops::Range<usize>,
-    rope: &Rope,
-) -> Result<Range, ropey::Error> {
-    let start = index_to_position(range.start, rope)?;
-    let end = index_to_position(range.end, rope)?;
-    Ok(Range { start, end })
+pub fn lsp_position_to_ts_point(position: Position) -> Point {
+    Point {
+        row: position.line as usize,
+        column: position.character as usize,
+    }
 }

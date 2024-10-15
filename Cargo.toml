@@ -9,3 +9,8 @@ env_logger = "0.11.5"
 ropey = "1.6.1"
 tokio = { version = "1.40.0", features = ["rt-multi-thread", "macros", "io-std"] }
 tower-lsp = "0.20.0"
+tree-sitter = "0.24.3"
+tree-sitter-query = { git = "https://github.com/tree-sitter-grammars/tree-sitter-query", rev = "f767fb0ac5e711b6d44c5e0c8d1f349687a86ce0", version = "0.4.0" }
+
+[build-dependencies]
+cc = "1.1.30"
