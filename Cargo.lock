@@ -809,6 +809,7 @@ dependencies = [
  "dashmap 6.1.0",
  "env_logger",
  "ropey",
+ "streaming-iterator",
  "tokio",
  "tower-lsp",
  "tree-sitter",

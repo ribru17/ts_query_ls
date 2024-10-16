@@ -1,10 +1,14 @@
-use std::{env::set_current_dir, path::PathBuf};
+use std::{borrow::Cow, env::set_current_dir, path::PathBuf};
+use streaming_iterator::{IntoStreamingIterator, StreamingIterator};
 
 use dashmap::DashMap;
 use ropey::Rope;
 use tower_lsp::{jsonrpc::Result, lsp_types::*, Client, LanguageServer, LspService, Server};
-use tree_sitter::{InputEdit, Parser, Tree};
-use util::{byte_offset_to_position, lsp_position_to_ts_point, position_to_byte_offset};
+use tree_sitter::{InputEdit, Parser, Query, QueryCursor, Tree};
+use util::{
+    byte_offset_to_position, get_current_capture_node, lsp_position_to_ts_point,
+    position_to_byte_offset, ts_node_to_lsp_range,
+};
 
 #[derive(Debug)]
 struct Backend {
@@ -41,7 +45,7 @@ impl LanguageServer for Backend {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
                     TextDocumentSyncKind::INCREMENTAL,
                 )),
-                // hover_provider: Some(HoverProviderCapability::Simple(true)),
+                references_provider: Some(OneOf::Left(true)),
                 definition_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
@@ -156,6 +160,74 @@ impl LanguageServer for Backend {
                 }
                 tree
             })
+    }
+
+    async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
+        let uri = &params.text_document_position.text_document.uri;
+
+        let Some(tree) = self.ast_map.get(uri) else {
+            self.client
+                .log_message(
+                    MessageType::WARNING,
+                    format!("No AST built for URI: {:?}", *uri),
+                )
+                .await;
+            return Ok(None);
+        };
+        let Some(rope) = self.document_map.get(uri) else {
+            self.client
+                .log_message(
+                    MessageType::WARNING,
+                    format!("No document built for URI: {:?}", *uri),
+                )
+                .await;
+            return Ok(None);
+        };
+        let cur_pos = lsp_position_to_ts_point(params.text_document_position.position);
+        let current_node = match get_current_capture_node(tree.root_node(), cur_pos) {
+            None => return Ok(None),
+            Some(value) => value,
+        };
+
+        let language = tree_sitter_query::language();
+        let query = Query::new(&language, "(capture) @cap").unwrap();
+        let mut cursor = QueryCursor::new();
+        let contents = Cow::from(rope.clone());
+        let contents = contents.as_bytes();
+        let mut locations = vec![];
+
+        let mut parser = Parser::new();
+        parser
+            .set_language(&language)
+            .expect("Error setting language for Query parser");
+
+        let mut locations_iter = cursor
+            .matches(
+                &query,
+                tree.root_node()
+                    .child_with_descendant(current_node)
+                    .unwrap(),
+                contents,
+            )
+            .flat_map(|match_| {
+                match_.captures.into_streaming_iter().filter_map(|cap| {
+                    if cap.node.grammar_name() == current_node.grammar_name()
+                        && cap.node.utf8_text(contents) == current_node.utf8_text(contents)
+                    {
+                        Some(Location {
+                            uri: uri.clone(),
+                            range: ts_node_to_lsp_range(cap.node),
+                        })
+                    } else {
+                        None
+                    }
+                })
+            });
+        while let Some(m) = locations_iter.next() {
+            locations.push(m.clone())
+        }
+
+        Ok(Some(locations))
     }
 }
 

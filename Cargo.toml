@@ -7,6 +7,7 @@ edition = "2021"
 dashmap = "6.1.0"
 env_logger = "0.11.5"
 ropey = "1.6.1"
+streaming-iterator = "0.1.9"
 tokio = { version = "1.40.0", features = ["rt-multi-thread", "macros", "io-std"] }
 tower-lsp = "0.20.0"
 tree-sitter = "0.24.3"

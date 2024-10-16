@@ -1,6 +1,6 @@
 use ropey::Rope;
 use tower_lsp::lsp_types::*;
-use tree_sitter::Point;
+use tree_sitter::{Node, Point};
 
 pub fn position_to_index(position: Position, rope: &Rope) -> Result<usize, ropey::Error> {
     let line = position.line as usize;
@@ -35,4 +35,30 @@ pub fn lsp_position_to_ts_point(position: Position) -> Point {
         row: position.line as usize,
         column: position.character as usize,
     }
+}
+
+pub fn ts_point_to_lsp_position(point: Point) -> Position {
+    Position {
+        line: point.row as u32,
+        character: point.column as u32,
+    }
+}
+
+pub fn ts_node_to_lsp_range(node: Node) -> Range {
+    Range {
+        start: ts_point_to_lsp_position(node.start_position()),
+        end: ts_point_to_lsp_position(node.end_position()),
+    }
+}
+
+pub fn get_current_capture_node(root: Node, point: Point) -> Option<Node> {
+    root.named_descendant_for_point_range(point, point)
+        .and_then(|node| {
+            if node.grammar_name() == "capture" {
+                Some(node)
+            } else {
+                node.parent()
+                    .filter(|parent| parent.grammar_name() == "capture")
+            }
+        })
 }
