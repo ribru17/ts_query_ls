@@ -1,13 +1,12 @@
-use std::{borrow::Cow, env::set_current_dir, path::PathBuf};
-use streaming_iterator::{IntoStreamingIterator, StreamingIterator};
+use std::{borrow::Cow, cmp::Ordering, env::set_current_dir, path::PathBuf};
 
 use dashmap::DashMap;
 use ropey::Rope;
 use tower_lsp::{jsonrpc::Result, lsp_types::*, Client, LanguageServer, LspService, Server};
 use tree_sitter::{InputEdit, Parser, Query, QueryCursor, Tree};
 use util::{
-    byte_offset_to_position, get_current_capture_node, lsp_position_to_ts_point,
-    position_to_byte_offset, ts_node_to_lsp_range,
+    byte_offset_to_position, get_current_capture_node, get_references, lsp_position_to_ts_point,
+    position_to_byte_offset,
 };
 
 #[derive(Debug)]
@@ -46,6 +45,7 @@ impl LanguageServer for Backend {
                     TextDocumentSyncKind::INCREMENTAL,
                 )),
                 references_provider: Some(OneOf::Left(true)),
+                rename_provider: Some(OneOf::Left(true)),
                 definition_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
@@ -159,7 +159,7 @@ impl LanguageServer for Backend {
                     }
                 }
                 tree
-            })
+            });
     }
 
     async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
@@ -194,40 +194,104 @@ impl LanguageServer for Backend {
         let mut cursor = QueryCursor::new();
         let contents = Cow::from(rope.clone());
         let contents = contents.as_bytes();
-        let mut locations = vec![];
 
         let mut parser = Parser::new();
         parser
             .set_language(&language)
             .expect("Error setting language for Query parser");
 
-        let mut locations_iter = cursor
-            .matches(
+        Ok(Some(
+            get_references(
+                uri,
+                &tree.root_node(),
+                &current_node,
                 &query,
-                tree.root_node()
-                    .child_with_descendant(current_node)
-                    .unwrap(),
+                &mut cursor,
                 contents,
             )
-            .flat_map(|match_| {
-                match_.captures.into_streaming_iter().filter_map(|cap| {
-                    if cap.node.grammar_name() == current_node.grammar_name()
-                        && cap.node.utf8_text(contents) == current_node.utf8_text(contents)
-                    {
-                        Some(Location {
-                            uri: uri.clone(),
-                            range: ts_node_to_lsp_range(cap.node),
-                        })
-                    } else {
-                        None
-                    }
-                })
-            });
-        while let Some(m) = locations_iter.next() {
-            locations.push(m.clone())
-        }
+            .collect(),
+        ))
+    }
 
-        Ok(Some(locations))
+    // TODO: Don't rename if the new name is not a valid identifier:
+    // https://github.com/tree-sitter-grammars/tree-sitter-query/blob/f767fb0ac5e711b6d44c5e0c8d1f349687a86ce0/grammar.js#L13
+    async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
+        let uri = params.text_document_position.text_document.uri;
+        let Some(tree) = self.ast_map.get(&uri) else {
+            self.client
+                .log_message(
+                    MessageType::WARNING,
+                    format!("No AST built for URI: {:?}", uri),
+                )
+                .await;
+            return Ok(None);
+        };
+        let Some(rope) = self.document_map.get(&uri) else {
+            self.client
+                .log_message(
+                    MessageType::WARNING,
+                    format!("No document built for URI: {:?}", uri),
+                )
+                .await;
+            return Ok(None);
+        };
+        let contents = Cow::from(rope.clone());
+        let contents = contents.as_bytes();
+        let current_node = match get_current_capture_node(
+            tree.root_node(),
+            lsp_position_to_ts_point(params.text_document_position.position),
+        ) {
+            None => return Ok(None),
+            Some(value) => value,
+        };
+        let language = tree_sitter_query::language();
+        let query = Query::new(&language, "(capture) @cap").unwrap();
+        let mut cursor = QueryCursor::new();
+        let new_name = params.new_name;
+        let mut text_document_edits: Vec<TextDocumentEdit> = vec![];
+        get_references(
+            &uri,
+            &tree.root_node(),
+            &current_node,
+            &query,
+            &mut cursor,
+            contents,
+        )
+        .for_each(|mut elem| {
+            // Don't include the preceding `@`
+            elem.range.start.character += 1;
+            text_document_edits.push(TextDocumentEdit {
+                text_document: OptionalVersionedTextDocumentIdentifier {
+                    uri: elem.uri,
+                    // TODO: Support versioned edits
+                    version: None,
+                },
+                edits: vec![OneOf::Left(TextEdit {
+                    range: elem.range,
+                    new_text: new_name.clone(),
+                })],
+            });
+        });
+        // Apply edits from end to start, to prevent offset inaccuracies
+        text_document_edits.sort_by(|a, b| {
+            if let OneOf::Left(a) = &a.edits[0] {
+                if let OneOf::Left(b) = &b.edits[0] {
+                    let range_a = a.range;
+                    let range_b = b.range;
+                    range_b.start.cmp(&range_a.start)
+                } else {
+                    Ordering::Equal
+                }
+            } else {
+                Ordering::Equal
+            }
+        });
+
+        Ok(Some(WorkspaceEdit {
+            document_changes: Some(DocumentChanges::Edits(text_document_edits)),
+            changes: None,
+            change_annotations: None,
+        }))
     }
 }
 

@@ -1,6 +1,7 @@
 use ropey::Rope;
+use streaming_iterator::StreamingIterator;
 use tower_lsp::lsp_types::*;
-use tree_sitter::{Node, Point};
+use tree_sitter::{Node, Point, Query, QueryCursor};
 
 pub fn position_to_index(position: Position, rope: &Rope) -> Result<usize, ropey::Error> {
     let line = position.line as usize;
@@ -61,4 +62,31 @@ pub fn get_current_capture_node(root: Node, point: Point) -> Option<Node> {
                     .filter(|parent| parent.grammar_name() == "capture")
             }
         })
+}
+
+pub fn get_references<'a>(
+    uri: &'a Url,
+    root: &'a Node,
+    node: &'a Node,
+    query: &'a Query,
+    cursor: &'a mut QueryCursor,
+    contents: &'a [u8],
+) -> impl Iterator<Item = Location> + 'a {
+    return cursor
+        .matches(query, root.child_with_descendant(*node).unwrap(), contents)
+        .map_deref(|match_| {
+            match_.captures.iter().filter_map(|cap| {
+                if cap.node.grammar_name() == node.grammar_name()
+                    && cap.node.utf8_text(contents) == node.utf8_text(contents)
+                {
+                    Some(Location {
+                        uri: uri.clone(),
+                        range: ts_node_to_lsp_range(cap.node),
+                    })
+                } else {
+                    None
+                }
+            })
+        })
+        .flatten();
 }
