@@ -1,4 +1,5 @@
-use std::{borrow::Cow, cmp::Ordering, env::set_current_dir, path::PathBuf};
+use std::{borrow::Cow, cmp::Ordering, collections::HashSet, env::set_current_dir, path::PathBuf};
+use streaming_iterator::StreamingIterator;
 
 use dashmap::DashMap;
 use regex::Regex;
@@ -11,7 +12,7 @@ use tower_lsp::{
 use tree_sitter::{InputEdit, Parser, Query, QueryCursor, Tree};
 use util::{
     byte_offset_to_position, get_current_capture_node, get_references, lsp_position_to_ts_point,
-    position_to_byte_offset,
+    node_is_or_has_ancestor, position_to_byte_offset,
 };
 
 #[derive(Debug)]
@@ -52,6 +53,10 @@ impl LanguageServer for Backend {
                 references_provider: Some(OneOf::Left(true)),
                 rename_provider: Some(OneOf::Left(true)),
                 definition_provider: Some(OneOf::Left(true)),
+                completion_provider: Some(CompletionOptions {
+                    trigger_characters: Some(vec!["@".to_string()]),
+                    ..CompletionOptions::default()
+                }),
                 ..Default::default()
             },
             ..Default::default()
@@ -118,6 +123,8 @@ impl LanguageServer for Backend {
         parser
             .set_language(&tree_sitter_query::language())
             .expect("Error loading Query grammar");
+        // FIXME: Completions sometimes become all garbled. Is this because the text documents are
+        // not synced?
         let mut old_rope: Option<Rope> = None;
         self.document_map
             .alter(&params.text_document.uri, |_, mut rope| {
@@ -301,6 +308,72 @@ impl LanguageServer for Backend {
             changes: None,
             change_annotations: None,
         }))
+    }
+
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        let uri = &params.text_document_position.text_document.uri;
+
+        let Some(tree) = self.ast_map.get(uri) else {
+            self.client
+                .log_message(
+                    MessageType::WARNING,
+                    format!("No AST built for URI: {:?}", *uri),
+                )
+                .await;
+            return Ok(None);
+        };
+        let Some(rope) = self.document_map.get(uri) else {
+            self.client
+                .log_message(
+                    MessageType::WARNING,
+                    format!("No document built for URI: {:?}", *uri),
+                )
+                .await;
+            return Ok(None);
+        };
+        let point = lsp_position_to_ts_point(params.text_document_position.position);
+        let language = tree_sitter_query::language();
+        let query = Query::new(&language, "(capture) @cap").unwrap();
+        let mut cursor = QueryCursor::new();
+        let contents = Cow::from(rope.slice(..));
+        let contents = contents.as_bytes();
+        let current_node = tree
+            .root_node()
+            .named_descendant_for_point_range(point, point)
+            .unwrap();
+        if !node_is_or_has_ancestor(tree.root_node(), current_node, "predicate") {
+            return Ok(None);
+        }
+        let node = match tree.root_node().child_with_descendant(current_node) {
+            None => return Ok(None),
+            Some(value) => value,
+        };
+
+        let mut completion_items = vec![];
+
+        let mut iter = cursor.matches(&query, node, contents);
+        let mut seen = HashSet::new();
+        while let Some(match_) = iter.next() {
+            for capture in match_.captures {
+                let node_text = capture.node.utf8_text(contents).unwrap();
+                let parent_params = match capture.node.parent() {
+                    None => true,
+                    Some(value) => value.grammar_name() != "parameters",
+                };
+                if
+                // !node_contains(capture.node, point) &&
+                parent_params && !seen.contains(node_text) {
+                    seen.insert(node_text);
+                    completion_items.push(CompletionItem {
+                        label: node_text.to_string(),
+                        kind: Some(CompletionItemKind::VARIABLE),
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+
+        Ok(Some(CompletionResponse::Array(completion_items)))
     }
 }
 

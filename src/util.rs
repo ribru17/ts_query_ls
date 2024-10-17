@@ -90,3 +90,14 @@ pub fn get_references<'a>(
         })
         .flatten();
 }
+
+pub fn node_is_or_has_ancestor(root: Node, node: Node, kind: &str) -> bool {
+    let mut cur_node = root.child_with_descendant(node);
+    while cur_node.is_some() {
+        if cur_node.unwrap().grammar_name() == kind {
+            return true;
+        }
+        cur_node = cur_node.unwrap().child_with_descendant(node);
+    }
+    false
+}
