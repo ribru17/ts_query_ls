@@ -1,8 +1,13 @@
 use std::{borrow::Cow, cmp::Ordering, env::set_current_dir, path::PathBuf};
 
 use dashmap::DashMap;
+use regex::Regex;
 use ropey::Rope;
-use tower_lsp::{jsonrpc::Result, lsp_types::*, Client, LanguageServer, LspService, Server};
+use tower_lsp::{
+    jsonrpc::{self, Result},
+    lsp_types::*,
+    Client, LanguageServer, LspService, Server,
+};
 use tree_sitter::{InputEdit, Parser, Query, QueryCursor, Tree};
 use util::{
     byte_offset_to_position, get_current_capture_node, get_references, lsp_position_to_ts_point,
@@ -213,8 +218,6 @@ impl LanguageServer for Backend {
         ))
     }
 
-    // TODO: Don't rename if the new name is not a valid identifier:
-    // https://github.com/tree-sitter-grammars/tree-sitter-query/blob/f767fb0ac5e711b6d44c5e0c8d1f349687a86ce0/grammar.js#L13
     async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
         let uri = params.text_document_position.text_document.uri;
         let Some(tree) = self.ast_map.get(&uri) else {
@@ -248,6 +251,12 @@ impl LanguageServer for Backend {
         let query = Query::new(&language, "(capture) @cap").unwrap();
         let mut cursor = QueryCursor::new();
         let new_name = params.new_name;
+        let identifier_pattern = Regex::new("^[a-zA-Z0-9.\\-_\\$]+$").unwrap();
+        if !identifier_pattern.is_match(new_name.as_str()) {
+            return Err(jsonrpc::Error::invalid_params(
+                "New name is not a valid identifier",
+            ));
+        }
         let mut text_document_edits: Vec<TextDocumentEdit> = vec![];
         get_references(
             &uri,

@@ -808,6 +808,7 @@ dependencies = [
  "cc",
  "dashmap 6.1.0",
  "env_logger",
+ "regex",
  "ropey",
  "streaming-iterator",
  "tokio",
