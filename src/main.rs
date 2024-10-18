@@ -11,8 +11,8 @@ use tower_lsp::{
 };
 use tree_sitter::{InputEdit, Parser, Query, QueryCursor, Tree};
 use util::{
-    byte_offset_to_position, get_current_capture_node, get_references, lsp_position_to_ts_point,
-    node_is_or_has_ancestor, position_to_byte_offset,
+    get_current_capture_node, get_references, lsp_position_to_ts_point,
+    lsp_textdocchange_to_ts_inputedit, node_is_or_has_ancestor,
 };
 
 #[derive(Debug)]
@@ -113,65 +113,60 @@ impl LanguageServer for Backend {
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
-        self.client
-            .log_message(
-                MessageType::LOG,
-                format!("ts_query_ls did_change: {:?}", params),
-            )
-            .await;
+        let uri = &params.text_document.uri;
+        let mut doc = self.document_map.get_mut(uri).unwrap();
+        let edits: std::result::Result<Vec<InputEdit>, Box<dyn std::error::Error>> = params
+            .content_changes
+            .iter()
+            .map(|change| lsp_textdocchange_to_ts_inputedit(&doc, change))
+            .collect();
         let mut parser = Parser::new();
         parser
             .set_language(&tree_sitter_query::language())
             .expect("Error loading Query grammar");
-        // FIXME: Completions sometimes become all garbled. Is this because the text documents are
-        // not synced?
-        let mut old_rope: Option<Rope> = None;
-        self.document_map
-            .alter(&params.text_document.uri, |_, mut rope| {
-                old_rope = Some(rope.clone());
-                for change in &params.content_changes {
-                    if let Some(range) = change.range {
-                        let rope_range = util::lsp_range_to_rope_range(range, &rope).unwrap();
-                        rope.remove(rope_range.clone());
-                        rope.insert(rope_range.start, &change.text);
-                    } else {
-                        rope = Rope::from_str(&change.text);
-                    }
-                }
-                rope
-            });
-        let rope = &self.document_map.get(&params.text_document.uri).unwrap();
-        self.ast_map
-            .alter(&params.text_document.uri, |_, mut tree| {
-                for change in &params.content_changes {
-                    if let Some(range) = change.range {
-                        let start = position_to_byte_offset(range.start, rope).unwrap();
-                        let end =
-                            position_to_byte_offset(range.end, &old_rope.clone().unwrap()).unwrap();
-                        let start_position = lsp_position_to_ts_point(range.start);
-                        let old_end_position = lsp_position_to_ts_point(range.end);
-                        let len_new = change.text.len();
-                        let new_end_offset = start + len_new;
-                        let new_end_position =
-                            byte_offset_to_position(new_end_offset, rope).unwrap();
-                        let new_end_position = lsp_position_to_ts_point(new_end_position);
-                        tree.edit(&InputEdit {
-                            start_byte: start,
-                            old_end_byte: end,
-                            new_end_byte: new_end_offset,
-                            start_position,
-                            old_end_position,
-                            new_end_position,
-                        });
-                        tree = parser
-                            .parse(rope.slice(..).to_string(), Some(&tree))
-                            .unwrap();
-                    } else {
-                        tree = parser.parse(&change.text, None).unwrap();
-                    }
-                }
-                tree
-            });
+
+        for change in &params.content_changes {
+            let text = change.text.as_str();
+            let text_bytes = text.as_bytes();
+            let text_end_byte_idx = text_bytes.len();
+
+            let range = if let Some(range) = change.range {
+                range
+            } else {
+                let start_line_idx = doc.byte_to_line(0);
+                let end_line_idx = doc.byte_to_line(text_end_byte_idx);
+
+                let start = Position::new(start_line_idx as u32, 0);
+                let end = Position::new(end_line_idx as u32, 0);
+                Range { start, end }
+            };
+
+            let start_row_char_idx = doc.line_to_char(range.start.line as usize);
+            let start_col_char_idx = doc.utf16_cu_to_char(range.start.character as usize);
+            let end_row_char_idx = doc.line_to_char(range.end.line as usize);
+            let end_col_char_idx = doc.utf16_cu_to_char(range.end.character as usize);
+
+            let start_char_idx = start_row_char_idx + start_col_char_idx;
+            let end_char_idx = end_row_char_idx + end_col_char_idx;
+            doc.remove(start_char_idx..end_char_idx);
+
+            if !change.text.is_empty() {
+                doc.insert(start_char_idx, text);
+            }
+        }
+        let result = {
+            let mut old_tree = self.ast_map.get_mut(uri).unwrap();
+
+            for edit in &edits.unwrap() {
+                old_tree.edit(edit);
+            }
+
+            parser.parse(doc.to_string(), Some(&old_tree))
+        };
+
+        if let Some(tree) = result {
+            *self.ast_map.get_mut(uri).unwrap() = tree.clone();
+        }
     }
 
     async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
