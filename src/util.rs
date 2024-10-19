@@ -1,7 +1,9 @@
+use std::path::Path;
+
 use ropey::Rope;
 use streaming_iterator::StreamingIterator;
 use tower_lsp::lsp_types::*;
-use tree_sitter::{Node, Point, Query, QueryCursor};
+use tree_sitter::{Language, Node, Point, Query, QueryCursor};
 
 pub fn position_to_index(position: Position, rope: &Rope) -> Result<usize, ropey::Error> {
     let line = position.line as usize;
@@ -145,4 +147,34 @@ pub fn lsp_textdocchange_to_ts_inputedit(
         old_end_position: old_end_point,
         new_end_position,
     })
+}
+
+#[cfg(unix)]
+const DYLIB_EXTENSION: &str = ".so";
+
+#[cfg(windows)]
+const DYLIB_EXTENSION: &str = ".dll";
+
+#[cfg(target_arch = "wasm32")]
+const DYLIB_EXTENSION: &str = ".wasm";
+
+pub fn get_language(name: &str) -> Option<Language> {
+    use libloading::{Library, Symbol};
+    let object_name = [name, DYLIB_EXTENSION].concat();
+    let library_path =
+        Path::new("/home/USER/.local/share/nvim/lazy/nvim-treesitter/parser/").join(object_name);
+
+    let library = match unsafe { Library::new(library_path) } {
+        Err(_) => return None,
+        Ok(lib) => lib,
+    };
+    let language_fn_name = format!("tree_sitter_{}", name.replace('-', "_"));
+    let language = unsafe {
+        let language_fn: Symbol<unsafe extern "C" fn() -> Language> = library
+            .get(language_fn_name.as_bytes())
+            .expect("Failed to load symbol");
+        language_fn()
+    };
+    std::mem::forget(library);
+    Some(language)
 }

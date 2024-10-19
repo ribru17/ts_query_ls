@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 dashmap = "6.1.0"
 env_logger = "0.11.5"
+libloading = "0.8.5"
 regex = "1.11.0"
 ropey = "1.6.1"
 streaming-iterator = "0.1.9"
