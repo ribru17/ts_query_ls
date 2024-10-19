@@ -15,7 +15,7 @@
 - [ ] Diagnostics for incorrect syntax
 - [ ] Diagnostics for impossible patterns
 - [ ] Recognize parsers built for `WASM`
-- [ ] Fix utility functions, making them robust when it comes to UTF-16 code
+- [x] Fix utility functions, making them robust when it comes to UTF-16 code
       points
 
 ## References

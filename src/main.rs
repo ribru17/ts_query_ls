@@ -142,9 +142,14 @@ impl LanguageServer for Backend {
             };
 
             let start_row_char_idx = doc.line_to_char(range.start.line as usize);
-            let start_col_char_idx = doc.utf16_cu_to_char(range.start.character as usize);
+            let start_row_cu = doc.char_to_utf16_cu(start_row_char_idx);
+            let start_col_char_idx = doc
+                .utf16_cu_to_char(start_row_cu + range.start.character as usize)
+                - start_row_char_idx;
             let end_row_char_idx = doc.line_to_char(range.end.line as usize);
-            let end_col_char_idx = doc.utf16_cu_to_char(range.end.character as usize);
+            let end_row_cu = doc.char_to_utf16_cu(end_row_char_idx);
+            let end_col_char_idx =
+                doc.utf16_cu_to_char(end_row_cu + range.end.character as usize) - end_row_char_idx;
 
             let start_char_idx = start_row_char_idx + start_col_char_idx;
             let end_char_idx = end_row_char_idx + end_col_char_idx;
@@ -190,7 +195,7 @@ impl LanguageServer for Backend {
                 .await;
             return Ok(None);
         };
-        let cur_pos = lsp_position_to_ts_point(params.text_document_position.position);
+        let cur_pos = lsp_position_to_ts_point(params.text_document_position.position, &rope);
         let current_node = match get_current_capture_node(tree.root_node(), cur_pos) {
             None => return Ok(None),
             Some(value) => value,
@@ -215,6 +220,7 @@ impl LanguageServer for Backend {
                 &query,
                 &mut cursor,
                 contents,
+                &rope,
             )
             .collect(),
         ))
@@ -244,7 +250,7 @@ impl LanguageServer for Backend {
         let contents = contents.as_bytes();
         let current_node = match get_current_capture_node(
             tree.root_node(),
-            lsp_position_to_ts_point(params.text_document_position.position),
+            lsp_position_to_ts_point(params.text_document_position.position, &rope),
         ) {
             None => return Ok(None),
             Some(value) => value,
@@ -267,6 +273,7 @@ impl LanguageServer for Backend {
             &query,
             &mut cursor,
             contents,
+            &rope,
         )
         .for_each(|mut elem| {
             // Don't include the preceding `@`
@@ -327,7 +334,7 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        let point = lsp_position_to_ts_point(params.text_document_position.position);
+        let point = lsp_position_to_ts_point(params.text_document_position.position, &rope);
         let language = tree_sitter_query::language();
         let query = Query::new(&language, "(capture) @cap").unwrap();
         let mut cursor = QueryCursor::new();

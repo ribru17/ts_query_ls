@@ -40,24 +40,19 @@ pub fn byte_offset_to_ts_point(index: usize, rope: &Rope) -> Result<Point, ropey
     })
 }
 
-pub fn lsp_position_to_ts_point(position: Position) -> Point {
-    Point {
-        row: position.line as usize,
-        column: position.character as usize,
-    }
+pub fn lsp_position_to_ts_point(position: Position, rope: &Rope) -> Point {
+    byte_offset_to_ts_point(lsp_position_to_byte_offset(position, rope).unwrap(), rope).unwrap()
 }
 
-pub fn ts_point_to_lsp_position(point: Point) -> Position {
-    Position {
-        line: point.row as u32,
-        character: point.column as u32,
-    }
+pub fn ts_point_to_lsp_position(point: Point, rope: &Rope) -> Position {
+    let offset = rope.line_to_byte(point.row) + point.column;
+    byte_offset_to_lsp_position(offset, rope).unwrap()
 }
 
-pub fn ts_node_to_lsp_range(node: Node) -> Range {
+pub fn ts_node_to_lsp_range(node: Node, rope: &Rope) -> Range {
     Range {
-        start: ts_point_to_lsp_position(node.start_position()),
-        end: ts_point_to_lsp_position(node.end_position()),
+        start: ts_point_to_lsp_position(node.start_position(), rope),
+        end: ts_point_to_lsp_position(node.end_position(), rope),
     }
 }
 
@@ -80,6 +75,7 @@ pub fn get_references<'a>(
     query: &'a Query,
     cursor: &'a mut QueryCursor,
     contents: &'a [u8],
+    rope: &'a Rope,
 ) -> impl Iterator<Item = Location> + 'a {
     return cursor
         .matches(query, root.child_with_descendant(*node).unwrap(), contents)
@@ -90,7 +86,7 @@ pub fn get_references<'a>(
                 {
                     Some(Location {
                         uri: uri.clone(),
-                        range: ts_node_to_lsp_range(cap.node),
+                        range: ts_node_to_lsp_range(cap.node, rope),
                     })
                 } else {
                     None
@@ -116,42 +112,41 @@ pub fn lsp_textdocchange_to_ts_inputedit(
     change: &TextDocumentContentChangeEvent,
 ) -> Result<tree_sitter::InputEdit, Box<dyn std::error::Error>> {
     let text = change.text.as_str();
-    let text_bytes = text.as_bytes();
-    let text_end_byte_idx = text_bytes.len();
+    let text_end_byte_count = text.as_bytes().len();
 
     let range = if let Some(range) = change.range {
         range
     } else {
         let start = byte_offset_to_lsp_position(0, source)?;
-        let end = byte_offset_to_lsp_position(text_end_byte_idx, source)?;
+        let end = byte_offset_to_lsp_position(text_end_byte_count, source)?;
         Range { start, end }
     };
 
-    let start_point = lsp_position_to_ts_point(range.start);
+    let start_position = lsp_position_to_ts_point(range.start, source);
     let start_byte = lsp_position_to_byte_offset(range.start, source)?;
-    let old_end_point = lsp_position_to_ts_point(range.end);
+    let old_end_position = lsp_position_to_ts_point(range.end, source);
     let old_end_byte = lsp_position_to_byte_offset(range.end, source)?;
 
-    let new_end_byte = start_byte as usize + text_end_byte_idx;
+    let new_end_byte = start_byte as usize + text_end_byte_count;
 
     let new_end_position = {
         if new_end_byte >= source.len_bytes() {
             let line_idx = text.lines().count();
             let line_byte_idx = ropey::str_utils::line_to_byte_idx(text, line_idx);
-            let row = u32::try_from(source.len_lines() + line_idx)? as usize;
-            let column = u32::try_from(text_end_byte_idx - line_byte_idx)? as usize;
-            Ok(tree_sitter::Point::new(row, column))
+            let row = source.len_lines() + line_idx;
+            let column = text_end_byte_count - line_byte_idx;
+            Ok(tree_sitter::Point { row, column })
         } else {
             byte_offset_to_ts_point(new_end_byte, source)
         }
     }?;
 
     Ok(tree_sitter::InputEdit {
-        start_byte: start_byte as usize,
-        old_end_byte: old_end_byte as usize,
-        new_end_byte: u32::try_from(new_end_byte)? as usize,
-        start_position: start_point,
-        old_end_position: old_end_point,
+        start_byte,
+        old_end_byte,
+        new_end_byte,
+        start_position,
+        old_end_position,
         new_end_position,
     })
 }
