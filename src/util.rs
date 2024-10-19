@@ -3,7 +3,7 @@ use std::path::Path;
 use ropey::Rope;
 use streaming_iterator::StreamingIterator;
 use tower_lsp::lsp_types::*;
-use tree_sitter::{Language, Node, Point, Query, QueryCursor};
+use tree_sitter::{InputEdit, Language, Node, Point, Query, QueryCursor};
 
 /// Returns the starting byte of the character if the position is in the middle of a character.
 pub fn lsp_position_to_byte_offset(position: Position, rope: &Rope) -> Result<usize, ropey::Error> {
@@ -108,9 +108,9 @@ pub fn node_is_or_has_ancestor(root: Node, node: Node, kind: &str) -> bool {
 }
 
 pub fn lsp_textdocchange_to_ts_inputedit(
-    source: &ropey::Rope,
+    source: &Rope,
     change: &TextDocumentContentChangeEvent,
-) -> Result<tree_sitter::InputEdit, Box<dyn std::error::Error>> {
+) -> Result<InputEdit, Box<dyn std::error::Error>> {
     let text = change.text.as_str();
     let text_end_byte_count = text.as_bytes().len();
 
@@ -141,7 +141,7 @@ pub fn lsp_textdocchange_to_ts_inputedit(
         }
     }?;
 
-    Ok(tree_sitter::InputEdit {
+    Ok(InputEdit {
         start_byte,
         old_end_byte,
         new_end_byte,

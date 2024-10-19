@@ -20,7 +20,7 @@
 
 ## References
 
-Much thanks to the
-[`beancount`-language-server](https://github.com/polarmutex/beancount-language-server)
+Many thanks to the [`jinja-lsp`](https://github.com/uros-5/jinja-lsp),
+[`beancount`-language-server](https://github.com/polarmutex/beancount-language-server),
 and [helix-editor](https://github.com/helix-editor/helix) projects for the
-amazing code that I borrowed!
+amazing code that I took inspiration from!
