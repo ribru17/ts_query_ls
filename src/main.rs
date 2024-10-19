@@ -351,32 +351,36 @@ impl LanguageServer for Backend {
             .map(|cap| get_language(cap.as_str()));
         let mut seen = HashSet::new();
         if let Some(lang) = lang.flatten() {
-            for i in 0..lang.node_kind_count() as u16 {
-                let in_anon =
-                    node_is_or_has_ancestor(tree.root_node(), current_node, "anonymous_node");
-                let label = lang
-                    .node_kind_for_id(i)
-                    .unwrap()
-                    .replace('"', r#"\""#)
-                    .replace("\n", r#"\n"#);
-                if seen.contains(&label) || !lang.node_kind_is_visible(i) {
-                    continue;
-                }
-                if (in_anon && !lang.node_kind_is_named(i))
-                    || (!in_anon && lang.node_kind_is_named(i))
-                {
-                    completion_items.push(CompletionItem {
-                        label: label.clone(),
-                        kind: Some(CompletionItemKind::CLASS),
-                        ..Default::default()
-                    });
-                    seen.insert(label);
+            if !node_is_or_has_ancestor(tree.root_node(), current_node, "predicate") {
+                for i in 0..lang.node_kind_count() as u16 {
+                    let in_anon =
+                        node_is_or_has_ancestor(tree.root_node(), current_node, "anonymous_node");
+                    let label = lang
+                        .node_kind_for_id(i)
+                        .unwrap()
+                        .replace('"', r#"\""#)
+                        .replace("\n", r#"\n"#);
+                    if seen.contains(&label) || !lang.node_kind_is_visible(i) {
+                        continue;
+                    }
+                    if (in_anon && !lang.node_kind_is_named(i))
+                        || (!in_anon && lang.node_kind_is_named(i))
+                    {
+                        completion_items.push(CompletionItem {
+                            label: label.clone(),
+                            kind: Some(CompletionItemKind::CLASS),
+                            ..Default::default()
+                        });
+                        seen.insert(label);
+                    }
                 }
             }
         }
 
         // Capture completions
-        if !node_is_or_has_ancestor(tree.root_node(), current_node, "predicate") {
+        if !node_is_or_has_ancestor(tree.root_node(), current_node, "predicate")
+            || node_is_or_has_ancestor(tree.root_node(), current_node, "string")
+        {
             return Ok(Some(CompletionResponse::Array(completion_items)));
         }
         let node = match tree.root_node().child_with_descendant(current_node) {
