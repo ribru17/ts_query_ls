@@ -5,23 +5,30 @@ use streaming_iterator::StreamingIterator;
 use tower_lsp::lsp_types::*;
 use tree_sitter::{Language, Node, Point, Query, QueryCursor};
 
-pub fn position_to_index(position: Position, rope: &Rope) -> Result<usize, ropey::Error> {
-    let line = position.line as usize;
-    let line = rope.try_line_to_char(line)?;
-    Ok(line + position.character as usize)
+// NOTE: Some of these functions still need to account for UTF-16 code points...
+
+pub fn lsp_position_to_byte_offset(position: Position, rope: &Rope) -> Result<usize, ropey::Error> {
+    let line_idx = rope.try_line_to_char(position.line as usize)?;
+    rope.try_char_to_byte(line_idx + position.character as usize)
 }
 
-pub fn position_to_byte_offset(position: Position, rope: &Rope) -> Result<usize, ropey::Error> {
-    rope.try_char_to_byte(position_to_index(position, rope)?)
-}
+pub fn byte_offset_to_lsp_position(offset: usize, rope: &Rope) -> Result<Position, ropey::Error> {
+    let line_idx = rope.try_byte_to_line(offset)?;
 
-pub fn byte_offset_to_position(index: usize, rope: &Rope) -> Result<Position, ropey::Error> {
-    let line = rope.try_byte_to_line(index)?;
-    let char = index - rope.line_to_char(line);
-    Ok(Position {
-        line: line as u32,
-        character: char as u32,
-    })
+    let line_utf16_cu_idx = {
+        let char_idx = rope.try_line_to_char(line_idx)?;
+        rope.try_char_to_utf16_cu(char_idx)?
+    };
+
+    let character_utf16_cu_idx = {
+        let char_idx = rope.try_byte_to_char(offset)?;
+        rope.try_char_to_utf16_cu(char_idx)?
+    };
+
+    let line = line_idx as u32;
+    let character = (character_utf16_cu_idx - line_utf16_cu_idx) as u32;
+
+    Ok(Position { line, character })
 }
 
 pub fn byte_offset_to_ts_point(index: usize, rope: &Rope) -> Result<Point, ropey::Error> {
@@ -115,15 +122,15 @@ pub fn lsp_textdocchange_to_ts_inputedit(
     let range = if let Some(range) = change.range {
         range
     } else {
-        let start = byte_offset_to_position(0, source)?;
-        let end = byte_offset_to_position(text_end_byte_idx, source)?;
+        let start = byte_offset_to_lsp_position(0, source)?;
+        let end = byte_offset_to_lsp_position(text_end_byte_idx, source)?;
         Range { start, end }
     };
 
     let start_point = lsp_position_to_ts_point(range.start);
-    let start_byte = position_to_byte_offset(range.start, source)?;
+    let start_byte = lsp_position_to_byte_offset(range.start, source)?;
     let old_end_point = lsp_position_to_ts_point(range.end);
-    let old_end_byte = position_to_byte_offset(range.end, source)?;
+    let old_end_byte = lsp_position_to_byte_offset(range.end, source)?;
 
     let new_end_byte = start_byte as usize + text_end_byte_idx;
 
