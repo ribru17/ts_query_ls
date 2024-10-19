@@ -5,11 +5,11 @@ use streaming_iterator::StreamingIterator;
 use tower_lsp::lsp_types::*;
 use tree_sitter::{Language, Node, Point, Query, QueryCursor};
 
-// NOTE: Some of these functions still need to account for UTF-16 code points...
-
+/// Returns the starting byte of the character if the position is in the middle of a character.
 pub fn lsp_position_to_byte_offset(position: Position, rope: &Rope) -> Result<usize, ropey::Error> {
-    let line_idx = rope.try_line_to_char(position.line as usize)?;
-    rope.try_char_to_byte(line_idx + position.character as usize)
+    let line_char = rope.try_line_to_char(position.line as usize)?;
+    let line_cu = rope.try_char_to_utf16_cu(line_char)?;
+    rope.try_char_to_byte(rope.try_utf16_cu_to_char(line_cu + position.character as usize)?)
 }
 
 pub fn byte_offset_to_lsp_position(offset: usize, rope: &Rope) -> Result<Position, ropey::Error> {
@@ -33,7 +33,7 @@ pub fn byte_offset_to_lsp_position(offset: usize, rope: &Rope) -> Result<Positio
 
 pub fn byte_offset_to_ts_point(index: usize, rope: &Rope) -> Result<Point, ropey::Error> {
     let line = rope.try_byte_to_line(index)?;
-    let char = index - rope.line_to_char(line);
+    let char = index - rope.try_line_to_byte(line)?;
     Ok(Point {
         row: line,
         column: char,
