@@ -21,17 +21,26 @@ use tower_lsp::{
 use tree_sitter::{wasmtime::Engine, Parser, Query, QueryCursor, Tree};
 use util::{
     get_current_capture_node, get_language, get_node_text, get_references,
-    lsp_position_to_ts_point, lsp_textdocchange_to_ts_inputedit, node_is_or_has_ancestor,
+    lsp_position_to_byte_offset, lsp_position_to_ts_point, lsp_textdocchange_to_ts_inputedit,
+    node_is_or_has_ancestor,
 };
 
 lazy_static! {
     static ref ENGINE: Engine = Engine::default();
 }
 
+#[derive(PartialEq, Eq, Hash, Clone)]
+struct SymbolInfo {
+    label: String,
+    named: bool,
+}
+
 struct Backend {
     client: Client,
     document_map: DashMap<Url, Rope>,
     ast_map: DashMap<Url, Tree>,
+    symbols_set_map: DashMap<Url, HashSet<SymbolInfo>>,
+    symbols_vec_map: DashMap<Url, Vec<SymbolInfo>>,
     options: Arc<RwLock<Options>>,
 }
 
@@ -130,6 +139,7 @@ impl LanguageServer for Backend {
     }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
+        let uri = &params.text_document.uri;
         self.client
             .log_message(
                 MessageType::LOG,
@@ -141,12 +151,59 @@ impl LanguageServer for Backend {
         parser
             .set_language(&tree_sitter_query::language())
             .expect("Error loading Query grammar");
-        self.document_map
-            .insert(params.text_document.uri.clone(), rope.clone());
+        self.document_map.insert(uri.clone(), rope.clone());
         self.ast_map.insert(
-            params.text_document.uri,
+            uri.clone(),
             parser.parse(params.text_document.text, None).unwrap(),
         );
+
+        // Get language, if it exists
+        let path_type1 = Regex::new(r#"queries/([^/]+)/[^/]+\.scm$"#).unwrap();
+        let path_type2 = Regex::new(r#"tree-sitter-([^/]+)/queries/[^/]+\.scm$"#).unwrap();
+        let captures = path_type1
+            .captures(uri.as_str())
+            .or(path_type2.captures(uri.as_str()));
+        let options = self.options.read().unwrap();
+        let lang = captures
+            .and_then(|captures| captures.get(1))
+            .and_then(|cap| {
+                let cap_str = cap.as_str();
+                get_language(
+                    options
+                        .parser_aliases
+                        .as_ref()
+                        .and_then(|map| map.get(cap_str))
+                        .unwrap_or(&cap_str.to_owned())
+                        .as_str(),
+                    &options.parser_install_directories,
+                    &ENGINE,
+                )
+            });
+
+        // Initialize language info
+        let mut symbols_vec: Vec<SymbolInfo> = vec![];
+        let mut symbols_set: HashSet<SymbolInfo> = HashSet::new();
+        if let Some(lang) = lang {
+            for i in 0..lang.node_kind_count() as u16 {
+                let named = lang.node_kind_is_named(i);
+                let label = if named {
+                    lang.node_kind_for_id(i).unwrap().to_owned()
+                } else {
+                    lang.node_kind_for_id(i)
+                        .unwrap()
+                        .replace('"', r#"\""#)
+                        .replace("\n", r#"\n"#)
+                };
+                let symbol_info = SymbolInfo { label, named };
+                if symbols_set.contains(&symbol_info) || !lang.node_kind_is_visible(i) {
+                    continue;
+                }
+                symbols_set.insert(symbol_info.clone());
+                symbols_vec.push(symbol_info);
+            }
+        }
+        self.symbols_vec_map.insert(uri.to_owned(), symbols_vec);
+        self.symbols_set_map.insert(uri.to_owned(), symbols_set);
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -370,7 +427,11 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        let point = lsp_position_to_ts_point(params.text_document_position.position, &rope);
+        let mut position = params.text_document_position.position;
+        if position.character > 0 {
+            position.character -= 1;
+        }
+        let point = lsp_position_to_ts_point(position, &rope);
         let language = tree_sitter_query::language();
         let query = Query::new(&language, "(capture) @cap").unwrap();
         let mut cursor = QueryCursor::new();
@@ -384,48 +445,25 @@ impl LanguageServer for Backend {
         let mut completion_items = vec![];
 
         // Node name completions
-        let path_type1 = Regex::new(r#"queries/([^/]+)/[^/]+\.scm$"#).unwrap();
-        let path_type2 = Regex::new(r#"tree-sitter-([^/]+)/queries/[^/]+\.scm$"#).unwrap();
-        let captures = path_type1
-            .captures(uri.as_str())
-            .or(path_type2.captures(uri.as_str()));
-        let options = self.options.read().unwrap();
-        let lang = captures.and_then(|captures| captures.get(1)).map(|cap| {
-            let cap_str = cap.as_str();
-            get_language(
-                options
-                    .parser_aliases
-                    .as_ref()
-                    .and_then(|map| map.get(cap_str))
-                    .unwrap_or(&cap_str.to_owned())
-                    .as_str(),
-                &options.parser_install_directories,
-                &ENGINE,
-            )
-        });
-        let mut seen = HashSet::new();
-        if let Some(lang) = lang.flatten() {
-            if !node_is_or_has_ancestor(tree.root_node(), current_node, "predicate") {
-                for i in 0..lang.node_kind_count() as u16 {
-                    let in_anon =
-                        node_is_or_has_ancestor(tree.root_node(), current_node, "anonymous_node");
-                    let label = lang
-                        .node_kind_for_id(i)
-                        .unwrap()
-                        .replace('"', r#"\""#)
-                        .replace("\n", r#"\n"#);
-                    if seen.contains(&label) || !lang.node_kind_is_visible(i) {
-                        continue;
-                    }
-                    if (in_anon && !lang.node_kind_is_named(i))
-                        || (!in_anon && lang.node_kind_is_named(i))
-                    {
+        let cursor_after_at_sign = lsp_position_to_byte_offset(position, &rope)
+            .and_then(|b| rope.try_byte_to_char(b))
+            .map_or(false, |c| rope.char(c) == '@');
+        let in_capture = cursor_after_at_sign
+            || node_is_or_has_ancestor(tree.root_node(), current_node, "capture");
+        if !in_capture && !node_is_or_has_ancestor(tree.root_node(), current_node, "predicate") {
+            let in_anon = node_is_or_has_ancestor(tree.root_node(), current_node, "anonymous_node");
+            if let Some(symbols) = self.symbols_vec_map.get(uri) {
+                for symbol in symbols.iter() {
+                    if (in_anon && !symbol.named) || (!in_anon && symbol.named) {
                         completion_items.push(CompletionItem {
-                            label: label.clone(),
-                            kind: Some(CompletionItemKind::CLASS),
+                            label: symbol.label.clone(),
+                            kind: if symbol.named {
+                                Some(CompletionItemKind::CLASS)
+                            } else {
+                                Some(CompletionItemKind::CONSTANT)
+                            },
                             ..Default::default()
                         });
-                        seen.insert(label);
                     }
                 }
             }
@@ -481,6 +519,8 @@ async fn main() {
         client,
         document_map: DashMap::new(),
         ast_map: DashMap::new(),
+        symbols_set_map: DashMap::new(),
+        symbols_vec_map: DashMap::new(),
         options,
     })
     .finish();
