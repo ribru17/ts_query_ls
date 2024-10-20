@@ -8,6 +8,8 @@
 - [x] Renaming captures
 - [x] Completions for capture names in a pattern (for predicates)
 - [x] Completions for node names
+- [x] Fix utility functions, making them robust when it comes to UTF-16 code
+      points
 - [ ] Go to definition for captures
 - [ ] Completions field names
 - [ ] Diagnostics for unrecognized nodes
@@ -15,8 +17,7 @@
 - [ ] Diagnostics for incorrect syntax
 - [ ] Diagnostics for impossible patterns
 - [ ] Recognize parsers built for `WASM`
-- [x] Fix utility functions, making them robust when it comes to UTF-16 code
-      points
+- [ ] Document formatting compatible with the `nvim-treesitter` formatter
 
 ## References
 
