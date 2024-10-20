@@ -4,10 +4,17 @@
 
 ## Configuration
 
-```json
+```jsonc
 {
   "settings": {
-    "parser_install_directories": ["a/list/of", "parser/installation/paths"]
+    // Where to look for parsers, of the form <lang>.(so|dll|dylib)
+    // or tree-sitter-<lang>.wasm
+    "parser_install_directories": ["a/list/of", "parser/installation/paths"],
+    // A list of parser aliases (e.g. point queries/ecma/*.scm files to the
+    // javascript parser)
+    "parser_aliases": {
+      "ecma": "javascript"
+    }
   }
 }
 ```
@@ -22,6 +29,9 @@ vim.lsp.start {
     parser_install_directories = {
       -- If using nvim-treesitter with lazy.nvim
       '/home/MYUSERNAME/.local/share/nvim/lazy/nvim-treesitter/parser/'
+    }
+    parser_aliases = {
+      ecma = 'javascript'
     }
   }
 }

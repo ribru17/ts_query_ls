@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     borrow::Cow,
     cmp::Ordering,
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     env::set_current_dir,
     path::PathBuf,
     sync::{Arc, RwLock},
@@ -38,6 +38,7 @@ struct Backend {
 #[derive(Serialize, Deserialize, Debug)]
 struct Options {
     parser_install_directories: Vec<String>,
+    parser_aliases: BTreeMap<String, String>,
 }
 
 mod util;
@@ -96,6 +97,7 @@ impl LanguageServer for Backend {
             };
         let mut options = self.options.write().unwrap();
         options.parser_install_directories = changed_options.parser_install_directories;
+        options.parser_aliases = changed_options.parser_aliases;
     }
 
     async fn shutdown(&self) -> Result<()> {
@@ -387,9 +389,18 @@ impl LanguageServer for Backend {
             .captures(uri.as_str())
             .or(path_type2.captures(uri.as_str()));
         let options = self.options.read().unwrap();
-        let lang = captures
-            .and_then(|captures| captures.get(1))
-            .map(|cap| get_language(cap.as_str(), &options.parser_install_directories, &ENGINE));
+        let lang = captures.and_then(|captures| captures.get(1)).map(|cap| {
+            let cap_str = cap.as_str();
+            get_language(
+                options
+                    .parser_aliases
+                    .get(cap_str)
+                    .unwrap_or(&cap_str.to_owned())
+                    .as_str(),
+                &options.parser_install_directories,
+                &ENGINE,
+            )
+        });
         let mut seen = HashSet::new();
         if let Some(lang) = lang.flatten() {
             if !node_is_or_has_ancestor(tree.root_node(), current_node, "predicate") {
@@ -462,6 +473,7 @@ async fn main() {
 
     let options = Arc::new(RwLock::new(Options {
         parser_install_directories: vec![],
+        parser_aliases: BTreeMap::new(),
     }));
     let (service, socket) = LspService::build(|client| Backend {
         client,
