@@ -383,8 +383,8 @@ impl LanguageServer for Backend {
         let mut completion_items = vec![];
 
         // Node name completions
-        let path_type1 = Regex::new(r#"queries/([^/]+)/.*\.scm$"#).unwrap();
-        let path_type2 = Regex::new(r#"tree-sitter-([^/]+)/queries/.*\.scm$"#).unwrap();
+        let path_type1 = Regex::new(r#"queries/([^/]+)/[^/]+\.scm$"#).unwrap();
+        let path_type2 = Regex::new(r#"tree-sitter-([^/]+)/queries/[^/]+\.scm$"#).unwrap();
         let captures = path_type1
             .captures(uri.as_str())
             .or(path_type2.captures(uri.as_str()));
