@@ -73,7 +73,7 @@ impl LanguageServer for Backend {
                 rename_provider: Some(OneOf::Left(true)),
                 definition_provider: Some(OneOf::Left(true)),
                 completion_provider: Some(CompletionOptions {
-                    trigger_characters: Some(['@', '"', '\\', '('].map(|c| c.to_string()).into()),
+                    trigger_characters: Some(["@", "\"", "\\", "("].map(|c| c.to_owned()).into()),
                     ..CompletionOptions::default()
                 }),
                 ..Default::default()
@@ -102,7 +102,7 @@ impl LanguageServer for Backend {
 
     async fn shutdown(&self) -> Result<()> {
         self.client
-            .log_message(MessageType::LOG, "ts_query_ls shutdown".to_string())
+            .log_message(MessageType::LOG, "ts_query_ls shutdown".to_owned())
             .await;
         Ok(())
     }
@@ -452,7 +452,7 @@ impl LanguageServer for Backend {
                 if parent_params && !seen.contains(node_text) {
                     seen.insert(node_text);
                     completion_items.push(CompletionItem {
-                        label: node_text.to_string(),
+                        label: node_text.to_owned(),
                         kind: Some(CompletionItemKind::VARIABLE),
                         ..Default::default()
                     });
