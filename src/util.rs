@@ -1,9 +1,11 @@
-use std::path::Path;
+use std::{fs, path::Path};
 
 use ropey::Rope;
 use streaming_iterator::StreamingIterator;
 use tower_lsp::lsp_types::*;
-use tree_sitter::{InputEdit, Language, Node, Point, Query, QueryCursor};
+use tree_sitter::{
+    wasmtime::Engine, InputEdit, Language, Node, Point, Query, QueryCursor, WasmStore,
+};
 
 /// Returns the starting byte of the character if the position is in the middle of a character.
 pub fn lsp_position_to_byte_offset(position: Position, rope: &Rope) -> Result<usize, ropey::Error> {
@@ -160,12 +162,13 @@ const DYLIB_EXTENSION: &str = ".dll";
 #[cfg(target_arch = "wasm32")]
 const DYLIB_EXTENSION: &str = ".wasm";
 
-pub fn get_language(name: &str, directories: &Vec<String>) -> Option<Language> {
+// TODO: Check all DYLIB extensions on all platforms
+pub fn get_language(name: &str, directories: &Vec<String>, engine: &Engine) -> Option<Language> {
     let object_name = [name, DYLIB_EXTENSION].concat();
     let language_fn_name = format!("tree_sitter_{}", name.replace('-', "_"));
 
     for directory in directories {
-        let library_path = Path::new(directory.as_str()).join(&object_name);
+        let library_path = Path::new(directory).join(&object_name);
         if let Ok(library) = unsafe { libloading::Library::new(library_path) } {
             let language = unsafe {
                 let language_fn: libloading::Symbol<unsafe extern "C" fn() -> Language> = library
@@ -174,6 +177,25 @@ pub fn get_language(name: &str, directories: &Vec<String>) -> Option<Language> {
                 language_fn()
             };
             std::mem::forget(library);
+            return Some(language);
+        }
+    }
+    get_language_wasm(name, directories, engine)
+}
+
+pub fn get_language_wasm(
+    name: &str,
+    directories: &Vec<String>,
+    engine: &Engine,
+) -> Option<Language> {
+    let object_name = ["tree-sitter-", name, ".wasm"].concat();
+    // NOTE: If WasmStore could be passed around threads safely, we could just create one global
+    // store and put all of the WASM modules in there.
+    let mut language_store = WasmStore::new(engine).unwrap();
+    for directory in directories {
+        let library_path = Path::new(directory).join(&object_name);
+        if let Ok(wasm) = fs::read(library_path) {
+            let language = language_store.load_language(name, &wasm).unwrap();
             return Some(language);
         }
     }

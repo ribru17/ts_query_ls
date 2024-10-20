@@ -1,3 +1,4 @@
+use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::{
     borrow::Cow,
@@ -17,13 +18,16 @@ use tower_lsp::{
     lsp_types::*,
     Client, LanguageServer, LspService, Server,
 };
-use tree_sitter::{Parser, Query, QueryCursor, Tree};
+use tree_sitter::{wasmtime::Engine, Parser, Query, QueryCursor, Tree};
 use util::{
     get_current_capture_node, get_language, get_references, lsp_position_to_ts_point,
     lsp_textdocchange_to_ts_inputedit, node_is_or_has_ancestor,
 };
 
-#[derive(Debug)]
+lazy_static! {
+    static ref ENGINE: Engine = Engine::default();
+}
+
 struct Backend {
     client: Client,
     document_map: DashMap<Url, Rope>,
@@ -385,7 +389,7 @@ impl LanguageServer for Backend {
         let options = self.options.read().unwrap();
         let lang = captures
             .and_then(|captures| captures.get(1))
-            .map(|cap| get_language(cap.as_str(), &options.parser_install_directories));
+            .map(|cap| get_language(cap.as_str(), &options.parser_install_directories, &ENGINE));
         let mut seen = HashSet::new();
         if let Some(lang) = lang.flatten() {
             if !node_is_or_has_ancestor(tree.root_node(), current_node, "predicate") {

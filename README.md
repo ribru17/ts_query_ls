@@ -41,7 +41,7 @@ vim.lsp.start {
 - [ ] Diagnostics for referencing undefined capture groups in predicates
 - [ ] Diagnostics for incorrect syntax
 - [ ] Diagnostics for impossible patterns
-- [ ] Recognize parsers built for `WASM`
+- [x] Recognize parsers built for `WASM`
 - [ ] Document formatting compatible with the `nvim-treesitter` formatter
 
 ## References
