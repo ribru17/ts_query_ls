@@ -1,4 +1,12 @@
-use std::{borrow::Cow, cmp::Ordering, collections::HashSet, env::set_current_dir, path::PathBuf};
+use serde::{Deserialize, Serialize};
+use std::{
+    borrow::Cow,
+    cmp::Ordering,
+    collections::HashSet,
+    env::set_current_dir,
+    path::PathBuf,
+    sync::{Arc, RwLock},
+};
 use streaming_iterator::StreamingIterator;
 
 use dashmap::DashMap;
@@ -20,6 +28,12 @@ struct Backend {
     client: Client,
     document_map: DashMap<Url, Rope>,
     ast_map: DashMap<Url, Tree>,
+    options: Arc<RwLock<Options>>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Options {
+    parser_install_directories: Vec<String>,
 }
 
 mod util;
@@ -61,6 +75,23 @@ impl LanguageServer for Backend {
             },
             ..Default::default()
         })
+    }
+
+    async fn did_change_configuration(&self, params: DidChangeConfigurationParams) {
+        let changed_options =
+            if let Ok(options) = serde_json::from_value::<Options>(params.settings) {
+                options
+            } else {
+                self.client
+                    .log_message(
+                        MessageType::WARNING,
+                        "Unable to parse configuration settings!",
+                    )
+                    .await;
+                return;
+            };
+        let mut options = self.options.write().unwrap();
+        options.parser_install_directories = changed_options.parser_install_directories;
     }
 
     async fn shutdown(&self) -> Result<()> {
@@ -351,9 +382,10 @@ impl LanguageServer for Backend {
         let captures = path_type1
             .captures(uri.as_str())
             .or(path_type2.captures(uri.as_str()));
+        let options = self.options.read().unwrap();
         let lang = captures
             .and_then(|captures| captures.get(1))
-            .map(|cap| get_language(cap.as_str()));
+            .map(|cap| get_language(cap.as_str(), &options.parser_install_directories));
         let mut seen = HashSet::new();
         if let Some(lang) = lang.flatten() {
             if !node_is_or_has_ancestor(tree.root_node(), current_node, "predicate") {
@@ -424,10 +456,14 @@ async fn main() {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
+    let options = Arc::new(RwLock::new(Options {
+        parser_install_directories: vec![],
+    }));
     let (service, socket) = LspService::build(|client| Backend {
         client,
         document_map: DashMap::new(),
         ast_map: DashMap::new(),
+        options,
     })
     .finish();
 

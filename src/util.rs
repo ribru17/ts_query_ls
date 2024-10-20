@@ -160,23 +160,22 @@ const DYLIB_EXTENSION: &str = ".dll";
 #[cfg(target_arch = "wasm32")]
 const DYLIB_EXTENSION: &str = ".wasm";
 
-pub fn get_language(name: &str) -> Option<Language> {
-    use libloading::{Library, Symbol};
+pub fn get_language(name: &str, directories: &Vec<String>) -> Option<Language> {
     let object_name = [name, DYLIB_EXTENSION].concat();
-    let library_path =
-        Path::new("/home/USER/.local/share/nvim/lazy/nvim-treesitter/parser/").join(object_name);
-
-    let library = match unsafe { Library::new(library_path) } {
-        Err(_) => return None,
-        Ok(lib) => lib,
-    };
     let language_fn_name = format!("tree_sitter_{}", name.replace('-', "_"));
-    let language = unsafe {
-        let language_fn: Symbol<unsafe extern "C" fn() -> Language> = library
-            .get(language_fn_name.as_bytes())
-            .expect("Failed to load symbol");
-        language_fn()
-    };
-    std::mem::forget(library);
-    Some(language)
+
+    for directory in directories {
+        let library_path = Path::new(directory.as_str()).join(&object_name);
+        if let Ok(library) = unsafe { libloading::Library::new(library_path) } {
+            let language = unsafe {
+                let language_fn: libloading::Symbol<unsafe extern "C" fn() -> Language> = library
+                    .get(language_fn_name.as_bytes())
+                    .expect("Failed to load symbol");
+                language_fn()
+            };
+            std::mem::forget(library);
+            return Some(language);
+        }
+    }
+    None
 }

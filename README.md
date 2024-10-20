@@ -2,6 +2,31 @@
 
 <!-- vim: set spell: -->
 
+## Configuration
+
+```json
+{
+  "settings": {
+    "parser_install_directories": ["a/list/of", "parser/installation/paths"]
+  }
+}
+```
+
+Example setup (for Neovim):
+
+```lua
+vim.lsp.start {
+  name = 'ts_query_ls',
+  path = {'path/to/cmd'},
+  settings = {
+    parser_install_directories = {
+      -- If using nvim-treesitter with lazy.nvim
+      '/home/MYUSERNAME/.local/share/nvim/lazy/nvim-treesitter/parser/'
+    }
+  }
+}
+```
+
 ## Checklist
 
 - [x] References for captures
