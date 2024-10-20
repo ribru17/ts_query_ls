@@ -281,6 +281,7 @@ impl LanguageServer for Backend {
                 .await;
             return Ok(None);
         };
+        // NOTE: Can we use Cow here?
         let contents = Cow::from(rope.clone());
         let contents = contents.as_bytes();
         let current_node = match get_current_capture_node(
