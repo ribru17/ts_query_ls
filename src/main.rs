@@ -37,8 +37,8 @@ struct Backend {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Options {
-    parser_install_directories: Vec<String>,
-    parser_aliases: BTreeMap<String, String>,
+    parser_install_directories: Option<Vec<String>>,
+    parser_aliases: Option<BTreeMap<String, String>>,
 }
 
 mod util;
@@ -394,7 +394,8 @@ impl LanguageServer for Backend {
             get_language(
                 options
                     .parser_aliases
-                    .get(cap_str)
+                    .as_ref()
+                    .and_then(|map| map.get(cap_str))
                     .unwrap_or(&cap_str.to_owned())
                     .as_str(),
                 &options.parser_install_directories,
@@ -472,8 +473,8 @@ async fn main() {
     let stdout = tokio::io::stdout();
 
     let options = Arc::new(RwLock::new(Options {
-        parser_install_directories: vec![],
-        parser_aliases: BTreeMap::new(),
+        parser_install_directories: None,
+        parser_aliases: None,
     }));
     let (service, socket) = LspService::build(|client| Backend {
         client,

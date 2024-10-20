@@ -163,24 +163,32 @@ const DYLIB_EXTENSION: &str = ".dll";
 const DYLIB_EXTENSION: &str = ".wasm";
 
 // TODO: Check all DYLIB extensions on all platforms
-pub fn get_language(name: &str, directories: &Vec<String>, engine: &Engine) -> Option<Language> {
+pub fn get_language(
+    name: &str,
+    directories: &Option<Vec<String>>,
+    engine: &Engine,
+) -> Option<Language> {
     let object_name = [name, DYLIB_EXTENSION].concat();
     let language_fn_name = format!("tree_sitter_{}", name.replace('-', "_"));
 
-    for directory in directories {
-        let library_path = Path::new(directory).join(&object_name);
-        if let Ok(library) = unsafe { libloading::Library::new(library_path) } {
-            let language = unsafe {
-                let language_fn: libloading::Symbol<unsafe extern "C" fn() -> Language> = library
-                    .get(language_fn_name.as_bytes())
-                    .expect("Failed to load symbol");
-                language_fn()
-            };
-            std::mem::forget(library);
-            return Some(language);
+    if let Some(directories) = directories {
+        for directory in directories {
+            let library_path = Path::new(directory).join(&object_name);
+            if let Ok(library) = unsafe { libloading::Library::new(library_path) } {
+                let language = unsafe {
+                    let language_fn: libloading::Symbol<unsafe extern "C" fn() -> Language> =
+                        library
+                            .get(language_fn_name.as_bytes())
+                            .expect("Failed to load symbol");
+                    language_fn()
+                };
+                std::mem::forget(library);
+                return Some(language);
+            }
         }
+        return get_language_wasm(name, directories, engine);
     }
-    get_language_wasm(name, directories, engine)
+    None
 }
 
 pub fn get_language_wasm(
