@@ -84,7 +84,7 @@ pub fn get_references<'a>(
         .map_deref(|match_| {
             match_.captures.iter().filter_map(|cap| {
                 if cap.node.grammar_name() == node.grammar_name()
-                    && cap.node.utf8_text(contents) == node.utf8_text(contents)
+                    && get_node_text(cap.node, rope) == get_node_text(*node, rope)
                 {
                     Some(Location {
                         uri: uri.clone(),
@@ -208,4 +208,9 @@ pub fn get_language_wasm(
         }
     }
     None
+}
+
+pub fn get_node_text(node: Node, rope: &Rope) -> String {
+    rope.byte_slice(node.start_byte()..node.end_byte())
+        .to_string()
 }

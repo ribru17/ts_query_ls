@@ -20,8 +20,8 @@ use tower_lsp::{
 };
 use tree_sitter::{wasmtime::Engine, Parser, Query, QueryCursor, Tree};
 use util::{
-    get_current_capture_node, get_language, get_references, lsp_position_to_ts_point,
-    lsp_textdocchange_to_ts_inputedit, node_is_or_has_ancestor,
+    get_current_capture_node, get_language, get_node_text, get_references,
+    lsp_position_to_ts_point, lsp_textdocchange_to_ts_inputedit, node_is_or_has_ancestor,
 };
 
 lazy_static! {
@@ -445,13 +445,13 @@ impl LanguageServer for Backend {
         let mut seen = HashSet::new();
         while let Some(match_) = iter.next() {
             for capture in match_.captures {
-                let node_text = capture.node.utf8_text(contents).unwrap();
+                let node_text = get_node_text(capture.node, &rope);
                 let parent_params = match capture.node.parent() {
                     None => true,
                     Some(value) => value.grammar_name() != "parameters",
                 };
-                if parent_params && !seen.contains(node_text) {
-                    seen.insert(node_text);
+                if parent_params && !seen.contains(&node_text) {
+                    seen.insert(node_text.clone());
                     completion_items.push(CompletionItem {
                         label: node_text.to_owned(),
                         kind: Some(CompletionItemKind::VARIABLE),
