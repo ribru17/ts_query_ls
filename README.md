@@ -28,7 +28,7 @@ vim.lsp.start {
   settings = {
     parser_install_directories = {
       -- If using nvim-treesitter with lazy.nvim
-      '/home/MYUSERNAME/.local/share/nvim/lazy/nvim-treesitter/parser/'
+      vim.fs.joinpath(vim.fn.stdpath('data'), '/lazy/nvim-treesitter/parser/')
     }
     parser_aliases = {
       ecma = 'javascript'
