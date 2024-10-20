@@ -153,59 +153,49 @@ pub fn lsp_textdocchange_to_ts_inputedit(
     })
 }
 
-#[cfg(unix)]
-const DYLIB_EXTENSION: &str = ".so";
+const DYLIB_EXTENSIONS: [&str; 3] = [".so", ".dll", ".dylib"];
 
-#[cfg(windows)]
-const DYLIB_EXTENSION: &str = ".dll";
-
-#[cfg(target_arch = "wasm32")]
-const DYLIB_EXTENSION: &str = ".wasm";
-
-// TODO: Check all DYLIB extensions on all platforms
 pub fn get_language(
     name: &str,
     directories: &Option<Vec<String>>,
     engine: &Engine,
 ) -> Option<Language> {
-    let object_name = [name, DYLIB_EXTENSION].concat();
     let language_fn_name = format!("tree_sitter_{}", name.replace('-', "_"));
 
     if let Some(directories) = directories {
         for directory in directories {
-            let library_path = Path::new(directory).join(&object_name);
-            if let Ok(library) = unsafe { libloading::Library::new(library_path) } {
-                let language = unsafe {
-                    let language_fn: libloading::Symbol<unsafe extern "C" fn() -> Language> =
-                        library
-                            .get(language_fn_name.as_bytes())
-                            .expect("Failed to load symbol");
-                    language_fn()
-                };
-                std::mem::forget(library);
-                return Some(language);
+            for dylib_extension in DYLIB_EXTENSIONS {
+                let object_name = [name, dylib_extension].concat();
+                let library_path = Path::new(directory).join(&object_name);
+                if let Ok(library) = unsafe { libloading::Library::new(library_path) } {
+                    let language = unsafe {
+                        let language_fn: libloading::Symbol<unsafe extern "C" fn() -> Language> =
+                            library
+                                .get(language_fn_name.as_bytes())
+                                .expect("Failed to load symbol");
+                        language_fn()
+                    };
+                    std::mem::forget(library);
+                    return Some(language);
+                }
+            }
+            if let Some(lang) = get_language_wasm(name, directory, engine) {
+                return Some(lang);
             }
         }
-        return get_language_wasm(name, directories, engine);
     }
     None
 }
 
-pub fn get_language_wasm(
-    name: &str,
-    directories: &Vec<String>,
-    engine: &Engine,
-) -> Option<Language> {
+fn get_language_wasm(name: &str, directory: &String, engine: &Engine) -> Option<Language> {
     let object_name = ["tree-sitter-", name, ".wasm"].concat();
     // NOTE: If WasmStore could be passed around threads safely, we could just create one global
     // store and put all of the WASM modules in there.
     let mut language_store = WasmStore::new(engine).unwrap();
-    for directory in directories {
-        let library_path = Path::new(directory).join(&object_name);
-        if let Ok(wasm) = fs::read(library_path) {
-            let language = language_store.load_language(name, &wasm).unwrap();
-            return Some(language);
-        }
+    let library_path = Path::new(directory).join(&object_name);
+    if let Ok(wasm) = fs::read(library_path) {
+        let language = language_store.load_language(name, &wasm).unwrap();
+        return Some(language);
     }
     None
 }
