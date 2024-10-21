@@ -226,6 +226,7 @@ pub fn get_diagnostics(
     let query = Query::new(&QUERY_LANGUAGE, DIAGNOSTICS_QUERY).unwrap();
     let mut matches = cursor.matches(&query, tree.root_node(), contents.as_bytes());
     let mut diagnostics = vec![];
+    let has_language_info = !symbols.is_empty();
     while let Some(match_) = matches.next() {
         for capture in match_.captures {
             let capture_name = query.capture_names()[capture.index as usize];
@@ -233,6 +234,9 @@ pub fn get_diagnostics(
             let range = ts_node_to_lsp_range(capture.node, rope);
             match capture_name {
                 "a" | "n" => {
+                    if !has_language_info {
+                        continue;
+                    }
                     let sym = SymbolInfo {
                         label: get_node_text(capture.node, rope),
                         named: capture_name == "n",
@@ -247,6 +251,9 @@ pub fn get_diagnostics(
                     }
                 }
                 "f" => {
+                    if !has_language_info {
+                        continue;
+                    }
                     let field = get_node_text(capture.node, rope);
                     if !fields.contains(&field) {
                         diagnostics.push(Diagnostic {
