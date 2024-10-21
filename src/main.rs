@@ -18,7 +18,7 @@ use tower_lsp::{
     lsp_types::*,
     Client, LanguageServer, LspService, Server,
 };
-use tree_sitter::{wasmtime::Engine, Parser, Query, QueryCursor, Tree};
+use tree_sitter::{wasmtime::Engine, Language, Parser, Query, QueryCursor, Tree};
 use util::{
     get_current_capture_node, get_diagnostics, get_language, get_node_text, get_references,
     lsp_position_to_byte_offset, lsp_position_to_ts_point, lsp_textdocchange_to_ts_inputedit,
@@ -27,6 +27,7 @@ use util::{
 
 lazy_static! {
     static ref ENGINE: Engine = Engine::default();
+    static ref QUERY_LANGUAGE: Language = tree_sitter_query::language();
 }
 
 #[derive(PartialEq, Eq, Hash, Clone)]
@@ -152,7 +153,7 @@ impl LanguageServer for Backend {
         let rope = Rope::from_str(&contents);
         let mut parser = Parser::new();
         parser
-            .set_language(&tree_sitter_query::language())
+            .set_language(&QUERY_LANGUAGE)
             .expect("Error loading Query grammar");
         self.document_map.insert(uri.clone(), rope.clone());
         self.ast_map
@@ -243,7 +244,7 @@ impl LanguageServer for Backend {
         let mut rope = self.document_map.get_mut(uri).unwrap();
         let mut parser = Parser::new();
         parser
-            .set_language(&tree_sitter_query::language())
+            .set_language(&QUERY_LANGUAGE)
             .expect("Error loading Query grammar");
 
         let mut edits = vec![];
@@ -338,15 +339,14 @@ impl LanguageServer for Backend {
             Some(value) => value,
         };
 
-        let language = tree_sitter_query::language();
-        let query = Query::new(&language, "(capture) @cap").unwrap();
+        let query = Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap();
         let mut cursor = QueryCursor::new();
         let contents = Cow::from(rope.clone());
         let contents = contents.as_bytes();
 
         let mut parser = Parser::new();
         parser
-            .set_language(&language)
+            .set_language(&QUERY_LANGUAGE)
             .expect("Error setting language for Query parser");
 
         Ok(Some(
@@ -393,8 +393,7 @@ impl LanguageServer for Backend {
             None => return Ok(None),
             Some(value) => value,
         };
-        let language = tree_sitter_query::language();
-        let query = Query::new(&language, "(capture) @cap").unwrap();
+        let query = Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap();
         let mut cursor = QueryCursor::new();
         let new_name = params.new_name;
         let identifier_pattern = Regex::new("^[a-zA-Z0-9.\\-_\\$]+$").unwrap();
@@ -477,8 +476,7 @@ impl LanguageServer for Backend {
             position.character -= 1;
         }
         let point = lsp_position_to_ts_point(position, &rope);
-        let language = tree_sitter_query::language();
-        let query = Query::new(&language, "(capture) @cap").unwrap();
+        let query = Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap();
         let mut cursor = QueryCursor::new();
         let contents = Cow::from(rope.slice(..));
         let contents = contents.as_bytes();

@@ -25,6 +25,7 @@ Example setup (for Neovim):
 vim.lsp.start {
   name = 'ts_query_ls',
   cmd = {'path/to/cmd'},
+  root_dir = vim.fs.root(0, { 'queries' }),
   settings = {
     parser_install_directories = {
       -- If using nvim-treesitter with lazy.nvim
@@ -48,7 +49,7 @@ vim.lsp.start {
 - [ ] Go to definition for captures
 - [x] Completions field names
 - [x] Diagnostics for unrecognized nodes
-- [ ] Diagnostics for referencing undefined capture groups in predicates
+- [x] Diagnostics for referencing undefined capture groups in predicates
 - [x] Diagnostics for incorrect syntax
 - [ ] Diagnostics for impossible patterns
 - [x] Recognize parsers built for `WASM`

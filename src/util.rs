@@ -7,7 +7,7 @@ use tree_sitter::{
     wasmtime::Engine, InputEdit, Language, Node, Point, Query, QueryCursor, Tree, WasmStore,
 };
 
-use crate::SymbolInfo;
+use crate::{SymbolInfo, QUERY_LANGUAGE};
 
 /// Returns the starting byte of the character if the position is in the middle of a character.
 pub fn lsp_position_to_byte_offset(position: Position, rope: &Rope) -> Result<usize, ropey::Error> {
@@ -212,6 +212,7 @@ const DIAGNOSTICS_QUERY: &str = r#"
 (anonymous_node (string (string_content) @a))
 (named_node name: (identifier) @n)
 (field_definition name: (identifier) @f)
+(parameters (capture) @c)
 "#;
 
 pub fn get_diagnostics(
@@ -222,7 +223,7 @@ pub fn get_diagnostics(
     fields: &HashSet<String>,
 ) -> Vec<Diagnostic> {
     let mut cursor = QueryCursor::new();
-    let query = Query::new(&tree_sitter_query::language(), DIAGNOSTICS_QUERY).unwrap();
+    let query = Query::new(&QUERY_LANGUAGE, DIAGNOSTICS_QUERY).unwrap();
     let mut matches = cursor.matches(&query, tree.root_node(), contents.as_bytes());
     let mut diagnostics = vec![];
     while let Some(match_) = matches.next() {
@@ -262,6 +263,40 @@ pub fn get_diagnostics(
                     range,
                     ..Default::default()
                 }),
+                "c" => {
+                    let mut cursor = QueryCursor::new();
+                    let query = Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap();
+                    let mut matches = cursor.matches(
+                        &query,
+                        tree.root_node()
+                            .child_with_descendant(capture.node)
+                            .unwrap(),
+                        contents.as_bytes(),
+                    );
+                    let mut valid = false;
+                    // NOTE: Find a simpler way to do this?
+                    'outer: while let Some(m) = matches.next() {
+                        for cap in m.captures {
+                            if let Some(parent) = cap.node.parent() {
+                                if parent.grammar_name() != "parameters"
+                                    && get_node_text(cap.node, rope)
+                                        == get_node_text(capture.node, rope)
+                                {
+                                    valid = true;
+                                    break 'outer;
+                                }
+                            }
+                        }
+                    }
+                    if !valid {
+                        diagnostics.push(Diagnostic {
+                            message: "Undeclared capture name!".to_owned(),
+                            severity,
+                            range,
+                            ..Default::default()
+                        })
+                    }
+                }
                 _ => {}
             }
         }
