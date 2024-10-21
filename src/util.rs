@@ -1,11 +1,13 @@
-use std::{fs, path::Path};
+use std::{collections::HashSet, fs, path::Path};
 
 use ropey::Rope;
 use streaming_iterator::StreamingIterator;
 use tower_lsp::lsp_types::*;
 use tree_sitter::{
-    wasmtime::Engine, InputEdit, Language, Node, Point, Query, QueryCursor, WasmStore,
+    wasmtime::Engine, InputEdit, Language, Node, Point, Query, QueryCursor, Tree, WasmStore,
 };
+
+use crate::SymbolInfo;
 
 /// Returns the starting byte of the character if the position is in the middle of a character.
 pub fn lsp_position_to_byte_offset(position: Position, rope: &Rope) -> Result<usize, ropey::Error> {
@@ -203,4 +205,66 @@ fn get_language_wasm(name: &str, directory: &String, engine: &Engine) -> Option<
 pub fn get_node_text(node: Node, rope: &Rope) -> String {
     rope.byte_slice(node.start_byte()..node.end_byte())
         .to_string()
+}
+
+const DIAGNOSTICS_QUERY: &str = r#"
+(ERROR) @e
+(anonymous_node (string (string_content) @a))
+(named_node name: (identifier) @n)
+(field_definition name: (identifier) @f)
+"#;
+
+pub fn get_diagnostics(
+    tree: &Tree,
+    rope: &Rope,
+    contents: &String,
+    symbols: &HashSet<SymbolInfo>,
+    fields: &HashSet<String>,
+) -> Vec<Diagnostic> {
+    let mut cursor = QueryCursor::new();
+    let query = Query::new(&tree_sitter_query::language(), DIAGNOSTICS_QUERY).unwrap();
+    let mut matches = cursor.matches(&query, tree.root_node(), contents.as_bytes());
+    let mut diagnostics = vec![];
+    while let Some(match_) = matches.next() {
+        for capture in match_.captures {
+            let capture_name = query.capture_names()[capture.index as usize];
+            let severity = Some(DiagnosticSeverity::ERROR);
+            let range = ts_node_to_lsp_range(capture.node, rope);
+            match capture_name {
+                "a" | "n" => {
+                    let sym = SymbolInfo {
+                        label: get_node_text(capture.node, rope),
+                        named: capture_name == "n",
+                    };
+                    if !symbols.contains(&sym) {
+                        diagnostics.push(Diagnostic {
+                            message: "Invalid node type!".to_owned(),
+                            severity,
+                            range,
+                            ..Default::default()
+                        });
+                    }
+                }
+                "f" => {
+                    let field = get_node_text(capture.node, rope);
+                    if !fields.contains(&field) {
+                        diagnostics.push(Diagnostic {
+                            message: "Invalid field type!".to_owned(),
+                            severity,
+                            range,
+                            ..Default::default()
+                        })
+                    }
+                }
+                "e" => diagnostics.push(Diagnostic {
+                    message: "Invalid syntax!".to_owned(),
+                    severity,
+                    range,
+                    ..Default::default()
+                }),
+                _ => {}
+            }
+        }
+    }
+    diagnostics
 }

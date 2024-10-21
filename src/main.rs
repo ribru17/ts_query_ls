@@ -20,7 +20,7 @@ use tower_lsp::{
 };
 use tree_sitter::{wasmtime::Engine, Parser, Query, QueryCursor, Tree};
 use util::{
-    get_current_capture_node, get_language, get_node_text, get_references,
+    get_current_capture_node, get_diagnostics, get_language, get_node_text, get_references,
     lsp_position_to_byte_offset, lsp_position_to_ts_point, lsp_textdocchange_to_ts_inputedit,
     node_is_or_has_ancestor,
 };
@@ -148,16 +148,15 @@ impl LanguageServer for Backend {
                 format!("ts_query_ls did_open: {:?}", params),
             )
             .await;
-        let rope = Rope::from_str(&params.text_document.text);
+        let contents = params.text_document.text;
+        let rope = Rope::from_str(&contents);
         let mut parser = Parser::new();
         parser
             .set_language(&tree_sitter_query::language())
             .expect("Error loading Query grammar");
         self.document_map.insert(uri.clone(), rope.clone());
-        self.ast_map.insert(
-            uri.clone(),
-            parser.parse(params.text_document.text, None).unwrap(),
-        );
+        self.ast_map
+            .insert(uri.clone(), parser.parse(&contents, None).unwrap());
 
         // Get language, if it exists
         let path_type1 = Regex::new(r#"queries/([^/]+)/[^/]+\.scm$"#).unwrap();
@@ -165,22 +164,26 @@ impl LanguageServer for Backend {
         let captures = path_type1
             .captures(uri.as_str())
             .or(path_type2.captures(uri.as_str()));
-        let options = self.options.read().unwrap();
-        let lang = captures
-            .and_then(|captures| captures.get(1))
-            .and_then(|cap| {
-                let cap_str = cap.as_str();
-                get_language(
-                    options
-                        .parser_aliases
-                        .as_ref()
-                        .and_then(|map| map.get(cap_str))
-                        .unwrap_or(&cap_str.to_owned())
-                        .as_str(),
-                    &options.parser_install_directories,
-                    &ENGINE,
-                )
-            });
+        // NOTE: Find a more idiomatic way to do this (without nesting the entire language
+        // initialization code block in here)
+        let mut lang = None;
+        if let Ok(options) = self.options.read() {
+            lang = captures
+                .and_then(|captures| captures.get(1))
+                .and_then(|cap| {
+                    let cap_str = cap.as_str();
+                    get_language(
+                        options
+                            .parser_aliases
+                            .as_ref()
+                            .and_then(|map| map.get(cap_str))
+                            .unwrap_or(&cap_str.to_owned())
+                            .as_str(),
+                        &options.parser_install_directories,
+                        &ENGINE,
+                    )
+                });
+        }
 
         // Initialize language info
         let mut symbols_vec: Vec<SymbolInfo> = vec![];
@@ -218,6 +221,21 @@ impl LanguageServer for Backend {
         self.symbols_set_map.insert(uri.to_owned(), symbols_set);
         self.fields_vec_map.insert(uri.to_owned(), fields_vec);
         self.fields_set_map.insert(uri.to_owned(), fields_set);
+
+        // Publish diagnostics
+        if let (Some(tree), Some(symbols), Some(fields)) = (
+            self.ast_map.get(uri),
+            self.symbols_set_map.get(uri),
+            self.fields_set_map.get(uri),
+        ) {
+            self.client
+                .publish_diagnostics(
+                    uri.clone(),
+                    get_diagnostics(&tree, &rope, &contents, &symbols, &fields),
+                    None,
+                )
+                .await;
+        }
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -265,6 +283,7 @@ impl LanguageServer for Backend {
                 rope.insert(start_char_idx, text);
             }
         }
+        let contents = rope.to_string();
         let result = {
             let mut old_tree = self.ast_map.get_mut(uri).unwrap();
 
@@ -272,11 +291,23 @@ impl LanguageServer for Backend {
                 old_tree.edit(&edit);
             }
 
-            parser.parse(rope.to_string(), Some(&old_tree))
+            parser.parse(&contents, Some(&old_tree))
         };
 
         if let Some(tree) = result {
             *self.ast_map.get_mut(uri).unwrap() = tree.clone();
+            // Update diagnostics
+            if let (Some(symbols), Some(fields)) =
+                (self.symbols_set_map.get(uri), self.fields_set_map.get(uri))
+            {
+                self.client
+                    .publish_diagnostics(
+                        uri.clone(),
+                        get_diagnostics(&tree, &rope, &contents, &symbols, &fields),
+                        None,
+                    )
+                    .await;
+            }
         }
     }
 

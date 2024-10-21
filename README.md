@@ -47,9 +47,9 @@ vim.lsp.start {
       points
 - [ ] Go to definition for captures
 - [x] Completions field names
-- [ ] Diagnostics for unrecognized nodes
+- [x] Diagnostics for unrecognized nodes
 - [ ] Diagnostics for referencing undefined capture groups in predicates
-- [ ] Diagnostics for incorrect syntax
+- [x] Diagnostics for incorrect syntax
 - [ ] Diagnostics for impossible patterns
 - [x] Recognize parsers built for `WASM`
 - [ ] Document formatting compatible with the `nvim-treesitter` formatter
