@@ -46,7 +46,7 @@ vim.lsp.start {
 - [x] Fix utility functions, making them robust when it comes to UTF-16 code
       points
 - [ ] Go to definition for captures
-- [ ] Completions field names
+- [x] Completions field names
 - [ ] Diagnostics for unrecognized nodes
 - [ ] Diagnostics for referencing undefined capture groups in predicates
 - [ ] Diagnostics for incorrect syntax

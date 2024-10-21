@@ -41,6 +41,8 @@ struct Backend {
     ast_map: DashMap<Url, Tree>,
     symbols_set_map: DashMap<Url, HashSet<SymbolInfo>>,
     symbols_vec_map: DashMap<Url, Vec<SymbolInfo>>,
+    fields_set_map: DashMap<Url, HashSet<String>>,
+    fields_vec_map: DashMap<Url, Vec<String>>,
     options: Arc<RwLock<Options>>,
 }
 
@@ -183,6 +185,8 @@ impl LanguageServer for Backend {
         // Initialize language info
         let mut symbols_vec: Vec<SymbolInfo> = vec![];
         let mut symbols_set: HashSet<SymbolInfo> = HashSet::new();
+        let mut fields_vec: Vec<String> = vec![];
+        let mut fields_set: HashSet<String> = HashSet::new();
         if let Some(lang) = lang {
             for i in 0..lang.node_kind_count() as u16 {
                 let named = lang.node_kind_is_named(i);
@@ -201,9 +205,20 @@ impl LanguageServer for Backend {
                 symbols_set.insert(symbol_info.clone());
                 symbols_vec.push(symbol_info);
             }
+            for i in 0..lang.field_count() as u16 {
+                if let Some(field_name) = lang.field_name_for_id(i) {
+                    let field_name = field_name.to_owned();
+                    if !fields_set.contains(&field_name) {
+                        fields_set.insert(field_name.clone());
+                        fields_vec.push(field_name);
+                    }
+                }
+            }
         }
         self.symbols_vec_map.insert(uri.to_owned(), symbols_vec);
         self.symbols_set_map.insert(uri.to_owned(), symbols_set);
+        self.fields_vec_map.insert(uri.to_owned(), fields_vec);
+        self.fields_set_map.insert(uri.to_owned(), fields_set);
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -444,7 +459,7 @@ impl LanguageServer for Backend {
 
         let mut completion_items = vec![];
 
-        // Node name completions
+        // Node and field name completions
         let cursor_after_at_sign = lsp_position_to_byte_offset(position, &rope)
             .and_then(|b| rope.try_byte_to_char(b))
             .map_or(false, |c| rope.char(c) == '@');
@@ -467,6 +482,17 @@ impl LanguageServer for Backend {
                     }
                 }
             }
+            if !in_anon {
+                if let Some(fields) = self.fields_vec_map.get(uri) {
+                    for field in fields.iter() {
+                        completion_items.push(CompletionItem {
+                            label: [field, ": "].concat(),
+                            kind: Some(CompletionItemKind::FIELD),
+                            ..Default::default()
+                        });
+                    }
+                }
+            }
         }
 
         // Capture completions
@@ -479,7 +505,6 @@ impl LanguageServer for Backend {
             None => return Ok(Some(CompletionResponse::Array(completion_items))),
             Some(value) => value,
         };
-
         let mut iter = cursor.matches(&query, node, contents);
         let mut seen = HashSet::new();
         while let Some(match_) = iter.next() {
@@ -521,6 +546,8 @@ async fn main() {
         ast_map: DashMap::new(),
         symbols_set_map: DashMap::new(),
         symbols_vec_map: DashMap::new(),
+        fields_set_map: DashMap::new(),
+        fields_vec_map: DashMap::new(),
         options,
     })
     .finish();
