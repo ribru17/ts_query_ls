@@ -24,12 +24,12 @@ Example setup (for Neovim):
 ```lua
 vim.lsp.start {
   name = 'ts_query_ls',
-  path = {'path/to/cmd'},
+  cmd = {'path/to/cmd'},
   settings = {
     parser_install_directories = {
       -- If using nvim-treesitter with lazy.nvim
       vim.fs.joinpath(vim.fn.stdpath('data'), '/lazy/nvim-treesitter/parser/')
-    }
+    },
     parser_aliases = {
       ecma = 'javascript'
     }
