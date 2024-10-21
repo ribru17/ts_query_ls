@@ -205,13 +205,12 @@ impl LanguageServer for Backend {
                 symbols_set.insert(symbol_info.clone());
                 symbols_vec.push(symbol_info);
             }
-            for i in 0..lang.field_count() as u16 {
-                if let Some(field_name) = lang.field_name_for_id(i) {
-                    let field_name = field_name.to_owned();
-                    if !fields_set.contains(&field_name) {
-                        fields_set.insert(field_name.clone());
-                        fields_vec.push(field_name);
-                    }
+            // Field IDs go from 1 to nfields inclusive (extra index 0 maps to NULL)
+            for i in 1..=lang.field_count() as u16 {
+                let field_name = lang.field_name_for_id(i).unwrap().to_owned();
+                if !fields_set.contains(&field_name) {
+                    fields_set.insert(field_name.clone());
+                    fields_vec.push(field_name);
                 }
             }
         }
