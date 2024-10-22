@@ -1,13 +1,29 @@
-use std::{collections::HashSet, fs, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+    ops::Deref,
+    path::Path,
+};
 
+use lazy_static::lazy_static;
+use regex::Regex;
 use ropey::Rope;
 use streaming_iterator::StreamingIterator;
 use tower_lsp::lsp_types::*;
 use tree_sitter::{
-    wasmtime::Engine, InputEdit, Language, Node, Point, Query, QueryCursor, Tree, WasmStore,
+    wasmtime::Engine, InputEdit, Language, Node, Point, Query, QueryCursor, QueryMatch,
+    QueryPredicateArg, Tree, WasmStore,
 };
 
 use crate::{SymbolInfo, QUERY_LANGUAGE};
+
+lazy_static! {
+    static ref LINE_START: Regex = Regex::new(r#"^([^\S\r\n]*)"#).unwrap();
+    static ref LINE_START_RELAXED: Regex = Regex::new(r#"^\s*"#).unwrap();
+    static ref NEWLINES: Regex = Regex::new(r#"\n+"#).unwrap();
+    static ref COMMENT_PAT: Regex = Regex::new(r#"^;+(\s*.*?)\s*$"#).unwrap();
+    static ref CRLF: Regex = Regex::new(r#"\r\n?"#).unwrap();
+}
 
 /// Returns the starting byte of the character if the position is in the middle of a character.
 pub fn lsp_position_to_byte_offset(position: Position, rope: &Rope) -> Result<usize, ropey::Error> {
@@ -309,4 +325,214 @@ pub fn get_diagnostics(
         }
     }
     diagnostics
+}
+
+pub fn diff(left: &str, right: &str, rope: &Rope) -> Vec<TextEdit> {
+    use dissimilar::Chunk;
+
+    let chunks = dissimilar::diff(left, right);
+
+    let mut offset = 0;
+    let mut edits = vec![];
+
+    let mut chunks = chunks.into_iter().peekable();
+    while let Some(chunk) = chunks.next() {
+        if let (Chunk::Delete(deleted), Some(&Chunk::Insert(inserted))) = (chunk, chunks.peek()) {
+            chunks.next().unwrap();
+            let deleted_len = deleted.len();
+            let start = byte_offset_to_lsp_position(offset, rope).unwrap();
+            let end = byte_offset_to_lsp_position(offset + deleted_len, rope).unwrap();
+            edits.push(TextEdit {
+                new_text: inserted.to_owned(),
+                range: Range { start, end },
+            });
+            offset += deleted_len;
+            continue;
+        }
+
+        match chunk {
+            Chunk::Equal(text) => {
+                offset += text.len();
+            }
+            Chunk::Delete(deleted) => {
+                let deleted_len = deleted.len();
+                let start = byte_offset_to_lsp_position(offset, rope).unwrap();
+                let end = byte_offset_to_lsp_position(offset + deleted_len, rope).unwrap();
+                edits.push(TextEdit {
+                    new_text: "".to_owned(),
+                    range: Range { start, end },
+                });
+                offset += deleted_len;
+            }
+            Chunk::Insert(inserted) => {
+                let pos = byte_offset_to_lsp_position(offset, rope).unwrap();
+                edits.push(TextEdit {
+                    new_text: inserted.to_owned(),
+                    range: Range {
+                        start: pos,
+                        end: pos,
+                    },
+                });
+            }
+        }
+    }
+    edits
+}
+
+pub fn handle_predicate(
+    match_: &QueryMatch,
+    directive: &str,
+    args: &std::boxed::Box<[tree_sitter::QueryPredicateArg]>,
+    rope: &Rope,
+) -> bool {
+    match directive {
+        "is-start-of-line?" | "not-is-start-of-line?" => {
+            if let QueryPredicateArg::Capture(cap_idx) = &args[0] {
+                let range = match_
+                    .nodes_for_capture_index(*cap_idx)
+                    .next()
+                    .unwrap()
+                    .range();
+                let line = rope.line(range.start_point.row).to_string();
+                let pre_whitespace = LINE_START
+                    .captures(line.as_str())
+                    .and_then(|c| c.get(1))
+                    .map_or(0, |m| m.len());
+                let is_start = pre_whitespace == range.start_point.column;
+                if directive == "not-is-start-of-line?" {
+                    return !is_start;
+                } else {
+                    return is_start;
+                }
+            }
+            true
+        }
+        "not-kind-eq?" => {
+            if let QueryPredicateArg::Capture(cap_idx) = &args[0] {
+                let node_type = match match_.nodes_for_capture_index(*cap_idx).next() {
+                    None => return true,
+                    Some(node) => node.grammar_name(),
+                };
+                for arg in &args[1..] {
+                    if let QueryPredicateArg::String(kind) = arg {
+                        if node_type == kind.deref() {
+                            return false;
+                        }
+                    }
+                }
+            }
+            true
+        }
+        &_ => false,
+    }
+}
+
+const INDENT_STR: &str = "  ";
+const TEXT_WIDTH: usize = 100;
+
+fn append_lines(lines: &mut Vec<String>, lines_to_append: Vec<String>) {
+    for (i, line) in lines_to_append.iter().enumerate() {
+        lines.last_mut().unwrap().push_str(line);
+        if i != lines_to_append.len() - 1 {
+            lines.push("".to_owned());
+        }
+    }
+}
+
+pub fn format_iter(
+    rope: &Rope,
+    tree: &Tree,
+    node: &Node,
+    lines: &mut Vec<String>,
+    map: &HashMap<&str, HashMap<usize, HashSet<&str>>>,
+    mut level: usize,
+) {
+    // Sometimes 2 queries apply append twice. This is to prevent the case from happening
+    let mut apply_newline = false;
+    // NOTE: Can/should this be node.walk()?
+    for child in node.children(&mut tree.walk()) {
+        let id = &child.id();
+        'main: {
+            if apply_newline {
+                apply_newline = false;
+                lines.push(INDENT_STR.repeat(level));
+            }
+            if map.get("format.ignore").unwrap().contains_key(id) {
+                let text = CRLF
+                    .replace_all(get_node_text(child, rope).as_str(), "\n")
+                    .trim_matches('\n')
+                    .split('\n')
+                    .map(|s| s.to_owned())
+                    .collect();
+                append_lines(lines, text);
+                break 'main;
+            } else if map.get("format.remove").unwrap().contains_key(id) {
+                break 'main;
+            }
+            if !map.get("format.cancel-prepend").unwrap().contains_key(id) {
+                if map.get("format.prepend-newline").unwrap().contains_key(id) {
+                    lines.push(INDENT_STR.repeat(level));
+                } else if let Some(md_key) = map.get("format.prepend-space").unwrap().get(id) {
+                    let byte_length = child.end_byte() - child.start_byte();
+                    let broader_byte_length = node.end_byte() - child.start_byte();
+                    if !md_key.contains("conditional-newline") {
+                        lines.last_mut().unwrap().push(' ');
+                    } else if byte_length + 1 + lines.last().unwrap().len() > TEXT_WIDTH
+                        || (md_key.contains("lookahead-newline")
+                            && broader_byte_length + lines.last().unwrap().len() > TEXT_WIDTH)
+                    {
+                        lines.push(INDENT_STR.repeat(level));
+                    } else {
+                        lines.last_mut().unwrap().push(' ');
+                    }
+                }
+            }
+            if map.get("format.comment-fix").unwrap().contains_key(id) {
+                let text = get_node_text(child, rope);
+                if let Some(mat) = COMMENT_PAT.captures(text.as_str()) {
+                    lines
+                        .last_mut()
+                        .unwrap()
+                        .push_str([";", mat.get(1).unwrap().as_str()].concat().as_str());
+                }
+            } else if child.named_child_count() == 0 || child.grammar_name() == "string" {
+                let text = NEWLINES
+                    .split(
+                        CRLF.replace_all(get_node_text(child, rope).as_str(), "\n")
+                            .trim_matches('\n'),
+                    )
+                    .map(|s| s.to_owned())
+                    .collect();
+                append_lines(lines, text);
+            } else {
+                format_iter(rope, tree, &child, lines, map, level);
+            }
+            if map.get("format.indent.begin").unwrap().contains_key(id) {
+                level += 1;
+                apply_newline = true;
+                break 'main;
+            }
+            if map.get("format.indent.dedent").unwrap().contains_key(id) {
+                let re = Regex::new(
+                    [r#"^\s*"#, get_node_text(child, rope).as_str()]
+                        .concat()
+                        .as_str(),
+                )
+                .unwrap();
+                if re.is_match(lines.last().unwrap()) {
+                    lines.last_mut().unwrap().drain(0..2);
+                }
+            }
+        }
+        if map.get("format.cancel-append").unwrap().contains_key(id) {
+            apply_newline = false;
+        }
+        if !map.get("format.cancel-append").unwrap().contains_key(id) {
+            if map.get("format.append-newline").unwrap().contains_key(id) {
+                apply_newline = true;
+            } else if map.get("format.append-space").unwrap().contains_key(id) {
+                lines.last_mut().unwrap().push(' ');
+            }
+        }
+    }
 }

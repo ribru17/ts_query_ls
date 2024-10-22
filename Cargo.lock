@@ -358,6 +358,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dissimilar"
+version = "1.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59f8e79d1fbf76bdfbde321e902714bf6c49df88a7dda6fc682fc2979226962d"
+
+[[package]]
 name = "either"
 version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1253,6 +1259,7 @@ version = "0.1.0"
 dependencies = [
  "cc",
  "dashmap 6.1.0",
+ "dissimilar",
  "env_logger",
  "lazy_static",
  "libloading",

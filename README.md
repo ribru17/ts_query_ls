@@ -53,11 +53,13 @@ vim.lsp.start {
 - [x] Diagnostics for incorrect syntax
 - [ ] Diagnostics for impossible patterns
 - [x] Recognize parsers built for `WASM`
-- [ ] Document formatting compatible with the `nvim-treesitter` formatter
+- [x] Document formatting compatible with the `nvim-treesitter` formatter
+- [ ] Code cleanup
 
 ## References
 
-Many thanks to the [`jinja-lsp`](https://github.com/uros-5/jinja-lsp),
+Many thanks to @lucario387, and the
+[`jinja-lsp`](https://github.com/uros-5/jinja-lsp),
 [`beancount`-language-server](https://github.com/polarmutex/beancount-language-server),
 and [helix-editor](https://github.com/helix-editor/helix) projects for the
 amazing code that I took inspiration from!
