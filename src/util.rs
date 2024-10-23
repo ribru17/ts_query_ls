@@ -178,12 +178,13 @@ pub fn get_language(
     directories: &Option<Vec<String>>,
     engine: &Engine,
 ) -> Option<Language> {
-    let language_fn_name = format!("tree_sitter_{}", name.replace('-', "_"));
+    let name = name.replace('-', "_");
+    let language_fn_name = format!("tree_sitter_{}", name);
 
     if let Some(directories) = directories {
         for directory in directories {
             for dylib_extension in DYLIB_EXTENSIONS {
-                let object_name = [name, dylib_extension].concat();
+                let object_name = [name.as_str(), dylib_extension].concat();
                 let library_path = Path::new(directory).join(&object_name);
                 if let Ok(library) = unsafe { libloading::Library::new(library_path) } {
                     let language = unsafe {
@@ -197,7 +198,7 @@ pub fn get_language(
                     return Some(language);
                 }
             }
-            if let Some(lang) = get_language_wasm(name, directory, engine) {
+            if let Some(lang) = get_language_wasm(name.as_str(), directory, engine) {
                 return Some(lang);
             }
         }
