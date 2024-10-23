@@ -444,6 +444,12 @@ impl LanguageServer for Backend {
         let mut fields_vec: Vec<String> = vec![];
         let mut fields_set: HashSet<String> = HashSet::new();
         if let Some(lang) = lang {
+            let error_symbol = SymbolInfo {
+                label: "ERROR".to_owned(),
+                named: true,
+            };
+            symbols_set.insert(error_symbol.clone());
+            symbols_vec.push(error_symbol);
             for i in 0..lang.node_kind_count() as u16 {
                 let named = lang.node_kind_is_named(i);
                 let label = if named {
