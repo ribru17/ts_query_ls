@@ -14,7 +14,18 @@
     // javascript parser)
     "parser_aliases": {
       "ecma": "javascript"
-    }
+    },
+    // A list of patterns to aid the LSP in finding a language, given a file
+    // path. Patterns must have one capture group which represents the language
+    // name. Ordered from highest to lowest precedence.
+    "language_retrieval_patterns": [
+      // E.g. zed support
+      "languages/src/([^/]+)/[^/]+\\.scm$"
+      // The following fallbacks are *always* provided:
+      //
+      // tree-sitter-([^/]+)/queries/[^/]+\.scm$
+      // queries/([^/]+)/[^/]+\.scm$
+    ]
   }
 }
 ```
@@ -33,7 +44,10 @@ vim.lsp.start {
     },
     parser_aliases = {
       ecma = 'javascript'
-    }
+    },
+    language_retrieval_patterns = {
+      'languages/src/([^/]+)/[^/]+\\.scm$',
+    },
   }
 }
 ```

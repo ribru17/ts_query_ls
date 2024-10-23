@@ -302,6 +302,7 @@ struct Backend {
 struct Options {
     parser_install_directories: Option<Vec<String>>,
     parser_aliases: Option<BTreeMap<String, String>>,
+    language_retrieval_patterns: Option<Vec<String>>,
 }
 
 mod util;
@@ -362,6 +363,7 @@ impl LanguageServer for Backend {
         let mut options = self.options.write().unwrap();
         options.parser_install_directories = changed_options.parser_install_directories;
         options.parser_aliases = changed_options.parser_aliases;
+        options.language_retrieval_patterns = changed_options.language_retrieval_patterns;
     }
 
     async fn shutdown(&self) -> Result<()> {
@@ -412,15 +414,25 @@ impl LanguageServer for Backend {
             .insert(uri.clone(), parser.parse(&contents, None).unwrap());
 
         // Get language, if it exists
-        let path_type1 = Regex::new(r#"queries/([^/]+)/[^/]+\.scm$"#).unwrap();
-        let path_type2 = Regex::new(r#"tree-sitter-([^/]+)/queries/[^/]+\.scm$"#).unwrap();
-        let captures = path_type1
-            .captures(uri.as_str())
-            .or(path_type2.captures(uri.as_str()));
-        // NOTE: Find a more idiomatic way to do this (without nesting the entire language
-        // initialization code block in here)
         let mut lang = None;
         if let Ok(options) = self.options.read() {
+            let mut language_retrieval_regexes: Vec<Regex> = options
+                .language_retrieval_patterns
+                .clone()
+                .unwrap_or(vec![])
+                .iter()
+                .map(|r| Regex::new(r).unwrap())
+                .collect();
+            language_retrieval_regexes.push(Regex::new(r#"queries/([^/]+)/[^/]+\.scm$"#).unwrap());
+            language_retrieval_regexes
+                .push(Regex::new(r#"tree-sitter-([^/]+)/queries/[^/]+\.scm$"#).unwrap());
+            let mut captures = None;
+            for re in language_retrieval_regexes {
+                if let Some(caps) = re.captures(uri.as_str()) {
+                    captures = Some(caps);
+                    break;
+                }
+            }
             lang = captures
                 .and_then(|captures| captures.get(1))
                 .and_then(|cap| {
@@ -889,6 +901,7 @@ async fn main() {
     let options = Arc::new(RwLock::new(Options {
         parser_install_directories: None,
         parser_aliases: None,
+        language_retrieval_patterns: None,
     }));
     let (service, socket) = LspService::build(|client| Backend {
         client,
