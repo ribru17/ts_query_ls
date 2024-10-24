@@ -666,7 +666,7 @@ impl LanguageServer for Backend {
         let query = Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap();
         let mut cursor = QueryCursor::new();
         let new_name = params.new_name;
-        let identifier_pattern = Regex::new("^[a-zA-Z0-9.\\-_\\$]+$").unwrap();
+        let identifier_pattern = Regex::new(r#"^[a-zA-Z0-9.\-_\$]+$"#).unwrap();
         if !identifier_pattern.is_match(new_name.as_str()) {
             return Err(jsonrpc::Error::invalid_params(
                 "New name is not a valid identifier",

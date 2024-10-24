@@ -230,6 +230,7 @@ const DIAGNOSTICS_QUERY: &str = r#"
 (named_node name: (identifier) @n)
 (field_definition name: (identifier) @f)
 (parameters (capture) @c)
+(_ "(" ")" @p)
 "#;
 
 pub fn get_diagnostics(
@@ -261,6 +262,20 @@ pub fn get_diagnostics(
                     if !symbols.contains(&sym) {
                         diagnostics.push(Diagnostic {
                             message: "Invalid node type!".to_owned(),
+                            severity,
+                            range,
+                            ..Default::default()
+                        });
+                    }
+                }
+                "p" => {
+                    // Workaround to detect syntax errors where there is a missing closing
+                    // parenthesis. The parser will produce a valid tree here.
+                    if capture.node.byte_range().is_empty() {
+                        let open_paren = capture.node.parent().and_then(|p| p.child(0)).unwrap();
+                        let range = ts_node_to_lsp_range(open_paren, rope);
+                        diagnostics.push(Diagnostic {
+                            message: "Missing \")\"!".to_owned(),
                             severity,
                             range,
                             ..Default::default()
