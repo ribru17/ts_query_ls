@@ -457,7 +457,6 @@ fn append_lines(lines: &mut Vec<String>, lines_to_append: Vec<String>) {
 
 pub fn format_iter(
     rope: &Rope,
-    tree: &Tree,
     node: &Node,
     lines: &mut Vec<String>,
     map: &HashMap<&str, HashMap<usize, HashSet<&str>>>,
@@ -465,26 +464,21 @@ pub fn format_iter(
 ) {
     // Sometimes 2 queries apply append twice. This is to prevent the case from happening
     let mut apply_newline = false;
-    // NOTE: Can/should this be node.walk()?
-    for child in node.children(&mut tree.walk()) {
+    for child in node.children(&mut node.walk()) {
         let id = &child.id();
-        'main: {
-            if apply_newline {
-                apply_newline = false;
-                lines.push(INDENT_STR.repeat(level));
-            }
-            if map.get("format.ignore").unwrap().contains_key(id) {
-                let text = CRLF
-                    .replace_all(get_node_text(child, rope).as_str(), "\n")
-                    .trim_matches('\n')
-                    .split('\n')
-                    .map(|s| s.to_owned())
-                    .collect();
-                append_lines(lines, text);
-                break 'main;
-            } else if map.get("format.remove").unwrap().contains_key(id) {
-                break 'main;
-            }
+        if apply_newline {
+            apply_newline = false;
+            lines.push(INDENT_STR.repeat(level));
+        }
+        if map.get("format.ignore").unwrap().contains_key(id) {
+            let text = CRLF
+                .replace_all(get_node_text(child, rope).as_str(), "\n")
+                .trim_matches('\n')
+                .split('\n')
+                .map(|s| s.to_owned())
+                .collect();
+            append_lines(lines, text);
+        } else if !map.get("format.remove").unwrap().contains_key(id) {
             if !map.get("format.cancel-prepend").unwrap().contains_key(id) {
                 if map.get("format.prepend-newline").unwrap().contains_key(id) {
                     lines.push(INDENT_STR.repeat(level));
@@ -521,34 +515,21 @@ pub fn format_iter(
                     .collect();
                 append_lines(lines, text);
             } else {
-                format_iter(rope, tree, &child, lines, map, level);
+                format_iter(rope, &child, lines, map, level);
             }
             if map.get("format.indent.begin").unwrap().contains_key(id) {
                 level += 1;
                 apply_newline = true;
-                break 'main;
-            }
-            if map.get("format.indent.dedent").unwrap().contains_key(id) {
-                let re = Regex::new(
-                    [r#"^\s*"#, get_node_text(child, rope).as_str()]
-                        .concat()
-                        .as_str(),
-                )
-                .unwrap();
-                if re.is_match(lines.last().unwrap()) {
-                    lines.last_mut().unwrap().drain(0..2);
-                }
+            } else if map.get("format.indent.dedent").unwrap().contains_key(id) {
+                lines.last_mut().unwrap().drain(0..2);
             }
         }
         if map.get("format.cancel-append").unwrap().contains_key(id) {
             apply_newline = false;
-        }
-        if !map.get("format.cancel-append").unwrap().contains_key(id) {
-            if map.get("format.append-newline").unwrap().contains_key(id) {
-                apply_newline = true;
-            } else if map.get("format.append-space").unwrap().contains_key(id) {
-                lines.last_mut().unwrap().push(' ');
-            }
+        } else if map.get("format.append-newline").unwrap().contains_key(id) {
+            apply_newline = true;
+        } else if map.get("format.append-space").unwrap().contains_key(id) {
+            lines.last_mut().unwrap().push(' ');
         }
     }
 }

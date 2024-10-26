@@ -881,7 +881,7 @@ impl LanguageServer for Backend {
 
         let mut edits = vec!["".to_owned()];
 
-        format_iter(&rope, &tree, &tree.root_node(), &mut edits, &map, 0);
+        format_iter(&rope, &tree.root_node(), &mut edits, &map, 0);
 
         Ok(Some(util::diff(
             rope.to_string().as_str(),
