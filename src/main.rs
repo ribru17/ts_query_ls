@@ -469,6 +469,7 @@ impl LanguageServer for Backend {
                 } else {
                     lang.node_kind_for_id(i)
                         .unwrap()
+                        .replace('\\', r#"\\"#)
                         .replace('"', r#"\""#)
                         .replace("\n", r#"\n"#)
                 };
