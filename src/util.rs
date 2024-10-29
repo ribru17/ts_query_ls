@@ -231,6 +231,29 @@ const DIAGNOSTICS_QUERY: &str = r#"
 (field_definition name: (identifier) @f)
 (parameters (capture) @c)
 (_ "(" ")" @p)
+(predicate
+  name: (identifier) @_name
+  (parameters
+    .
+    ; NOTE: Technically this can be a "_" but it doesn't work with anchors. Also rare?
+    [(string) (identifier)] @arg)
+    (#any-of? @_name "eq" "not-eq" "any-eq" "any-not-eq"
+      "match" "not-match" "any-match" "any-not-match"
+      "any-of" "not-any-of"))
+(predicate
+  name: (identifier) @_name
+    (#any-of? @_name "eq" "not-eq" "any-eq" "any-not-eq")
+  (parameters
+    (capture)
+    _
+    _+ @bad_eq))
+(predicate
+  name: (identifier) @_name
+    (#any-of? @_name "match" "not-match" "any-match" "any-not-match")
+  (parameters
+    (capture)
+    _
+    _+ @bad_match))
 "#;
 
 pub fn get_diagnostics(
@@ -335,6 +358,32 @@ pub fn get_diagnostics(
                             ..Default::default()
                         })
                     }
+                }
+                "arg" => {
+                    diagnostics.push(Diagnostic {
+                        message: "First argument must be a capture".to_owned(),
+                        range,
+                        severity: Some(DiagnosticSeverity::WARNING),
+                        ..Default::default()
+                    });
+                }
+                "bad_eq" => {
+                    diagnostics.push(Diagnostic {
+                        message: r##""#eq?" family predicates cannot accept multiple arguments. Consider using "#any-of?"."##.to_owned(),
+                        range,
+                        severity: Some(DiagnosticSeverity::WARNING),
+                        ..Default::default()
+                    });
+                }
+                "bad_match" => {
+                    diagnostics.push(Diagnostic {
+                        message:
+                            r##""#match?" family predicates cannot accept multiple arguments."##
+                                .to_owned(),
+                        range,
+                        severity: Some(DiagnosticSeverity::WARNING),
+                        ..Default::default()
+                    });
                 }
                 _ => {}
             }
