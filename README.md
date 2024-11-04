@@ -80,6 +80,8 @@ vim.api.nvim_create_autocmd('FileType', {
 - [x] Recognize parsers built for `WASM`
 - [x] Document formatting compatible with the `nvim-treesitter` formatter
 - [ ] Code cleanup
+- [ ] Package code in common registries like `homebrew`, `mason.nvim`, and
+      others (help wanted!)
 
 ## References
 
