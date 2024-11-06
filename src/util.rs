@@ -12,7 +12,7 @@ use streaming_iterator::StreamingIterator;
 use tower_lsp::lsp_types::*;
 use tree_sitter::{
     wasmtime::Engine, InputEdit, Language, Node, Point, Query, QueryCursor, QueryMatch,
-    QueryPredicateArg, Tree, WasmStore,
+    QueryPredicateArg, TextProvider, Tree, WasmStore,
 };
 
 use crate::{SymbolInfo, QUERY_LANGUAGE};
@@ -88,17 +88,35 @@ pub fn get_current_capture_node(root: Node, point: Point) -> Option<Node> {
         })
 }
 
+pub struct TextProviderRope<'a>(pub &'a Rope);
+
+impl<'a> TextProvider<&'a [u8]> for &'a TextProviderRope<'a> {
+    type I = ChunksBytes<'a>;
+    fn text(&mut self, node: tree_sitter::Node) -> Self::I {
+        ChunksBytes(self.0.byte_slice(node.byte_range()).chunks())
+    }
+}
+
+pub struct ChunksBytes<'a>(ropey::iter::Chunks<'a>);
+
+impl<'a> Iterator for ChunksBytes<'a> {
+    type Item = &'a [u8];
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|s| s.as_bytes())
+    }
+}
+
 pub fn get_references<'a>(
     uri: &'a Url,
     root: &'a Node,
     node: &'a Node,
     query: &'a Query,
     cursor: &'a mut QueryCursor,
-    contents: &'a [u8],
+    provider: &'a TextProviderRope,
     rope: &'a Rope,
 ) -> impl Iterator<Item = Location> + 'a {
     return cursor
-        .matches(query, root.child_with_descendant(*node).unwrap(), contents)
+        .matches(query, root.child_with_descendant(*node).unwrap(), provider)
         .map_deref(|match_| {
             match_.captures.iter().filter_map(|cap| {
                 if cap.node.grammar_name() == node.grammar_name()
@@ -259,13 +277,13 @@ const DIAGNOSTICS_QUERY: &str = r#"
 pub fn get_diagnostics(
     tree: &Tree,
     rope: &Rope,
-    contents: &String,
+    provider: &TextProviderRope,
     symbols: &HashSet<SymbolInfo>,
     fields: &HashSet<String>,
 ) -> Vec<Diagnostic> {
     let mut cursor = QueryCursor::new();
     let query = Query::new(&QUERY_LANGUAGE, DIAGNOSTICS_QUERY).unwrap();
-    let mut matches = cursor.matches(&query, tree.root_node(), contents.as_bytes());
+    let mut matches = cursor.matches(&query, tree.root_node(), provider);
     let mut diagnostics = vec![];
     let has_language_info = !symbols.is_empty();
     while let Some(match_) = matches.next() {
@@ -333,7 +351,7 @@ pub fn get_diagnostics(
                         tree.root_node()
                             .child_with_descendant(capture.node)
                             .unwrap(),
-                        contents.as_bytes(),
+                        provider,
                     );
                     let mut valid = false;
                     // NOTE: Find a simpler way to do this?

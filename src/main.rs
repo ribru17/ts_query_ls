@@ -1,7 +1,6 @@
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::{
-    borrow::Cow,
     cmp::Ordering,
     collections::{BTreeMap, HashMap, HashSet},
     env::set_current_dir,
@@ -23,7 +22,7 @@ use tree_sitter::{wasmtime::Engine, Language, Parser, Query, QueryCursor, Tree};
 use util::{
     format_iter, get_current_capture_node, get_diagnostics, get_language, get_node_text,
     get_references, handle_predicate, lsp_position_to_byte_offset, lsp_position_to_ts_point,
-    lsp_textdocchange_to_ts_inputedit, node_is_or_has_ancestor,
+    lsp_textdocchange_to_ts_inputedit, node_is_or_has_ancestor, TextProviderRope,
 };
 
 lazy_static! {
@@ -500,10 +499,11 @@ impl LanguageServer for Backend {
             self.symbols_set_map.get(uri),
             self.fields_set_map.get(uri),
         ) {
+            let provider = TextProviderRope(&rope);
             self.client
                 .publish_diagnostics(
                     uri.clone(),
-                    get_diagnostics(&tree, &rope, &contents, &symbols, &fields),
+                    get_diagnostics(&tree, &rope, &provider, &symbols, &fields),
                     None,
                 )
                 .await;
@@ -572,10 +572,11 @@ impl LanguageServer for Backend {
             if let (Some(symbols), Some(fields)) =
                 (self.symbols_set_map.get(uri), self.fields_set_map.get(uri))
             {
+                let provider = TextProviderRope(&rope);
                 self.client
                     .publish_diagnostics(
                         uri.clone(),
-                        get_diagnostics(&tree, &rope, &contents, &symbols, &fields),
+                        get_diagnostics(&tree, &rope, &provider, &symbols, &fields),
                         None,
                     )
                     .await;
@@ -612,8 +613,7 @@ impl LanguageServer for Backend {
 
         let query = Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap();
         let mut cursor = QueryCursor::new();
-        let contents = Cow::from(rope.clone());
-        let contents = contents.as_bytes();
+        let provider = TextProviderRope(&rope);
 
         let mut parser = Parser::new();
         parser
@@ -627,7 +627,7 @@ impl LanguageServer for Backend {
                 &current_node,
                 &query,
                 &mut cursor,
-                contents,
+                &provider,
                 &rope,
             )
             .collect(),
@@ -654,9 +654,6 @@ impl LanguageServer for Backend {
                 .await;
             return Ok(None);
         };
-        // NOTE: Can we use Cow here?
-        let contents = Cow::from(rope.clone());
-        let contents = contents.as_bytes();
         let current_node = match get_current_capture_node(
             tree.root_node(),
             lsp_position_to_ts_point(params.text_document_position.position, &rope),
@@ -678,13 +675,14 @@ impl LanguageServer for Backend {
             ));
         }
         let mut text_document_edits: Vec<TextDocumentEdit> = vec![];
+        let provider = TextProviderRope(&rope);
         get_references(
             &uri,
             &tree.root_node(),
             &current_node,
             &query,
             &mut cursor,
-            contents,
+            &provider,
             &rope,
         )
         .for_each(|mut elem| {
@@ -753,8 +751,6 @@ impl LanguageServer for Backend {
         let point = lsp_position_to_ts_point(position, &rope);
         let query = Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap();
         let mut cursor = QueryCursor::new();
-        let contents = Cow::from(rope.slice(..));
-        let contents = contents.as_bytes();
         let current_node = tree
             .root_node()
             .named_descendant_for_point_range(point, point)
@@ -808,7 +804,8 @@ impl LanguageServer for Backend {
             None => return Ok(Some(CompletionResponse::Array(completion_items))),
             Some(value) => value,
         };
-        let mut iter = cursor.matches(&query, node, contents);
+        let provider = TextProviderRope(&rope);
+        let mut iter = cursor.matches(&query, node, &provider);
         let mut seen = HashSet::new();
         while let Some(match_) = iter.next() {
             for capture in match_.captures {
@@ -843,9 +840,8 @@ impl LanguageServer for Backend {
         };
         let root = tree.root_node();
         let mut cursor = QueryCursor::new();
-        let contents = Cow::from(rope.clone());
-        let contents = contents.as_bytes();
-        let mut matches = cursor.matches(&FORMAT_QUERY, root, contents);
+        let provider = TextProviderRope(&rope);
+        let mut matches = cursor.matches(&FORMAT_QUERY, root, &provider);
 
         let mut map: HashMap<&str, HashMap<usize, HashSet<&str>>> = HashMap::from([
             ("format.ignore", HashMap::new()),
