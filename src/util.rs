@@ -238,8 +238,7 @@ fn get_language_wasm(name: &str, directory: &String, engine: &Engine) -> Option<
 }
 
 pub fn get_node_text(node: Node, rope: &Rope) -> String {
-    rope.byte_slice(node.start_byte()..node.end_byte())
-        .to_string()
+    rope.byte_slice(node.byte_range()).to_string()
 }
 
 const DIAGNOSTICS_QUERY: &str = r#"
