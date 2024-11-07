@@ -82,6 +82,7 @@ vim.api.nvim_create_autocmd('FileType', {
 - [ ] Code cleanup
 - [ ] Package code in common registries like `homebrew`, `mason.nvim`, and
       others (help wanted!)
+- [ ] Add tests for all functionality
 
 ## References
 
