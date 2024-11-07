@@ -756,6 +756,11 @@ impl LanguageServer for Backend {
             .named_descendant_for_point_range(point, point)
             .unwrap();
 
+        // Don't offer completions when in a comment
+        if current_node.grammar_name() == "comment" {
+            return Ok(None);
+        }
+
         let mut completion_items = vec![];
 
         // Node and field name completions
