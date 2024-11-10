@@ -221,6 +221,7 @@ lazy_static! {
   "(" @format.remove
   .
   [
+    (grouping)
     (anonymous_node
       name: (string) .)
     (named_node
