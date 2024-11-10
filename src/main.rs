@@ -27,7 +27,7 @@ use util::{
 
 lazy_static! {
     static ref ENGINE: Engine = Engine::default();
-    static ref QUERY_LANGUAGE: Language = tree_sitter_query::language();
+    static ref QUERY_LANGUAGE: Language = tree_sitter_query::LANGUAGE.into();
     static ref FORMAT_QUERY: Query = Query::new(
         &QUERY_LANGUAGE,
         r#"
@@ -468,9 +468,9 @@ impl LanguageServer for Backend {
                 } else {
                     lang.node_kind_for_id(i)
                         .unwrap()
-                        .replace('\\', r#"\\"#)
+                        .replace('\\', r"\\")
                         .replace('"', r#"\""#)
-                        .replace("\n", r#"\n"#)
+                        .replace('\n', r"\n")
                 };
                 let symbol_info = SymbolInfo { label, named };
                 if symbols_set.contains(&symbol_info) || !lang.node_kind_is_visible(i) {
