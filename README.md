@@ -93,6 +93,7 @@ And others?
 ## References
 
 Many thanks to @lucario387, and the
+[asm-lsp](https://github.com/bergercookie/asm-lsp),
 [`jinja-lsp`](https://github.com/uros-5/jinja-lsp),
 [`beancount`-language-server](https://github.com/polarmutex/beancount-language-server),
 and [helix-editor](https://github.com/helix-editor/helix) projects for the
