@@ -84,9 +84,13 @@ vim.api.nvim_create_autocmd('FileType', {
 
 ### Packaging
 
-- [ ] [`homebrew`](https://github.com/Homebrew/homebrew-core) (help wanted!)
-- [ ] [`nixpkgs`](https://github.com/NixOS/nixpkgs) (in progress)
-- [ ] [`mason.nvim`](https://github.com/mason-org/mason-registry) (in progress)
+- [ ] [`homebrew`](https://github.com/Homebrew/homebrew-core)
+      ([in progress](https://github.com/Homebrew/homebrew-core/pull/197587),
+      requires repo to reach 75 GitHub stars)
+- [ ] [`nixpkgs`](https://github.com/NixOS/nixpkgs)
+      ([in progress](https://github.com/NixOS/nixpkgs/pull/350834))
+- [ ] [`mason.nvim`](https://github.com/mason-org/mason-registry)
+      ([in progress](https://github.com/mason-org/mason-registry/pull/7849))
 
 And others?
 
