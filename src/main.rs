@@ -363,7 +363,7 @@ impl LanguageServer for Backend {
         &self,
         params: GotoDefinitionParams,
     ) -> Result<Option<GotoDefinitionResponse>> {
-        info!("ts_query_ls goto_definition: {params:?}", );
+        info!("ts_query_ls goto_definition: {params:?}");
         let uri = params.text_document_position_params.text_document.uri;
         let pos = Position {
             line: params.text_document_position_params.position.line,

@@ -72,11 +72,17 @@ vim.api.nvim_create_autocmd('FileType', {
 - [x] Fix utility functions, making them robust when it comes to UTF-16 code
       points
 - [ ] Go to definition for captures
+- [ ] Recognition/completion of supertypes (requires `tree-sitter 0.25`)
+- [ ] Completions and diagnostics for a supertype's subtypes
+  - Requires <https://github.com/tree-sitter/tree-sitter/pull/3938>
 - [x] Completions field names
 - [x] Diagnostics for unrecognized nodes
 - [x] Diagnostics for referencing undefined capture groups in predicates
 - [x] Diagnostics for incorrect syntax
 - [ ] Diagnostics for impossible patterns
+  - Currently not possible without a full (sometimes expensive) run of the query
+    file. This should either be implemented as a user command, or core methods
+    should be exposed to gather pattern information more efficiently
 - [x] Recognize parsers built for `WASM`
 - [x] Document formatting compatible with the `nvim-treesitter` formatter
 - [ ] Code cleanup
