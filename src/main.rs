@@ -1,4 +1,5 @@
 use lazy_static::lazy_static;
+use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::Ordering,
@@ -310,21 +311,11 @@ mod util;
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
-        self.client
-            .log_message(
-                MessageType::LOG,
-                format!("ts_query_ls initialize: {:?}", params),
-            )
-            .await;
+        info!("ts_query_ls initialize: {params:?}");
         if let Some(root_uri) = params.root_uri {
             let root = PathBuf::from(root_uri.path());
             if set_current_dir(&root).is_err() {
-                self.client
-                    .log_message(
-                        MessageType::ERROR,
-                        format!("Failed to set root directory to {:?}", root),
-                    )
-                    .await;
+                error!("Failed to set root directory to {:?}", root);
             };
         }
 
@@ -352,12 +343,7 @@ impl LanguageServer for Backend {
             if let Ok(options) = serde_json::from_value::<Options>(params.settings) {
                 options
             } else {
-                self.client
-                    .log_message(
-                        MessageType::WARNING,
-                        "Unable to parse configuration settings!",
-                    )
-                    .await;
+                warn!("Unable to parse configuration settings!",);
                 return;
             };
         let mut options = self.options.write().unwrap();
@@ -377,12 +363,7 @@ impl LanguageServer for Backend {
         &self,
         params: GotoDefinitionParams,
     ) -> Result<Option<GotoDefinitionResponse>> {
-        self.client
-            .log_message(
-                MessageType::LOG,
-                format!("ts_query_ls goto_definition: {:?}", params),
-            )
-            .await;
+        info!("ts_query_ls goto_definition: {params:?}", );
         let uri = params.text_document_position_params.text_document.uri;
         let pos = Position {
             line: params.text_document_position_params.position.line,
@@ -397,12 +378,7 @@ impl LanguageServer for Backend {
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let uri = &params.text_document.uri;
-        self.client
-            .log_message(
-                MessageType::LOG,
-                format!("ts_query_ls did_open: {:?}", params),
-            )
-            .await;
+        info!("ts_query_ls did_ops: {params:?}");
         let contents = params.text_document.text;
         let rope = Rope::from_str(&contents);
         let mut parser = Parser::new();
@@ -589,21 +565,11 @@ impl LanguageServer for Backend {
         let uri = &params.text_document_position.text_document.uri;
 
         let Some(tree) = self.ast_map.get(uri) else {
-            self.client
-                .log_message(
-                    MessageType::WARNING,
-                    format!("No AST built for URI: {:?}", *uri),
-                )
-                .await;
+            warn!("No AST built for URI: {uri:?}");
             return Ok(None);
         };
         let Some(rope) = self.document_map.get(uri) else {
-            self.client
-                .log_message(
-                    MessageType::WARNING,
-                    format!("No document built for URI: {:?}", *uri),
-                )
-                .await;
+            warn!("No document built for URI: {uri:?}");
             return Ok(None);
         };
         let cur_pos = lsp_position_to_ts_point(params.text_document_position.position, &rope);
@@ -638,21 +604,11 @@ impl LanguageServer for Backend {
     async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
         let uri = params.text_document_position.text_document.uri;
         let Some(tree) = self.ast_map.get(&uri) else {
-            self.client
-                .log_message(
-                    MessageType::WARNING,
-                    format!("No AST built for URI: {:?}", uri),
-                )
-                .await;
+            warn!("No AST built for URI: {uri:?}");
             return Ok(None);
         };
         let Some(rope) = self.document_map.get(&uri) else {
-            self.client
-                .log_message(
-                    MessageType::WARNING,
-                    format!("No document built for URI: {:?}", uri),
-                )
-                .await;
+            warn!("No document built for URI: {uri:?}");
             return Ok(None);
         };
         let current_node = match get_current_capture_node(
@@ -727,21 +683,11 @@ impl LanguageServer for Backend {
         let uri = &params.text_document_position.text_document.uri;
 
         let Some(tree) = self.ast_map.get(uri) else {
-            self.client
-                .log_message(
-                    MessageType::WARNING,
-                    format!("No AST built for URI: {:?}", *uri),
-                )
-                .await;
+            warn!("No AST built for URI: {uri:?}");
             return Ok(None);
         };
         let Some(rope) = self.document_map.get(uri) else {
-            self.client
-                .log_message(
-                    MessageType::WARNING,
-                    format!("No document built for URI: {:?}", *uri),
-                )
-                .await;
+            warn!("No document built for URI: {uri:?}");
             return Ok(None);
         };
 
@@ -900,7 +846,10 @@ impl LanguageServer for Backend {
 
 #[tokio::main]
 async fn main() {
-    env_logger::init();
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_ansi(false)
+        .init();
 
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
