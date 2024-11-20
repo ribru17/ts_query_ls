@@ -88,6 +88,15 @@ pub fn get_current_capture_node(root: Node, point: Point) -> Option<Node> {
         })
 }
 
+pub fn ts_node_to_lsp_location(uri: &Url, node: &Node, rope: &Rope) -> Location {
+    let start = ts_point_to_lsp_position(node.range().start_point, rope);
+    let end = ts_point_to_lsp_position(node.range().end_point, rope);
+    Location {
+        uri: uri.to_owned(),
+        range: Range { start, end },
+    }
+}
+
 pub struct TextProviderRope<'a>(pub &'a Rope);
 
 impl<'a> TextProvider<&'a [u8]> for &'a TextProviderRope<'a> {
@@ -107,14 +116,13 @@ impl<'a> Iterator for ChunksBytes<'a> {
 }
 
 pub fn get_references<'a>(
-    uri: &'a Url,
     root: &'a Node,
     node: &'a Node,
     query: &'a Query,
     cursor: &'a mut QueryCursor,
     provider: &'a TextProviderRope,
     rope: &'a Rope,
-) -> impl Iterator<Item = Location> + 'a {
+) -> impl Iterator<Item = Node<'a>> + 'a {
     return cursor
         .matches(query, root.child_with_descendant(*node).unwrap(), provider)
         .map_deref(|match_| {
@@ -122,10 +130,7 @@ pub fn get_references<'a>(
                 if cap.node.grammar_name() == node.grammar_name()
                     && get_node_text(cap.node, rope) == get_node_text(*node, rope)
                 {
-                    Some(Location {
-                        uri: uri.clone(),
-                        range: ts_node_to_lsp_range(cap.node, rope),
-                    })
+                    Some(cap.node)
                 } else {
                     None
                 }

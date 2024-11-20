@@ -23,7 +23,8 @@ use tree_sitter::{wasmtime::Engine, Language, Parser, Query, QueryCursor, Tree};
 use util::{
     format_iter, get_current_capture_node, get_diagnostics, get_language, get_node_text,
     get_references, handle_predicate, lsp_position_to_byte_offset, lsp_position_to_ts_point,
-    lsp_textdocchange_to_ts_inputedit, node_is_or_has_ancestor, TextProviderRope,
+    lsp_textdocchange_to_ts_inputedit, node_is_or_has_ancestor, ts_node_to_lsp_location,
+    TextProviderRope,
 };
 
 lazy_static! {
@@ -389,8 +390,7 @@ impl LanguageServer for Backend {
             .set_language(&QUERY_LANGUAGE)
             .expect("Error setting language for Query parser");
 
-        let Some(def) = get_references(
-            uri,
+        let defs = get_references(
             &tree.root_node(),
             &current_node,
             &query,
@@ -398,33 +398,24 @@ impl LanguageServer for Backend {
             &provider,
             &rope,
         )
-        .min_by(|c1, c2| {
-            if c1 == c2 {
-                return std::cmp::Ordering::Equal;
-            }
-            let first_start_line = c1.range.start.line;
-            let elem_start_line = c2.range.start.line;
-            if (elem_start_line < first_start_line)
-                || (elem_start_line == first_start_line
-                    && c2.range.start.character < c1.range.start.character)
-            {
-                std::cmp::Ordering::Greater
+        .filter(|node| {
+            if let Some(p) = node.parent() {
+                p.kind() != "parameters"
             } else {
-                std::cmp::Ordering::Less
+                true
             }
-        }) else {
+        })
+        .map(|node| ts_node_to_lsp_location(uri, &node, &rope))
+        .collect::<Vec<Location>>();
+
+        if defs.is_empty() {
             let range = Range::new(cur_pos, cur_pos);
             return Ok(Some(GotoDefinitionResponse::Scalar(Location {
                 uri: uri.clone(),
                 range,
             })));
-        };
-
-        let range = Range::new(def.range.start, def.range.end);
-        Ok(Some(GotoDefinitionResponse::Scalar(Location {
-            uri: uri.clone(),
-            range,
-        })))
+        }
+        Ok(Some(GotoDefinitionResponse::Array(defs)))
     }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
@@ -640,7 +631,6 @@ impl LanguageServer for Backend {
 
         Ok(Some(
             get_references(
-                uri,
                 &tree.root_node(),
                 &current_node,
                 &query,
@@ -648,6 +638,7 @@ impl LanguageServer for Backend {
                 &provider,
                 &rope,
             )
+            .map(|node| ts_node_to_lsp_location(uri, &node, &rope))
             .collect(),
         ))
     }
@@ -685,7 +676,6 @@ impl LanguageServer for Backend {
         let mut text_document_edits: Vec<TextDocumentEdit> = vec![];
         let provider = TextProviderRope(&rope);
         get_references(
-            &uri,
             &tree.root_node(),
             &current_node,
             &query,
@@ -693,6 +683,7 @@ impl LanguageServer for Backend {
             &provider,
             &rope,
         )
+        .map(|node| ts_node_to_lsp_location(&uri, &node, &rope))
         .for_each(|mut elem| {
             // Don't include the preceding `@`
             elem.range.start.character += 1;
