@@ -398,23 +398,10 @@ impl LanguageServer for Backend {
             &provider,
             &rope,
         )
-        .filter(|node| {
-            if let Some(p) = node.parent() {
-                p.kind() != "parameters"
-            } else {
-                true
-            }
-        })
+        .filter(|node| node.parent().is_none_or(|p| p.kind() != "parameters"))
         .map(|node| ts_node_to_lsp_location(uri, &node, &rope))
         .collect::<Vec<Location>>();
 
-        if defs.is_empty() {
-            let range = Range::new(cur_pos, cur_pos);
-            return Ok(Some(GotoDefinitionResponse::Scalar(Location {
-                uri: uri.clone(),
-                range,
-            })));
-        }
         Ok(Some(GotoDefinitionResponse::Array(defs)))
     }
 
