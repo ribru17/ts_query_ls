@@ -23,7 +23,8 @@ use tree_sitter::{wasmtime::Engine, Language, Parser, Query, QueryCursor, Tree};
 use util::{
     format_iter, get_current_capture_node, get_diagnostics, get_language, get_node_text,
     get_references, handle_predicate, lsp_position_to_byte_offset, lsp_position_to_ts_point,
-    lsp_textdocchange_to_ts_inputedit, node_is_or_has_ancestor, TextProviderRope,
+    lsp_textdocchange_to_ts_inputedit, node_is_or_has_ancestor, ts_node_to_lsp_location,
+    TextProviderRope,
 };
 
 lazy_static! {
@@ -364,16 +365,44 @@ impl LanguageServer for Backend {
         params: GotoDefinitionParams,
     ) -> Result<Option<GotoDefinitionResponse>> {
         info!("ts_query_ls goto_definition: {params:?}");
-        let uri = params.text_document_position_params.text_document.uri;
-        let pos = Position {
-            line: params.text_document_position_params.position.line,
-            character: 0,
+        let uri = &params.text_document_position_params.text_document.uri;
+        let Some(tree) = self.ast_map.get(uri) else {
+            warn!("No AST built for URI: {uri:?}");
+            return Ok(None);
         };
-        let range = Range::new(pos, pos);
-        Ok(Some(GotoDefinitionResponse::Scalar(Location {
-            uri,
-            range,
-        })))
+        let Some(rope) = self.document_map.get(uri) else {
+            warn!("No document built for URI: {uri:?}");
+            return Ok(None);
+        };
+        let cur_pos = params.text_document_position_params.position;
+        let Some(current_node) =
+            get_current_capture_node(tree.root_node(), lsp_position_to_ts_point(cur_pos, &rope))
+        else {
+            return Ok(None);
+        };
+
+        let query = Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap();
+        let mut cursor = QueryCursor::new();
+        let provider = TextProviderRope(&rope);
+
+        let mut parser = Parser::new();
+        parser
+            .set_language(&QUERY_LANGUAGE)
+            .expect("Error setting language for Query parser");
+
+        let defs = get_references(
+            &tree.root_node(),
+            &current_node,
+            &query,
+            &mut cursor,
+            &provider,
+            &rope,
+        )
+        .filter(|node| node.parent().is_none_or(|p| p.kind() != "parameters"))
+        .map(|node| ts_node_to_lsp_location(uri, &node, &rope))
+        .collect::<Vec<Location>>();
+
+        Ok(Some(GotoDefinitionResponse::Array(defs)))
     }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
@@ -589,7 +618,6 @@ impl LanguageServer for Backend {
 
         Ok(Some(
             get_references(
-                uri,
                 &tree.root_node(),
                 &current_node,
                 &query,
@@ -597,6 +625,7 @@ impl LanguageServer for Backend {
                 &provider,
                 &rope,
             )
+            .map(|node| ts_node_to_lsp_location(uri, &node, &rope))
             .collect(),
         ))
     }
@@ -634,7 +663,6 @@ impl LanguageServer for Backend {
         let mut text_document_edits: Vec<TextDocumentEdit> = vec![];
         let provider = TextProviderRope(&rope);
         get_references(
-            &uri,
             &tree.root_node(),
             &current_node,
             &query,
@@ -642,6 +670,7 @@ impl LanguageServer for Backend {
             &provider,
             &rope,
         )
+        .map(|node| ts_node_to_lsp_location(&uri, &node, &rope))
         .for_each(|mut elem| {
             // Don't include the preceding `@`
             elem.range.start.character += 1;
