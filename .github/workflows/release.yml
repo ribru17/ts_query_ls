@@ -41,6 +41,7 @@ jobs:
         with:
           bin: ts_query_ls
           target: ${{ matrix.target }}
+          include: LICENSE
           tar: unix
           zip: windows
           token: ${{ secrets.GITHUB_TOKEN }}
