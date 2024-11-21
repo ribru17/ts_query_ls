@@ -9,7 +9,10 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use ropey::Rope;
 use streaming_iterator::StreamingIterator;
-use tower_lsp::lsp_types::*;
+use tower_lsp::lsp_types::{
+    Diagnostic, DiagnosticSeverity, Location, Position, Range, TextDocumentContentChangeEvent,
+    TextEdit, Url,
+};
 use tree_sitter::{
     wasmtime::Engine, InputEdit, Language, Node, Point, Query, QueryCursor, QueryMatch,
     QueryPredicateArg, TextProvider, Tree, WasmStore,
@@ -18,11 +21,11 @@ use tree_sitter::{
 use crate::{SymbolInfo, QUERY_LANGUAGE};
 
 lazy_static! {
-    static ref LINE_START: Regex = Regex::new(r#"^([^\S\r\n]*)"#).unwrap();
-    static ref LINE_START_RELAXED: Regex = Regex::new(r#"^\s*"#).unwrap();
-    static ref NEWLINES: Regex = Regex::new(r#"\n+"#).unwrap();
-    static ref COMMENT_PAT: Regex = Regex::new(r#"^;+(\s*.*?)\s*$"#).unwrap();
-    static ref CRLF: Regex = Regex::new(r#"\r\n?"#).unwrap();
+    static ref LINE_START: Regex = Regex::new(r"^([^\S\r\n]*)").unwrap();
+    static ref LINE_START_RELAXED: Regex = Regex::new(r"^\s*").unwrap();
+    static ref NEWLINES: Regex = Regex::new(r"\n+").unwrap();
+    static ref COMMENT_PAT: Regex = Regex::new(r"^;+(\s*.*?)\s*$").unwrap();
+    static ref CRLF: Regex = Regex::new(r"\r\n?").unwrap();
 }
 
 /// Returns the starting byte of the character if the position is in the middle of a character.
@@ -108,7 +111,7 @@ pub struct ChunksBytes<'a>(ropey::iter::Chunks<'a>);
 impl<'a> Iterator for ChunksBytes<'a> {
     type Item = &'a [u8];
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|s| s.as_bytes())
+        self.0.next().map(str::as_bytes)
     }
 }
 
@@ -120,7 +123,7 @@ pub fn get_references<'a>(
     provider: &'a TextProviderRope,
     rope: &'a Rope,
 ) -> impl Iterator<Item = Node<'a>> + 'a {
-    return cursor
+    cursor
         .matches(query, root.child_with_descendant(*node).unwrap(), provider)
         .map_deref(|match_| {
             match_.captures.iter().filter_map(|cap| {
@@ -133,7 +136,7 @@ pub fn get_references<'a>(
                 }
             })
         })
-        .flatten();
+        .flatten()
 }
 
 pub fn node_is_or_has_ancestor(root: Node, node: Node, kind: &str) -> bool {
@@ -199,7 +202,7 @@ pub fn get_language(
     engine: &Engine,
 ) -> Option<Language> {
     let name = name.replace('-', "_");
-    let language_fn_name = format!("tree_sitter_{}", name);
+    let language_fn_name = format!("tree_sitter_{name}");
 
     if let Some(directories) = directories {
         for directory in directories {
@@ -334,7 +337,7 @@ pub fn get_diagnostics(
                             severity,
                             range,
                             ..Default::default()
-                        })
+                        });
                     }
                 }
                 "e" => diagnostics.push(Diagnostic {
@@ -374,7 +377,7 @@ pub fn get_diagnostics(
                             severity,
                             range,
                             ..Default::default()
-                        })
+                        });
                     }
                 }
                 "arg" => {
@@ -442,7 +445,7 @@ pub fn diff(left: &str, right: &str, rope: &Rope) -> Vec<TextEdit> {
                 let start = byte_offset_to_lsp_position(offset, rope).unwrap();
                 let end = byte_offset_to_lsp_position(offset + deleted_len, rope).unwrap();
                 edits.push(TextEdit {
-                    new_text: "".to_owned(),
+                    new_text: String::new(),
                     range: Range { start, end },
                 });
                 offset += deleted_len;
@@ -484,9 +487,8 @@ pub fn handle_predicate(
                 let is_start = pre_whitespace == range.start_point.column;
                 if directive == "not-is-start-of-line?" {
                     return !is_start;
-                } else {
-                    return is_start;
                 }
+                return is_start;
             }
             true
         }
@@ -513,11 +515,11 @@ pub fn handle_predicate(
 const INDENT_STR: &str = "  ";
 const TEXT_WIDTH: usize = 100;
 
-fn append_lines(lines: &mut Vec<String>, lines_to_append: Vec<String>) {
+fn append_lines(lines: &mut Vec<String>, lines_to_append: &[String]) {
     for (i, line) in lines_to_append.iter().enumerate() {
         lines.last_mut().unwrap().push_str(line);
         if i != lines_to_append.len() - 1 {
-            lines.push("".to_owned());
+            lines.push(String::new());
         }
     }
 }
@@ -542,9 +544,9 @@ pub fn format_iter(
                 .replace_all(get_node_text(&child, rope).as_str(), "\n")
                 .trim_matches('\n')
                 .split('\n')
-                .map(|s| s.to_owned())
-                .collect();
-            append_lines(lines, text);
+                .map(ToOwned::to_owned)
+                .collect::<Vec<String>>();
+            append_lines(lines, &text);
         } else if !map.get("format.remove").unwrap().contains_key(id) {
             if !map.get("format.cancel-prepend").unwrap().contains_key(id) {
                 if map.get("format.prepend-newline").unwrap().contains_key(id) {
@@ -578,9 +580,9 @@ pub fn format_iter(
                         CRLF.replace_all(get_node_text(&child, rope).as_str(), "\n")
                             .trim_matches('\n'),
                     )
-                    .map(|s| s.to_owned())
-                    .collect();
-                append_lines(lines, text);
+                    .map(ToOwned::to_owned)
+                    .collect::<Vec<String>>();
+                append_lines(lines, &text);
             } else {
                 format_iter(rope, &child, lines, map, level);
             }
