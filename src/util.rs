@@ -69,7 +69,7 @@ pub fn ts_point_to_lsp_position(point: Point, rope: &Rope) -> Position {
     byte_offset_to_lsp_position(offset, rope).unwrap()
 }
 
-pub fn ts_node_to_lsp_range(node: Node, rope: &Rope) -> Range {
+pub fn ts_node_to_lsp_range(node: &Node, rope: &Rope) -> Range {
     Range {
         start: ts_point_to_lsp_position(node.start_position(), rope),
         end: ts_point_to_lsp_position(node.end_position(), rope),
@@ -79,21 +79,18 @@ pub fn ts_node_to_lsp_range(node: Node, rope: &Rope) -> Range {
 pub fn get_current_capture_node(root: Node, point: Point) -> Option<Node> {
     root.named_descendant_for_point_range(point, point)
         .and_then(|node| {
-            if node.grammar_name() == "capture" {
+            if node.kind() == "capture" {
                 Some(node)
             } else {
-                node.parent()
-                    .filter(|parent| parent.grammar_name() == "capture")
+                node.parent().filter(|parent| parent.kind() == "capture")
             }
         })
 }
 
 pub fn ts_node_to_lsp_location(uri: &Url, node: &Node, rope: &Rope) -> Location {
-    let start = ts_point_to_lsp_position(node.range().start_point, rope);
-    let end = ts_point_to_lsp_position(node.range().end_point, rope);
     Location {
         uri: uri.to_owned(),
-        range: Range { start, end },
+        range: ts_node_to_lsp_range(node, rope),
     }
 }
 
@@ -127,8 +124,8 @@ pub fn get_references<'a>(
         .matches(query, root.child_with_descendant(*node).unwrap(), provider)
         .map_deref(|match_| {
             match_.captures.iter().filter_map(|cap| {
-                if cap.node.grammar_name() == node.grammar_name()
-                    && get_node_text(cap.node, rope) == get_node_text(*node, rope)
+                if cap.node.kind() == node.kind()
+                    && get_node_text(&cap.node, rope) == get_node_text(node, rope)
                 {
                     Some(cap.node)
                 } else {
@@ -142,7 +139,7 @@ pub fn get_references<'a>(
 pub fn node_is_or_has_ancestor(root: Node, node: Node, kind: &str) -> bool {
     let mut optional_current_node = root.child_with_descendant(node);
     while let Some(unwrapped_current_node) = optional_current_node {
-        if unwrapped_current_node.grammar_name() == kind {
+        if unwrapped_current_node.kind() == kind {
             return true;
         }
         optional_current_node = unwrapped_current_node.child_with_descendant(node);
@@ -178,7 +175,7 @@ pub fn lsp_textdocchange_to_ts_inputedit(
             let line_byte_idx = ropey::str_utils::line_to_byte_idx(text, line_idx);
             let row = source.len_lines() + line_idx;
             let column = text_end_byte_count - line_byte_idx;
-            Ok(tree_sitter::Point { row, column })
+            Ok(Point { row, column })
         } else {
             byte_offset_to_ts_point(new_end_byte, source)
         }
@@ -230,19 +227,18 @@ pub fn get_language(
 }
 
 fn get_language_wasm(name: &str, directory: &String, engine: &Engine) -> Option<Language> {
-    let object_name = ["tree-sitter-", name, ".wasm"].concat();
+    let object_name = format!("tree-sitter-{name}.wasm");
     // NOTE: If WasmStore could be passed around threads safely, we could just create one global
     // store and put all of the WASM modules in there.
-    let mut language_store = WasmStore::new(engine).unwrap();
+    let mut language_store = WasmStore::new(engine).ok()?;
     let library_path = Path::new(directory).join(&object_name);
     if let Ok(wasm) = fs::read(library_path) {
-        let language = language_store.load_language(name, &wasm).unwrap();
-        return Some(language);
+        return language_store.load_language(name, &wasm).ok();
     }
     None
 }
 
-pub fn get_node_text(node: Node, rope: &Rope) -> String {
+pub fn get_node_text(node: &Node, rope: &Rope) -> String {
     rope.byte_slice(node.byte_range()).to_string()
 }
 
@@ -294,14 +290,14 @@ pub fn get_diagnostics(
         for capture in match_.captures {
             let capture_name = query.capture_names()[capture.index as usize];
             let severity = Some(DiagnosticSeverity::ERROR);
-            let range = ts_node_to_lsp_range(capture.node, rope);
+            let range = ts_node_to_lsp_range(&capture.node, rope);
             match capture_name {
                 "a" | "n" => {
                     if !has_language_info {
                         continue;
                     }
                     let sym = SymbolInfo {
-                        label: get_node_text(capture.node, rope),
+                        label: get_node_text(&capture.node, rope),
                         named: capture_name == "n",
                     };
                     if !symbols.contains(&sym) {
@@ -316,9 +312,9 @@ pub fn get_diagnostics(
                 "p" => {
                     // Workaround to detect syntax errors where there is a missing closing
                     // parenthesis. The parser will produce a valid tree here.
-                    if capture.node.byte_range().is_empty() {
+                    if capture.node.is_missing() {
                         let open_paren = capture.node.parent().and_then(|p| p.child(0)).unwrap();
-                        let range = ts_node_to_lsp_range(open_paren, rope);
+                        let range = ts_node_to_lsp_range(&open_paren, rope);
                         diagnostics.push(Diagnostic {
                             message: "Missing \")\"!".to_owned(),
                             severity,
@@ -331,7 +327,7 @@ pub fn get_diagnostics(
                     if !has_language_info {
                         continue;
                     }
-                    let field = get_node_text(capture.node, rope);
+                    let field = get_node_text(&capture.node, rope);
                     if !fields.contains(&field) {
                         diagnostics.push(Diagnostic {
                             message: "Invalid field type!".to_owned(),
@@ -362,9 +358,9 @@ pub fn get_diagnostics(
                     'outer: while let Some(m) = matches.next() {
                         for cap in m.captures {
                             if let Some(parent) = cap.node.parent() {
-                                if parent.grammar_name() != "parameters"
-                                    && get_node_text(cap.node, rope)
-                                        == get_node_text(capture.node, rope)
+                                if parent.kind() != "parameters"
+                                    && get_node_text(&cap.node, rope)
+                                        == get_node_text(&capture.node, rope)
                                 {
                                     valid = true;
                                     break 'outer;
@@ -498,7 +494,7 @@ pub fn handle_predicate(
             if let QueryPredicateArg::Capture(cap_idx) = &args[0] {
                 let node_type = match match_.nodes_for_capture_index(*cap_idx).next() {
                     None => return true,
-                    Some(node) => node.grammar_name(),
+                    Some(node) => node.kind(),
                 };
                 for arg in &args[1..] {
                     if let QueryPredicateArg::String(kind) = arg {
@@ -543,7 +539,7 @@ pub fn format_iter(
         }
         if map.get("format.ignore").unwrap().contains_key(id) {
             let text = CRLF
-                .replace_all(get_node_text(child, rope).as_str(), "\n")
+                .replace_all(get_node_text(&child, rope).as_str(), "\n")
                 .trim_matches('\n')
                 .split('\n')
                 .map(|s| s.to_owned())
@@ -569,17 +565,17 @@ pub fn format_iter(
                 }
             }
             if map.get("format.comment-fix").unwrap().contains_key(id) {
-                let text = get_node_text(child, rope);
+                let text = get_node_text(&child, rope);
                 if let Some(mat) = COMMENT_PAT.captures(text.as_str()) {
                     lines
                         .last_mut()
                         .unwrap()
                         .push_str([";", mat.get(1).unwrap().as_str()].concat().as_str());
                 }
-            } else if child.named_child_count() == 0 || child.grammar_name() == "string" {
+            } else if child.named_child_count() == 0 || child.kind() == "string" {
                 let text = NEWLINES
                     .split(
-                        CRLF.replace_all(get_node_text(child, rope).as_str(), "\n")
+                        CRLF.replace_all(get_node_text(&child, rope).as_str(), "\n")
                             .trim_matches('\n'),
                     )
                     .map(|s| s.to_owned())

@@ -733,7 +733,7 @@ impl LanguageServer for Backend {
             .unwrap();
 
         // Don't offer completions when in a comment
-        if current_node.grammar_name() == "comment" {
+        if current_node.kind() == "comment" {
             return Ok(None);
         }
 
@@ -742,7 +742,7 @@ impl LanguageServer for Backend {
         // Node and field name completions
         let cursor_after_at_sign = lsp_position_to_byte_offset(position, &rope)
             .and_then(|b| rope.try_byte_to_char(b))
-            .map_or(false, |c| rope.char(c) == '@');
+            .is_ok_and(|c| rope.char(c) == '@');
         let in_capture = cursor_after_at_sign
             || node_is_or_has_ancestor(tree.root_node(), current_node, "capture");
         if !in_capture && !node_is_or_has_ancestor(tree.root_node(), current_node, "predicate") {
@@ -766,7 +766,7 @@ impl LanguageServer for Backend {
                 if let Some(fields) = self.fields_vec_map.get(uri) {
                     for field in fields.iter() {
                         completion_items.push(CompletionItem {
-                            label: [field, ": "].concat(),
+                            label: format!("{field}: "),
                             kind: Some(CompletionItemKind::FIELD),
                             ..Default::default()
                         });
@@ -790,11 +790,11 @@ impl LanguageServer for Backend {
         let mut seen = HashSet::new();
         while let Some(match_) = iter.next() {
             for capture in match_.captures {
-                let node_text = get_node_text(capture.node, &rope);
-                let parent_params = match capture.node.parent() {
-                    None => true,
-                    Some(value) => value.grammar_name() != "parameters",
-                };
+                let node_text = get_node_text(&capture.node, &rope);
+                let parent_params = capture
+                    .node
+                    .parent()
+                    .is_none_or(|p| p.kind() != "parameters");
                 if parent_params && !seen.contains(&node_text) {
                     seen.insert(node_text.clone());
                     completion_items.push(CompletionItem {
