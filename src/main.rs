@@ -300,7 +300,7 @@ struct SymbolInfo {
 struct Backend {
     client: Client,
     document_map: DashMap<Url, Rope>,
-    ast_map: DashMap<Url, Tree>,
+    cst_map: DashMap<Url, Tree>,
     symbols_set_map: DashMap<Url, HashSet<SymbolInfo>>,
     symbols_vec_map: DashMap<Url, Vec<SymbolInfo>>,
     fields_set_map: DashMap<Url, HashSet<String>>,
@@ -371,8 +371,8 @@ impl LanguageServer for Backend {
     ) -> Result<Option<GotoDefinitionResponse>> {
         info!("ts_query_ls goto_definition: {params:?}");
         let uri = &params.text_document_position_params.text_document.uri;
-        let Some(tree) = self.ast_map.get(uri) else {
-            warn!("No AST built for URI: {uri:?}");
+        let Some(tree) = self.cst_map.get(uri) else {
+            warn!("No CST built for URI: {uri:?}");
             return Ok(None);
         };
         let Some(rope) = self.document_map.get(uri) else {
@@ -420,7 +420,7 @@ impl LanguageServer for Backend {
             .set_language(&QUERY_LANGUAGE)
             .expect("Error loading Query grammar");
         self.document_map.insert(uri.clone(), rope.clone());
-        self.ast_map
+        self.cst_map
             .insert(uri.clone(), parser.parse(&contents, None).unwrap());
 
         // Get language, if it exists
@@ -506,7 +506,7 @@ impl LanguageServer for Backend {
 
         // Publish diagnostics
         if let (Some(tree), Some(symbols), Some(fields)) = (
-            self.ast_map.get(uri),
+            self.cst_map.get(uri),
             self.symbols_set_map.get(uri),
             self.fields_set_map.get(uri),
         ) {
@@ -568,7 +568,7 @@ impl LanguageServer for Backend {
         }
         let contents = rope.to_string();
         let result = {
-            let mut old_tree = self.ast_map.get_mut(uri).unwrap();
+            let mut old_tree = self.cst_map.get_mut(uri).unwrap();
 
             for edit in edits {
                 old_tree.edit(&edit);
@@ -578,7 +578,7 @@ impl LanguageServer for Backend {
         };
 
         if let Some(tree) = result {
-            *self.ast_map.get_mut(uri).unwrap() = tree.clone();
+            *self.cst_map.get_mut(uri).unwrap() = tree.clone();
             // Update diagnostics
             if let (Some(symbols), Some(fields)) =
                 (self.symbols_set_map.get(uri), self.fields_set_map.get(uri))
@@ -598,8 +598,8 @@ impl LanguageServer for Backend {
     async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
         let uri = &params.text_document_position.text_document.uri;
 
-        let Some(tree) = self.ast_map.get(uri) else {
-            warn!("No AST built for URI: {uri:?}");
+        let Some(tree) = self.cst_map.get(uri) else {
+            warn!("No CST built for URI: {uri:?}");
             return Ok(None);
         };
         let Some(rope) = self.document_map.get(uri) else {
@@ -637,8 +637,8 @@ impl LanguageServer for Backend {
 
     async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
         let uri = params.text_document_position.text_document.uri;
-        let Some(tree) = self.ast_map.get(&uri) else {
-            warn!("No AST built for URI: {uri:?}");
+        let Some(tree) = self.cst_map.get(&uri) else {
+            warn!("No CST built for URI: {uri:?}");
             return Ok(None);
         };
         let Some(rope) = self.document_map.get(&uri) else {
@@ -716,8 +716,8 @@ impl LanguageServer for Backend {
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let uri = &params.text_document_position.text_document.uri;
 
-        let Some(tree) = self.ast_map.get(uri) else {
-            warn!("No AST built for URI: {uri:?}");
+        let Some(tree) = self.cst_map.get(uri) else {
+            warn!("No CST built for URI: {uri:?}");
             return Ok(None);
         };
         let Some(rope) = self.document_map.get(uri) else {
@@ -816,7 +816,7 @@ impl LanguageServer for Backend {
 
     async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
         let uri = params.text_document.uri;
-        let tree = match self.ast_map.get(&uri) {
+        let tree = match self.cst_map.get(&uri) {
             None => return Ok(None),
             Some(val) => val,
         };
@@ -896,7 +896,7 @@ async fn main() {
     let (service, socket) = LspService::build(|client| Backend {
         client,
         document_map: DashMap::new(),
-        ast_map: DashMap::new(),
+        cst_map: DashMap::new(),
         symbols_set_map: DashMap::new(),
         symbols_vec_map: DashMap::new(),
         fields_set_map: DashMap::new(),
