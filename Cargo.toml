@@ -3,6 +3,9 @@ name = "ts_query_ls"
 version = "1.2.4"
 authors = ["Riley Bruins <ribru17@gmail.com>"]
 edition = "2021"
+description = "An LSP implementation for Tree-sitter's query files"
+license = "MIT"
+repository = "https://github.com/ribru17/ts_query_ls"
 
 [dependencies]
 dashmap = "6.1.0"

@@ -16,7 +16,15 @@ use regex::Regex;
 use ropey::Rope;
 use tower_lsp::{
     jsonrpc::{self, Result},
-    lsp_types::*,
+    lsp_types::{
+        CompletionItem, CompletionItemKind, CompletionOptions, CompletionParams,
+        CompletionResponse, DidChangeConfigurationParams, DidChangeTextDocumentParams,
+        DidOpenTextDocumentParams, DocumentChanges, DocumentFormattingParams, GotoDefinitionParams,
+        GotoDefinitionResponse, InitializeParams, InitializeResult, Location, MessageType, OneOf,
+        OptionalVersionedTextDocumentIdentifier, Position, Range, ReferenceParams, RenameParams,
+        ServerCapabilities, TextDocumentEdit, TextDocumentSyncCapability, TextDocumentSyncKind,
+        TextEdit, Url, WorkspaceEdit,
+    },
     Client, LanguageServer, LspService, Server,
 };
 use tree_sitter::{wasmtime::Engine, Language, Parser, Query, QueryCursor, Tree};
@@ -292,7 +300,7 @@ struct SymbolInfo {
 struct Backend {
     client: Client,
     document_map: DashMap<Url, Rope>,
-    ast_map: DashMap<Url, Tree>,
+    cst_map: DashMap<Url, Tree>,
     symbols_set_map: DashMap<Url, HashSet<SymbolInfo>>,
     symbols_vec_map: DashMap<Url, Vec<SymbolInfo>>,
     fields_set_map: DashMap<Url, HashSet<String>>,
@@ -330,7 +338,7 @@ impl LanguageServer for Backend {
                 definition_provider: Some(OneOf::Left(true)),
                 document_formatting_provider: Some(OneOf::Left(true)),
                 completion_provider: Some(CompletionOptions {
-                    trigger_characters: Some(["@", "\"", "\\", "("].map(|c| c.to_owned()).into()),
+                    trigger_characters: Some(["@", "\"", "\\", "("].map(ToOwned::to_owned).into()),
                     ..CompletionOptions::default()
                 }),
                 ..Default::default()
@@ -340,13 +348,10 @@ impl LanguageServer for Backend {
     }
 
     async fn did_change_configuration(&self, params: DidChangeConfigurationParams) {
-        let changed_options =
-            if let Ok(options) = serde_json::from_value::<Options>(params.settings) {
-                options
-            } else {
-                warn!("Unable to parse configuration settings!",);
-                return;
-            };
+        let Ok(changed_options) = serde_json::from_value::<Options>(params.settings) else {
+            warn!("Unable to parse configuration settings!",);
+            return;
+        };
         let mut options = self.options.write().unwrap();
         options.parser_install_directories = changed_options.parser_install_directories;
         options.parser_aliases = changed_options.parser_aliases;
@@ -366,8 +371,8 @@ impl LanguageServer for Backend {
     ) -> Result<Option<GotoDefinitionResponse>> {
         info!("ts_query_ls goto_definition: {params:?}");
         let uri = &params.text_document_position_params.text_document.uri;
-        let Some(tree) = self.ast_map.get(uri) else {
-            warn!("No AST built for URI: {uri:?}");
+        let Some(tree) = self.cst_map.get(uri) else {
+            warn!("No CST built for URI: {uri:?}");
             return Ok(None);
         };
         let Some(rope) = self.document_map.get(uri) else {
@@ -415,7 +420,7 @@ impl LanguageServer for Backend {
             .set_language(&QUERY_LANGUAGE)
             .expect("Error loading Query grammar");
         self.document_map.insert(uri.clone(), rope.clone());
-        self.ast_map
+        self.cst_map
             .insert(uri.clone(), parser.parse(&contents, None).unwrap());
 
         // Get language, if it exists
@@ -428,9 +433,9 @@ impl LanguageServer for Backend {
                 .iter()
                 .map(|r| Regex::new(r).unwrap())
                 .collect();
-            language_retrieval_regexes.push(Regex::new(r#"queries/([^/]+)/[^/]+\.scm$"#).unwrap());
+            language_retrieval_regexes.push(Regex::new(r"queries/([^/]+)/[^/]+\.scm$").unwrap());
             language_retrieval_regexes
-                .push(Regex::new(r#"tree-sitter-([^/]+)/queries/[^/]+\.scm$"#).unwrap());
+                .push(Regex::new(r"tree-sitter-([^/]+)/queries/[^/]+\.scm$").unwrap());
             let mut captures = None;
             for re in language_retrieval_regexes {
                 if let Some(caps) = re.captures(uri.as_str()) {
@@ -501,7 +506,7 @@ impl LanguageServer for Backend {
 
         // Publish diagnostics
         if let (Some(tree), Some(symbols), Some(fields)) = (
-            self.ast_map.get(uri),
+            self.cst_map.get(uri),
             self.symbols_set_map.get(uri),
             self.fields_set_map.get(uri),
         ) {
@@ -563,7 +568,7 @@ impl LanguageServer for Backend {
         }
         let contents = rope.to_string();
         let result = {
-            let mut old_tree = self.ast_map.get_mut(uri).unwrap();
+            let mut old_tree = self.cst_map.get_mut(uri).unwrap();
 
             for edit in edits {
                 old_tree.edit(&edit);
@@ -573,7 +578,7 @@ impl LanguageServer for Backend {
         };
 
         if let Some(tree) = result {
-            *self.ast_map.get_mut(uri).unwrap() = tree.clone();
+            *self.cst_map.get_mut(uri).unwrap() = tree.clone();
             // Update diagnostics
             if let (Some(symbols), Some(fields)) =
                 (self.symbols_set_map.get(uri), self.fields_set_map.get(uri))
@@ -593,8 +598,8 @@ impl LanguageServer for Backend {
     async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
         let uri = &params.text_document_position.text_document.uri;
 
-        let Some(tree) = self.ast_map.get(uri) else {
-            warn!("No AST built for URI: {uri:?}");
+        let Some(tree) = self.cst_map.get(uri) else {
+            warn!("No CST built for URI: {uri:?}");
             return Ok(None);
         };
         let Some(rope) = self.document_map.get(uri) else {
@@ -632,8 +637,8 @@ impl LanguageServer for Backend {
 
     async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
         let uri = params.text_document_position.text_document.uri;
-        let Some(tree) = self.ast_map.get(&uri) else {
-            warn!("No AST built for URI: {uri:?}");
+        let Some(tree) = self.cst_map.get(&uri) else {
+            warn!("No CST built for URI: {uri:?}");
             return Ok(None);
         };
         let Some(rope) = self.document_map.get(&uri) else {
@@ -654,7 +659,7 @@ impl LanguageServer for Backend {
             .new_name
             .strip_prefix('@')
             .unwrap_or(params.new_name.as_str());
-        let identifier_pattern = Regex::new(r#"^[a-zA-Z0-9.\-_\$]+$"#).unwrap();
+        let identifier_pattern = Regex::new(r"^[a-zA-Z0-9.\-_\$]+$").unwrap();
         if !identifier_pattern.is_match(new_name) {
             return Err(jsonrpc::Error::invalid_params(
                 "New name is not a valid identifier",
@@ -711,8 +716,8 @@ impl LanguageServer for Backend {
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let uri = &params.text_document_position.text_document.uri;
 
-        let Some(tree) = self.ast_map.get(uri) else {
-            warn!("No AST built for URI: {uri:?}");
+        let Some(tree) = self.cst_map.get(uri) else {
+            warn!("No CST built for URI: {uri:?}");
             return Ok(None);
         };
         let Some(rope) = self.document_map.get(uri) else {
@@ -798,7 +803,7 @@ impl LanguageServer for Backend {
                 if parent_params && !seen.contains(&node_text) {
                     seen.insert(node_text.clone());
                     completion_items.push(CompletionItem {
-                        label: node_text.to_owned(),
+                        label: node_text.clone(),
                         kind: Some(CompletionItemKind::VARIABLE),
                         ..Default::default()
                     });
@@ -811,7 +816,7 @@ impl LanguageServer for Backend {
 
     async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
         let uri = params.text_document.uri;
-        let tree = match self.ast_map.get(&uri) {
+        let tree = match self.cst_map.get(&uri) {
             None => return Ok(None),
             Some(val) => val,
         };
@@ -861,7 +866,7 @@ impl LanguageServer for Backend {
             }
         }
 
-        let mut edits = vec!["".to_owned()];
+        let mut edits = vec![String::new()];
 
         format_iter(&rope, &tree.root_node(), &mut edits, &map, 0);
 
@@ -891,7 +896,7 @@ async fn main() {
     let (service, socket) = LspService::build(|client| Backend {
         client,
         document_map: DashMap::new(),
-        ast_map: DashMap::new(),
+        cst_map: DashMap::new(),
         symbols_set_map: DashMap::new(),
         symbols_vec_map: DashMap::new(),
         fields_set_map: DashMap::new(),
