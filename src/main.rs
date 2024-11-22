@@ -19,7 +19,8 @@ use tower_lsp::{
     lsp_types::{
         CompletionItem, CompletionItemKind, CompletionOptions, CompletionParams,
         CompletionResponse, DidChangeConfigurationParams, DidChangeTextDocumentParams,
-        DidOpenTextDocumentParams, DocumentChanges, DocumentFormattingParams, GotoDefinitionParams,
+        DidOpenTextDocumentParams, DocumentChanges, DocumentFormattingParams, DocumentHighlight,
+        DocumentHighlightKind, DocumentHighlightParams, GotoDefinitionParams,
         GotoDefinitionResponse, InitializeParams, InitializeResult, Location, MessageType, OneOf,
         OptionalVersionedTextDocumentIdentifier, Position, Range, ReferenceParams, RenameParams,
         ServerCapabilities, TextDocumentEdit, TextDocumentSyncCapability, TextDocumentSyncKind,
@@ -32,7 +33,7 @@ use util::{
     format_iter, get_current_capture_node, get_diagnostics, get_language, get_node_text,
     get_references, handle_predicate, lsp_position_to_byte_offset, lsp_position_to_ts_point,
     lsp_textdocchange_to_ts_inputedit, node_is_or_has_ancestor, ts_node_to_lsp_location,
-    TextProviderRope,
+    ts_node_to_lsp_range, TextProviderRope,
 };
 
 lazy_static! {
@@ -341,6 +342,7 @@ impl LanguageServer for Backend {
                     trigger_characters: Some(["@", "\"", "\\", "("].map(ToOwned::to_owned).into()),
                     ..CompletionOptions::default()
                 }),
+                document_highlight_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
             ..Default::default()
@@ -633,6 +635,92 @@ impl LanguageServer for Backend {
             .map(|node| ts_node_to_lsp_location(uri, &node, &rope))
             .collect(),
         ))
+    }
+
+    async fn document_highlight(
+        &self,
+        params: DocumentHighlightParams,
+    ) -> Result<Option<Vec<DocumentHighlight>>> {
+        let uri = &params.text_document_position_params.text_document.uri;
+
+        let Some(tree) = self.cst_map.get(uri) else {
+            warn!("No CST built for URI: {uri:?}");
+            return Ok(None);
+        };
+        let Some(rope) = self.document_map.get(uri) else {
+            warn!("No document built for URI: {uri:?}");
+            return Ok(None);
+        };
+        let cur_pos =
+            lsp_position_to_ts_point(params.text_document_position_params.position, &rope);
+
+        // Get the current node: if we are in a capture's identifier, move the current node to the
+        // entire capture
+        let current_node = tree
+            .root_node()
+            .named_descendant_for_point_range(cur_pos, cur_pos)
+            .map(|node| {
+                node.parent()
+                    .filter(|p| p.kind() == "capture")
+                    .unwrap_or(node)
+            })
+            .unwrap();
+
+        let capture_query = Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap();
+        let ident_query = Query::new(&QUERY_LANGUAGE, "(identifier) @name").unwrap();
+        let mut cursor = QueryCursor::new();
+        let provider = TextProviderRope(&rope);
+
+        let mut parser = Parser::new();
+        parser
+            .set_language(&QUERY_LANGUAGE)
+            .expect("Error setting language for Query parser");
+
+        if current_node.kind() == "capture" {
+            Ok(Some(
+                get_references(
+                    &tree.root_node(),
+                    &current_node,
+                    &capture_query,
+                    &mut cursor,
+                    &provider,
+                    &rope,
+                )
+                .map(|node| DocumentHighlight {
+                    kind: if node.parent().is_none_or(|p| p.kind() != "parameters") {
+                        Some(DocumentHighlightKind::WRITE)
+                    } else {
+                        Some(DocumentHighlightKind::READ)
+                    },
+                    range: ts_node_to_lsp_range(&node, &rope),
+                })
+                .collect(),
+            ))
+        } else if current_node.kind() == "identifier" {
+            Ok(Some(
+                cursor
+                    .matches(&ident_query, tree.root_node(), &provider)
+                    .map_deref(|match_| {
+                        match_.captures.iter().filter_map(|cap| {
+                            if cap.node.parent()?.kind() == current_node.parent()?.kind()
+                                && get_node_text(&cap.node, &rope)
+                                    == get_node_text(&current_node, &rope)
+                            {
+                                return Some(cap.node);
+                            }
+                            None
+                        })
+                    })
+                    .flatten()
+                    .map(|node| DocumentHighlight {
+                        kind: Some(DocumentHighlightKind::TEXT),
+                        range: ts_node_to_lsp_range(&node, &rope),
+                    })
+                    .collect(),
+            ))
+        } else {
+            Ok(None)
+        }
     }
 
     async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
