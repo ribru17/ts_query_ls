@@ -316,6 +316,7 @@ struct Options {
     language_retrieval_patterns: Option<Vec<String>>,
 }
 
+mod test;
 mod util;
 
 #[tower_lsp::async_trait]
