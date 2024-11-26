@@ -309,7 +309,7 @@ struct Backend {
     options: Arc<RwLock<Options>>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 struct Options {
     parser_install_directories: Option<Vec<String>>,
     parser_aliases: Option<BTreeMap<String, String>>,

@@ -1,31 +1,36 @@
 #[cfg(test)]
 mod tests {
     use lazy_static::lazy_static;
-    use std::sync::Arc;
+    use ropey::Rope;
+    use std::{collections::BTreeMap, sync::Arc};
+    use tree_sitter::Parser;
 
     use dashmap::DashMap;
     use std::sync::RwLock;
     use tower_lsp::{
         lsp_types::{
-            ClientCapabilities, DidOpenTextDocumentParams, InitializeParams, PartialResultParams,
-            Position, Range, ReferenceContext, ReferenceParams, TextDocumentIdentifier,
-            TextDocumentItem, TextDocumentPositionParams, Url, WorkDoneProgressParams,
+            ClientCapabilities, CompletionOptions, DidChangeConfigurationParams,
+            DidChangeTextDocumentParams, DidOpenTextDocumentParams, InitializeParams,
+            InitializeResult, OneOf, PartialResultParams, Position, Range, ReferenceContext,
+            ReferenceParams, ServerCapabilities, TextDocumentContentChangeEvent,
+            TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams,
+            TextDocumentSyncCapability, TextDocumentSyncKind, Url, VersionedTextDocumentIdentifier,
+            WorkDoneProgressParams,
         },
         LanguageServer, LspService,
     };
 
-    use tokio::sync::Mutex;
-
-    use crate::{Backend, Options};
+    use crate::{Backend, Options, QUERY_LANGUAGE};
 
     lazy_static! {
         static ref TEST_URI: Url = Url::parse("file:///tmp/test.scm").unwrap();
     }
 
-    /// Initializes a mock instance of `ts_query_ls`
-    /// The result is wrapped in a `tokio::sync::Mutex` for safe sharing
-    /// between threads
-    async fn initialize_test_server() -> Mutex<LspService<Backend>> {
+    async fn initialize_server(documents: &[(Url, &str)]) -> LspService<Backend> {
+        let mut parser = Parser::new();
+        parser
+            .set_language(&QUERY_LANGUAGE)
+            .expect("Error loading Query grammar");
         let options = Arc::new(RwLock::new(Options {
             parser_install_directories: None,
             parser_aliases: None,
@@ -33,8 +38,16 @@ mod tests {
         }));
         let (service, _socket) = LspService::build(|client| Backend {
             client,
-            document_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            document_map: DashMap::from_iter(
+                documents
+                    .iter()
+                    .map(|(uri, source)| (uri.clone(), Rope::from(*source))),
+            ),
+            cst_map: DashMap::from_iter(
+                documents
+                    .iter()
+                    .map(|(uri, source)| (uri.clone(), parser.parse(*source, None).unwrap())),
+            ),
             symbols_set_map: DashMap::new(),
             symbols_vec_map: DashMap::new(),
             fields_set_map: DashMap::new(),
@@ -43,41 +56,19 @@ mod tests {
         })
         .finish();
 
-        _ = service
+        service
             .inner()
             .initialize(InitializeParams {
-                capabilities: ClientCapabilities::default(),
+                capabilities: ClientCapabilities {
+                    ..Default::default()
+                },
                 root_uri: Some(Url::parse("file:///tmp/").unwrap()),
                 ..Default::default()
             })
             .await
-            .expect("Failed to initialize server");
-        service.into()
-    }
+            .unwrap();
 
-    /// Mocks the test server opening a text document with `contents`
-    async fn open_document(server: &mut Mutex<LspService<Backend>>, contents: &str) {
-        server
-            .get_mut()
-            .inner()
-            .did_open(DidOpenTextDocumentParams {
-                text_document: TextDocumentItem {
-                    uri: TEST_URI.clone(),
-                    language_id: String::from("query"),
-                    version: 0,
-                    text: contents.to_string(),
-                },
-            })
-            .await;
-        assert!(
-            server
-                .get_mut()
-                .inner()
-                .document_map
-                .get(&TEST_URI)
-                .is_some(),
-            "Failed to insert contents of mock document"
-        );
+        service
     }
 
     async fn test_capture_references(input: &str) {
@@ -181,10 +172,8 @@ mod tests {
         let cursor_position =
             cursor_position.expect("textDocument/references test must contain one <CURSOR> marker");
 
-        let mut server = initialize_test_server().await;
-        open_document(&mut server, &cleaned_input).await;
+        let server = initialize_server(&[(TEST_URI.clone(), cleaned_input.as_str())]).await;
         let found_refs = server
-            .get_mut()
             .inner()
             .references(ReferenceParams {
                 text_document_position: TextDocumentPositionParams {
@@ -301,4 +290,189 @@ mod tests {
         test_capture_references(src).await;
     }
     // TODO: Pull out more tests from other tree-sitter repos
+
+    #[tokio::test]
+    async fn test_server_initialize() {
+        // Arrange
+        let options = Arc::new(RwLock::new(Options {
+            parser_install_directories: None,
+            parser_aliases: None,
+            language_retrieval_patterns: None,
+        }));
+        let (service, _socket) = LspService::build(|client| Backend {
+            client,
+            document_map: DashMap::new(),
+            cst_map: DashMap::new(),
+            symbols_set_map: DashMap::new(),
+            symbols_vec_map: DashMap::new(),
+            fields_set_map: DashMap::new(),
+            fields_vec_map: DashMap::new(),
+            options,
+        })
+        .finish();
+
+        // Act
+        let resp = service
+            .inner()
+            .initialize(InitializeParams {
+                capabilities: ClientCapabilities {
+                    ..Default::default()
+                },
+                root_uri: Some(Url::parse("file:///tmp/").unwrap()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        // Assert
+        assert_eq!(
+            resp,
+            InitializeResult {
+                capabilities: ServerCapabilities {
+                    text_document_sync: Some(TextDocumentSyncCapability::Kind(
+                        TextDocumentSyncKind::INCREMENTAL,
+                    )),
+                    references_provider: Some(OneOf::Left(true)),
+                    rename_provider: Some(OneOf::Left(true)),
+                    definition_provider: Some(OneOf::Left(true)),
+                    document_formatting_provider: Some(OneOf::Left(true)),
+                    completion_provider: Some(CompletionOptions {
+                        trigger_characters: Some(
+                            ["@", "\"", "\\", "("].map(ToOwned::to_owned).into()
+                        ),
+                        ..CompletionOptions::default()
+                    }),
+                    document_highlight_provider: Some(OneOf::Left(true)),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        )
+    }
+
+    #[tokio::test]
+    async fn test_server_did_open() {
+        // Arrange
+        let service = initialize_server(&[]).await;
+        let source = r#"
+        "[" @cap
+        "#;
+
+        // Act
+        service
+            .inner()
+            .did_open(DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri: TEST_URI.clone(),
+                    language_id: String::from("query"),
+                    version: 0,
+                    text: String::from(source),
+                },
+            })
+            .await;
+
+        // Assert
+        let doc_rope = service.inner().document_map.get(&TEST_URI);
+        assert!(doc_rope.is_some());
+        let doc_rope = doc_rope.unwrap();
+        assert_eq!(doc_rope.to_string(), source);
+    }
+
+    #[tokio::test]
+    async fn test_server_did_change_configuration() {
+        // Arrange
+        let service = initialize_server(&[]).await;
+
+        // Act
+        service
+            .inner()
+            .did_change_configuration(DidChangeConfigurationParams {
+                settings: serde_json::from_str(
+                    r#"
+                    {
+                      "parser_aliases": {
+                        "ecma": "javascript",
+                        "jsx": "javascript",
+                        "foolang": "barlang"
+                      }
+                    }
+                    "#,
+                )
+                .unwrap(),
+            })
+            .await;
+
+        // Assert
+        let options = service.inner().options.read();
+        assert!(options.is_ok());
+        let options = options.unwrap();
+        assert_eq!(
+            *options,
+            Options {
+                parser_aliases: Some(BTreeMap::from([
+                    ("ecma".to_string(), "javascript".to_string()),
+                    ("jsx".to_string(), "javascript".to_string()),
+                    ("foolang".to_string(), "barlang".to_string())
+                ])),
+                parser_install_directories: None,
+                language_retrieval_patterns: None
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_server_did_change() {
+        // Arrange
+        let source = r#"(node_name) @hello
+";" @semicolon"#;
+        let service = initialize_server(&[(TEST_URI.clone(), source)]).await;
+
+        // Act
+        let make_text_document_content_change =
+            |text: &str, start: (u32, u32), end: (u32, u32)| -> TextDocumentContentChangeEvent {
+                TextDocumentContentChangeEvent {
+                    range: Some(Range {
+                        start: Position {
+                            line: start.0,
+                            character: start.1,
+                        },
+                        end: Position {
+                            line: end.0,
+                            character: end.1,
+                        },
+                    }),
+                    range_length: None,
+                    text: String::from(text),
+                }
+            };
+        service
+            .inner()
+            .did_change(DidChangeTextDocumentParams {
+                text_document: VersionedTextDocumentIdentifier {
+                    uri: TEST_URI.clone(),
+                    version: 1,
+                },
+                content_changes: vec![
+                    make_text_document_content_change("goodbye", (0, 13), (0, 18)),
+                    make_text_document_content_change("identifier", (0, 1), (0, 10)),
+                    make_text_document_content_change("punctuation.delimiter", (1, 5), (1, 14)),
+                ],
+            })
+            .await;
+
+        // Assert
+        let doc = service.inner().document_map.get(&TEST_URI);
+        let tree = service.inner().cst_map.get(&TEST_URI);
+        let new_source = r#"(identifier) @goodbye
+";" @punctuation.delimiter"#;
+        assert!(doc.is_some());
+        let doc = doc.unwrap();
+        assert_eq!(doc.to_string(), new_source);
+        assert!(tree.is_some());
+        let tree = tree.unwrap();
+        assert_eq!(
+            tree.root_node().utf8_text(new_source.as_bytes()).unwrap(),
+            new_source
+        );
+    }
 }
