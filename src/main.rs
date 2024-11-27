@@ -37,6 +37,21 @@ use util::{
 };
 
 lazy_static! {
+    static ref SERVER_CAPABILITIES: ServerCapabilities = ServerCapabilities {
+        text_document_sync: Some(TextDocumentSyncCapability::Kind(
+            TextDocumentSyncKind::INCREMENTAL,
+        )),
+        references_provider: Some(OneOf::Left(true)),
+        rename_provider: Some(OneOf::Left(true)),
+        definition_provider: Some(OneOf::Left(true)),
+        document_formatting_provider: Some(OneOf::Left(true)),
+        completion_provider: Some(CompletionOptions {
+            trigger_characters: Some(["@", "\"", "\\", "("].map(ToOwned::to_owned).into()),
+            ..CompletionOptions::default()
+        }),
+        document_highlight_provider: Some(OneOf::Left(true)),
+        ..Default::default()
+    };
     static ref ENGINE: Engine = Engine::default();
     static ref QUERY_LANGUAGE: Language = tree_sitter_query::LANGUAGE.into();
     static ref FORMAT_QUERY: Query = Query::new(
@@ -331,21 +346,7 @@ impl LanguageServer for Backend {
         }
 
         Ok(InitializeResult {
-            capabilities: ServerCapabilities {
-                text_document_sync: Some(TextDocumentSyncCapability::Kind(
-                    TextDocumentSyncKind::INCREMENTAL,
-                )),
-                references_provider: Some(OneOf::Left(true)),
-                rename_provider: Some(OneOf::Left(true)),
-                definition_provider: Some(OneOf::Left(true)),
-                document_formatting_provider: Some(OneOf::Left(true)),
-                completion_provider: Some(CompletionOptions {
-                    trigger_characters: Some(["@", "\"", "\\", "("].map(ToOwned::to_owned).into()),
-                    ..CompletionOptions::default()
-                }),
-                document_highlight_provider: Some(OneOf::Left(true)),
-                ..Default::default()
-            },
+            capabilities: SERVER_CAPABILITIES.clone(),
             ..Default::default()
         })
     }

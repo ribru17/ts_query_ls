@@ -9,18 +9,16 @@ mod tests {
     use std::sync::RwLock;
     use tower_lsp::{
         lsp_types::{
-            ClientCapabilities, CompletionOptions, DidChangeConfigurationParams,
-            DidChangeTextDocumentParams, DidOpenTextDocumentParams, InitializeParams,
-            InitializeResult, OneOf, PartialResultParams, Position, Range, ReferenceContext,
-            ReferenceParams, ServerCapabilities, TextDocumentContentChangeEvent,
-            TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams,
-            TextDocumentSyncCapability, TextDocumentSyncKind, Url, VersionedTextDocumentIdentifier,
-            WorkDoneProgressParams,
+            ClientCapabilities, DidChangeConfigurationParams, DidChangeTextDocumentParams,
+            DidOpenTextDocumentParams, InitializeParams, InitializeResult, PartialResultParams,
+            Position, Range, ReferenceContext, ReferenceParams, TextDocumentContentChangeEvent,
+            TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, Url,
+            VersionedTextDocumentIdentifier, WorkDoneProgressParams,
         },
         LanguageServer, LspService,
     };
 
-    use crate::{Backend, Options, QUERY_LANGUAGE};
+    use crate::{Backend, Options, QUERY_LANGUAGE, SERVER_CAPABILITIES};
 
     lazy_static! {
         static ref TEST_URI: Url = Url::parse("file:///tmp/test.scm").unwrap();
@@ -330,23 +328,7 @@ mod tests {
         assert_eq!(
             resp,
             InitializeResult {
-                capabilities: ServerCapabilities {
-                    text_document_sync: Some(TextDocumentSyncCapability::Kind(
-                        TextDocumentSyncKind::INCREMENTAL,
-                    )),
-                    references_provider: Some(OneOf::Left(true)),
-                    rename_provider: Some(OneOf::Left(true)),
-                    definition_provider: Some(OneOf::Left(true)),
-                    document_formatting_provider: Some(OneOf::Left(true)),
-                    completion_provider: Some(CompletionOptions {
-                        trigger_characters: Some(
-                            ["@", "\"", "\\", "("].map(ToOwned::to_owned).into()
-                        ),
-                        ..CompletionOptions::default()
-                    }),
-                    document_highlight_provider: Some(OneOf::Left(true)),
-                    ..Default::default()
-                },
+                capabilities: SERVER_CAPABILITIES.clone(),
                 ..Default::default()
             }
         );
