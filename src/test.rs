@@ -405,30 +405,83 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_server_did_change() {
-        // Arrange
+    async fn it_handles_server_did_change_0() {
         let source = r#"(node_name) @hello
 ";" @semicolon"#;
-        let service = initialize_server(&[(TEST_URI.clone(), source)]).await;
+        let edits = vec![
+            TestEdit::new("goodbye", (0, 13), (0, 18)),
+            TestEdit::new("identifier", (0, 1), (0, 10)),
+            TestEdit::new("punctuation.delimiter", (1, 5), (1, 14)),
+        ];
+        let expected = r#"(identifier) @goodbye
+";" @punctuation.delimiter"#;
+        test_server_did_change(source, expected, &edits).await;
+    }
+
+    #[tokio::test]
+    async fn it_handles_server_did_change_1() {
+        let source = r#"; Some comment with emojis 🚀🛳️🫡
+(node_name) @hello
+";" @semicolon"#;
+
+        let expected = r#"; Some comment with emojis 🚀🛳️🫡
+(identifier) @goodbye
+";" @punctuation.delimiter"#;
+        let edits = vec![
+            TestEdit::new("goodbye", (1, 13), (1, 18)),
+            TestEdit::new("identifier", (1, 1), (1, 10)),
+            TestEdit::new("punctuation.delimiter", (2, 5), (2, 14)),
+        ];
+        test_server_did_change(source, expected, &edits).await;
+    }
+
+    #[derive(Debug, Clone)]
+    struct TestEdit {
+        pub text: String,
+        pub start: Position,
+        pub end: Position,
+    }
+
+    impl TestEdit {
+        fn new(text: &str, start: (u32, u32), end: (u32, u32)) -> Self {
+            Self {
+                text: text.to_string(),
+                start: Position {
+                    line: start.0,
+                    character: start.1,
+                },
+                end: Position {
+                    line: end.0,
+                    character: end.1,
+                },
+            }
+        }
+    }
+
+    impl From<&TestEdit> for TextDocumentContentChangeEvent {
+        fn from(val: &TestEdit) -> Self {
+            TextDocumentContentChangeEvent {
+                range: Some(Range {
+                    start: Position {
+                        line: val.start.line,
+                        character: val.start.character,
+                    },
+                    end: Position {
+                        line: val.end.line,
+                        character: val.end.character,
+                    },
+                }),
+                range_length: None,
+                text: val.text.clone(),
+            }
+        }
+    }
+
+    async fn test_server_did_change(original: &str, expected: &str, edits: &[TestEdit]) {
+        // Arrange
+        let service = initialize_server(&[(TEST_URI.clone(), original)]).await;
 
         // Act
-        let make_text_document_content_change =
-            |text: &str, start: (u32, u32), end: (u32, u32)| -> TextDocumentContentChangeEvent {
-                TextDocumentContentChangeEvent {
-                    range: Some(Range {
-                        start: Position {
-                            line: start.0,
-                            character: start.1,
-                        },
-                        end: Position {
-                            line: end.0,
-                            character: end.1,
-                        },
-                    }),
-                    range_length: None,
-                    text: String::from(text),
-                }
-            };
         service
             .inner()
             .did_change(DidChangeTextDocumentParams {
@@ -436,27 +489,28 @@ mod tests {
                     uri: TEST_URI.clone(),
                     version: 1,
                 },
-                content_changes: vec![
-                    make_text_document_content_change("goodbye", (0, 13), (0, 18)),
-                    make_text_document_content_change("identifier", (0, 1), (0, 10)),
-                    make_text_document_content_change("punctuation.delimiter", (1, 5), (1, 14)),
-                ],
+                content_changes: edits
+                    .iter()
+                    .map(Into::<TextDocumentContentChangeEvent>::into)
+                    .collect(),
             })
             .await;
 
         // Assert
-        let doc = service.inner().document_map.get(&TEST_URI);
-        let tree = service.inner().cst_map.get(&TEST_URI);
-        let new_source = r#"(identifier) @goodbye
-";" @punctuation.delimiter"#;
-        assert!(doc.is_some());
-        let doc = doc.unwrap();
-        assert_eq!(doc.to_string(), new_source);
-        assert!(tree.is_some());
-        let tree = tree.unwrap();
+        let doc = service
+            .inner()
+            .document_map
+            .get(&TEST_URI)
+            .expect("Failed to fetch document from test server document map");
+        let tree = service
+            .inner()
+            .cst_map
+            .get(&TEST_URI)
+            .expect("Failed to fetch tree from test server CST map");
+        assert_eq!(doc.to_string(), expected);
         assert_eq!(
-            tree.root_node().utf8_text(new_source.as_bytes()).unwrap(),
-            new_source
+            tree.root_node().utf8_text(expected.as_bytes()).unwrap(),
+            expected
         );
     }
 }
