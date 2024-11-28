@@ -10,10 +10,11 @@ mod tests {
     use tower_lsp::{
         lsp_types::{
             ClientCapabilities, DidChangeConfigurationParams, DidChangeTextDocumentParams,
-            DidOpenTextDocumentParams, InitializeParams, InitializeResult, PartialResultParams,
-            Position, Range, ReferenceContext, ReferenceParams, TextDocumentContentChangeEvent,
-            TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, Url,
-            VersionedTextDocumentIdentifier, WorkDoneProgressParams,
+            DidOpenTextDocumentParams, DocumentChanges, InitializeParams, InitializeResult, OneOf,
+            OptionalVersionedTextDocumentIdentifier, PartialResultParams, Position, Range,
+            ReferenceContext, ReferenceParams, RenameParams, TextDocumentContentChangeEvent,
+            TextDocumentEdit, TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams,
+            TextEdit, Url, VersionedTextDocumentIdentifier, WorkDoneProgressParams, WorkspaceEdit,
         },
         LanguageServer, LspService,
     };
@@ -335,7 +336,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_server_did_open() {
+    async fn test_server_did_open_document() {
         // Arrange
         let service = initialize_server(&[]).await;
         let source = r#"
@@ -460,7 +461,7 @@ mod tests {
 
     impl From<&TestEdit> for TextDocumentContentChangeEvent {
         fn from(val: &TestEdit) -> Self {
-            TextDocumentContentChangeEvent {
+            Self {
                 range: Some(Range {
                     start: Position {
                         line: val.start.line,
@@ -512,5 +513,125 @@ mod tests {
             tree.root_node().utf8_text(expected.as_bytes()).unwrap(),
             expected
         );
+    }
+
+    #[tokio::test]
+    async fn it_renames_captures_0() {
+        let source = r#"((identifier) @constant
+ (#match? @cons<CURSOR>tant "^[A-Z][A-Z\\d_]*$"))"#;
+        let expected = r#"((identifier) @invariant
+ (#match? @invariant "^[A-Z][A-Z\\d_]*$"))"#;
+        test_server_rename(source, expected, "invariant").await;
+    }
+
+    #[tokio::test]
+    async fn it_renames_captures_1() {
+        let source = r#"((identifier) @constant
+ (#match? @cons<CURSOR>tant "^[A-Z][A-Z\\d_]*$"))"#;
+        let expected = r#"((identifier) @const
+ (#match? @const "^[A-Z][A-Z\\d_]*$"))"#;
+        test_server_rename(source, expected, "const").await;
+    }
+
+    async fn test_server_rename(original: &str, expected: &str, new_name: &str) {
+        // Arrange
+        let mut cursor_position: Option<Position> = None;
+        for (line_num, line) in original.lines().enumerate() {
+            if let Some((cursor_idx, _)) = line.match_indices("<CURSOR>").next() {
+                assert!(
+                    cursor_position.is_none(),
+                    "Only one <CURSOR> marker supported for a test input"
+                );
+                cursor_position = Some(Position {
+                    line: line_num as u32,
+                    character: cursor_idx as u32,
+                });
+            }
+        }
+        let cursor_position =
+            cursor_position.expect("Expected one <CURSOR> marker in test input, found none");
+        let mut cleaned_input = original.replace("<CURSOR>", "");
+
+        let service = initialize_server(&[(TEST_URI.clone(), &cleaned_input)]).await;
+
+        // Act
+        let rename_edits = service
+            .inner()
+            .rename(RenameParams {
+                text_document_position: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier {
+                        uri: TEST_URI.clone(),
+                    },
+                    position: cursor_position,
+                },
+                new_name: new_name.to_string(),
+                work_done_progress_params: WorkDoneProgressParams {
+                    work_done_token: None,
+                },
+            })
+            .await
+            .map_err(|e| format!("textDocument/rename call returned error: {e}"))
+            .unwrap();
+
+        // apply the edits returned by the server
+        {
+            let translate_range = |range: &Range, source: &str| -> (usize, usize) {
+                let n_lines = source.lines().count();
+
+                assert!(range.start.line as usize <= n_lines);
+                assert!(range.end.line as usize <= n_lines);
+                let start_line_idx: usize = source
+                    .lines()
+                    .take(range.start.line as usize)
+                    .map(|l| l.len() + 1) // + 1 to account for '\n'
+                    .sum();
+                let start = start_line_idx + range.start.character as usize;
+                let end_line_idx: usize = source
+                    .lines()
+                    .take(range.end.line as usize)
+                    .map(|l| l.len() + 1) // + 1 to account for '\n'
+                    .sum();
+                let end = end_line_idx + range.end.character as usize;
+                (start, end)
+            };
+            match rename_edits {
+                None => {} // No edits
+                Some(WorkspaceEdit {
+                    document_changes: Some(DocumentChanges::Edits(edits)),
+                    changes: None,
+                    change_annotations: None,
+                }) => {
+                    for edit in edits {
+                        match edit {
+                            TextDocumentEdit {
+                                text_document:
+                                    OptionalVersionedTextDocumentIdentifier { uri, version: _ },
+                                edits: inner_edits,
+                            } if inner_edits.len() == 1 => {
+                                assert!(
+                                    uri == *TEST_URI,
+                                    "Recieved edit for {uri}, expected {}",
+                                    TEST_URI.clone()
+                                );
+                                if let OneOf::Left(TextEdit { range, new_text }) = &inner_edits[0] {
+                                    let (start, end) = translate_range(range, &cleaned_input);
+                                    cleaned_input.replace_range(start..end, new_text);
+                                } else {
+                                    panic!(
+                                        "Untested rename edit format returned: {:#?}",
+                                        inner_edits[0]
+                                    );
+                                }
+                            }
+                            other => panic!("Untested rename edit format returned: {other:#?}"),
+                        }
+                    }
+                }
+                other => panic!("Untested rename edit format returned: {other:#?}"),
+            }
+        }
+
+        // Assert
+        assert_eq!(&cleaned_input, expected);
     }
 }
