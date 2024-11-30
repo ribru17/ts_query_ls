@@ -1,20 +1,29 @@
 #[cfg(test)]
 mod tests {
+    use serde_json::to_value;
+
     use lazy_static::lazy_static;
     use ropey::Rope;
     use std::{collections::BTreeMap, sync::Arc};
     use tree_sitter::Parser;
 
+    use tower::{Service, ServiceExt};
+
     use dashmap::DashMap;
     use std::sync::RwLock;
     use tower_lsp::{
+        jsonrpc::{Request, Response},
         lsp_types::{
-            ClientCapabilities, DidChangeConfigurationParams, DidChangeTextDocumentParams,
-            DidOpenTextDocumentParams, DocumentChanges, InitializeParams, InitializeResult, OneOf,
-            OptionalVersionedTextDocumentIdentifier, PartialResultParams, Position, Range,
-            ReferenceContext, ReferenceParams, RenameParams, TextDocumentContentChangeEvent,
-            TextDocumentEdit, TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams,
-            TextEdit, Url, VersionedTextDocumentIdentifier, WorkDoneProgressParams, WorkspaceEdit,
+            notification::{DidChangeConfiguration, DidChangeTextDocument, DidOpenTextDocument},
+            request::Initialize,
+            ClientCapabilities, CompletionOptions, DidChangeConfigurationParams,
+            DidChangeTextDocumentParams, DidOpenTextDocumentParams, DocumentChanges,
+            InitializeParams, InitializeResult, OneOf, OptionalVersionedTextDocumentIdentifier,
+            PartialResultParams, Position, Range, ReferenceContext, ReferenceParams, RenameParams,
+            ServerCapabilities, TextDocumentContentChangeEvent, TextDocumentEdit,
+            TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams,
+            TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
+            VersionedTextDocumentIdentifier, WorkDoneProgressParams, WorkspaceEdit,
         },
         LanguageServer, LspService,
     };
@@ -23,6 +32,34 @@ mod tests {
 
     lazy_static! {
         static ref TEST_URI: Url = Url::parse("file:///tmp/test.scm").unwrap();
+    }
+
+    // An equivalent function is provided but it is private
+    fn lsp_request_to_jsonrpc_request<R>(params: R::Params) -> Request
+    where
+        R: tower_lsp::lsp_types::request::Request,
+    {
+        Request::build(R::METHOD)
+            // Always test with id of 1 for simplicity
+            .id(1)
+            .params(to_value(params).unwrap())
+            .finish()
+    }
+
+    fn lsp_notification_to_jsonrpc_request<R>(params: R::Params) -> Request
+    where
+        R: tower_lsp::lsp_types::notification::Notification,
+    {
+        Request::build(R::METHOD)
+            .params(to_value(params).unwrap())
+            .finish()
+    }
+
+    fn lsp_response_to_jsonrpc_response<R>(params: R::Result) -> Response
+    where
+        R: tower_lsp::lsp_types::request::Request,
+    {
+        Response::from_ok(1.into(), to_value(params).unwrap())
     }
 
     /// Initialize a test server, populating it with fake documents denoted by (uri, text) pairs.
@@ -36,7 +73,7 @@ mod tests {
             parser_aliases: None,
             language_retrieval_patterns: None,
         }));
-        let (service, _socket) = LspService::build(|client| Backend {
+        let (mut service, _socket) = LspService::build(|client| Backend {
             client,
             document_map: DashMap::from_iter(
                 documents
@@ -57,14 +94,16 @@ mod tests {
         .finish();
 
         service
-            .inner()
-            .initialize(InitializeParams {
-                capabilities: ClientCapabilities {
+            .ready()
+            .await
+            .unwrap()
+            .call(lsp_request_to_jsonrpc_request::<Initialize>(
+                InitializeParams {
+                    capabilities: ClientCapabilities::default(),
+                    root_uri: Some(Url::parse("file:///tmp/").unwrap()),
                     ..Default::default()
                 },
-                root_uri: Some(Url::parse("file:///tmp/").unwrap()),
-                ..Default::default()
-            })
+            ))
             .await
             .unwrap();
 
@@ -244,24 +283,24 @@ mod tests {
     /*
      *  tree-sitter-c queries
      */
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn it_gives_references_for_captures_0() {
         let src = "(identifier) <REF>@variab<CURSOR>le";
         test_capture_references(src).await;
     }
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn it_gives_references_for_captures_1() {
         let src = r#"((identifier) <REF>@constant
         (#match? <REF>@c<CURSOR>onstant "^[A-Z][A-Z\\d_]*$"))"#;
         test_capture_references(src).await;
     }
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn it_gives_references_for_captures_2() {
         let src =
             r"(type_definition declarator: (type_identifier) @name) <REF>@defin<CURSOR>ition.type";
         test_capture_references(src).await;
     }
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn it_gives_references_for_captures_3() {
         let src = r"(call_expression
         function: (identifier) <REF>@<CURSOR>function)";
@@ -271,7 +310,7 @@ mod tests {
     /*
      * Other
      */
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn it_gives_references_for_captures_4() {
         let src = r#"; html(`...`), html`...`, sql(`...`), etc.
     (call_expression
@@ -292,15 +331,16 @@ mod tests {
     }
     // TODO: Pull out more tests from other tree-sitter repos
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_server_initialize() {
+        use tower::ServiceExt;
         // Arrange
         let options = Arc::new(RwLock::new(Options {
             parser_install_directories: None,
             parser_aliases: None,
             language_retrieval_patterns: None,
         }));
-        let (service, _socket) = LspService::build(|client| Backend {
+        let (mut service, _socket) = LspService::new(|client| Backend {
             client,
             document_map: DashMap::new(),
             cst_map: DashMap::new(),
@@ -309,52 +349,60 @@ mod tests {
             fields_set_map: DashMap::new(),
             fields_vec_map: DashMap::new(),
             options,
-        })
-        .finish();
+        });
 
         // Act
         let resp = service
-            .inner()
-            .initialize(InitializeParams {
-                capabilities: ClientCapabilities {
+            .ready()
+            .await
+            .unwrap()
+            .call(lsp_request_to_jsonrpc_request::<Initialize>(
+                InitializeParams {
+                    capabilities: ClientCapabilities::default(),
+                    root_uri: Some(Url::parse("file:///tmp/").unwrap()),
                     ..Default::default()
                 },
-                root_uri: Some(Url::parse("file:///tmp/").unwrap()),
-                ..Default::default()
-            })
+            ))
             .await
             .unwrap();
 
         // Assert
         assert_eq!(
             resp,
-            InitializeResult {
-                capabilities: SERVER_CAPABILITIES.clone(),
-                ..Default::default()
-            }
+            Some(lsp_response_to_jsonrpc_response::<Initialize>(
+                InitializeResult {
+                    capabilities: SERVER_CAPABILITIES.clone(),
+                    ..Default::default()
+                }
+            ))
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_server_did_open_document() {
         // Arrange
-        let service = initialize_server(&[]).await;
+        let mut service = initialize_server(&[]).await;
         let source = r#"
         "[" @cap
         "#;
 
         // Act
         service
-            .inner()
-            .did_open(DidOpenTextDocumentParams {
-                text_document: TextDocumentItem {
-                    uri: TEST_URI.clone(),
-                    language_id: String::from("query"),
-                    version: 0,
-                    text: String::from(source),
+            .ready()
+            .await
+            .unwrap()
+            .call(lsp_notification_to_jsonrpc_request::<DidOpenTextDocument>(
+                DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: TEST_URI.clone(),
+                        language_id: String::from("query"),
+                        version: 0,
+                        text: String::from(source),
+                    },
                 },
-            })
-            .await;
+            ))
+            .await
+            .unwrap();
 
         // Assert
         let doc_rope = service.inner().document_map.get(&TEST_URI);
@@ -363,17 +411,21 @@ mod tests {
         assert_eq!(doc_rope.to_string(), source);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_server_did_change_configuration() {
         // Arrange
-        let service = initialize_server(&[]).await;
+        let mut service = initialize_server(&[]).await;
 
         // Act
         service
-            .inner()
-            .did_change_configuration(DidChangeConfigurationParams {
-                settings: serde_json::from_str(
-                    r#"
+            .ready()
+            .await
+            .unwrap()
+            .call(
+                lsp_notification_to_jsonrpc_request::<DidChangeConfiguration>(
+                    DidChangeConfigurationParams {
+                        settings: serde_json::from_str(
+                            r#"
                     {
                       "parser_aliases": {
                         "ecma": "javascript",
@@ -382,10 +434,13 @@ mod tests {
                       }
                     }
                     "#,
-                )
-                .unwrap(),
-            })
-            .await;
+                        )
+                        .unwrap(),
+                    },
+                ),
+            )
+            .await
+            .unwrap();
 
         // Assert
         let options = service.inner().options.read();
@@ -405,7 +460,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn it_handles_server_did_change_0() {
         let source = r#"(node_name) @hello
 ";" @semicolon"#;
@@ -419,7 +474,7 @@ mod tests {
         test_server_did_change(source, expected, &edits).await;
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn it_handles_server_did_change_1() {
         let source = r#"; Some comment with emojis 🚀🛳️🫡
 (node_name) @hello
@@ -480,42 +535,45 @@ mod tests {
 
     async fn test_server_did_change(original: &str, expected: &str, edits: &[TestEdit]) {
         // Arrange
-        let service = initialize_server(&[(TEST_URI.clone(), original)]).await;
+        let mut service = initialize_server(&[(TEST_URI.clone(), original)]).await;
 
         // Act
         service
-            .inner()
-            .did_change(DidChangeTextDocumentParams {
-                text_document: VersionedTextDocumentIdentifier {
-                    uri: TEST_URI.clone(),
-                    version: 1,
-                },
-                content_changes: edits
-                    .iter()
-                    .map(Into::<TextDocumentContentChangeEvent>::into)
-                    .collect(),
-            })
-            .await;
+            .ready()
+            .await
+            .unwrap()
+            .call(
+                lsp_notification_to_jsonrpc_request::<DidChangeTextDocument>(
+                    DidChangeTextDocumentParams {
+                        text_document: VersionedTextDocumentIdentifier {
+                            uri: TEST_URI.clone(),
+                            version: 1,
+                        },
+                        content_changes: edits
+                            .iter()
+                            .map(Into::<TextDocumentContentChangeEvent>::into)
+                            .collect(),
+                    },
+                ),
+            )
+            .await
+            .unwrap();
 
         // Assert
-        let doc = service
-            .inner()
-            .document_map
-            .get(&TEST_URI)
-            .expect("Failed to fetch document from test server document map");
-        let tree = service
-            .inner()
-            .cst_map
-            .get(&TEST_URI)
-            .expect("Failed to fetch tree from test server CST map");
+        let doc = service.inner().document_map.get(&TEST_URI);
+        let tree = service.inner().cst_map.get(&TEST_URI);
+        assert!(doc.is_some());
+        let doc = doc.unwrap();
         assert_eq!(doc.to_string(), expected);
+        assert!(tree.is_some());
+        let tree = tree.unwrap();
         assert_eq!(
             tree.root_node().utf8_text(expected.as_bytes()).unwrap(),
             expected
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn it_renames_captures_0() {
         let source = r#"((identifier) @constant
  (#match? @cons<CURSOR>tant "^[A-Z][A-Z\\d_]*$"))"#;
@@ -524,7 +582,7 @@ mod tests {
         test_server_rename(source, expected, "invariant").await;
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn it_renames_captures_1() {
         let source = r#"((identifier) @constant
  (#match? @cons<CURSOR>tant "^[A-Z][A-Z\\d_]*$"))"#;
