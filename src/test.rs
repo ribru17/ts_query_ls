@@ -500,37 +500,6 @@ mod tests {
         );
     }
 
-    #[tokio::test(flavor = "current_thread")]
-    async fn it_handles_server_did_change_0() {
-        let source = r#"(node_name) @hello
-";" @semicolon"#;
-        let edits = vec![
-            TestEdit::new("goodbye", (0, 13), (0, 18)),
-            TestEdit::new("identifier", (0, 1), (0, 10)),
-            TestEdit::new("punctuation.delimiter", (1, 5), (1, 14)),
-        ];
-        let expected = r#"(identifier) @goodbye
-";" @punctuation.delimiter"#;
-        test_server_did_change(source, expected, &edits).await;
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn it_handles_server_did_change_1() {
-        let source = r#"; Some comment with emojis 🚀🛳️🫡
-(node_name) @hello
-";" @semicolon"#;
-
-        let expected = r#"; Some comment with emojis 🚀🛳️🫡
-(identifier) @goodbye
-";" @punctuation.delimiter"#;
-        let edits = vec![
-            TestEdit::new("goodbye", (1, 13), (1, 18)),
-            TestEdit::new("identifier", (1, 1), (1, 10)),
-            TestEdit::new("punctuation.delimiter", (2, 5), (2, 14)),
-        ];
-        test_server_did_change(source, expected, &edits).await;
-    }
-
     #[derive(Debug, Clone)]
     struct TestEdit {
         pub text: String,
@@ -574,7 +543,37 @@ mod tests {
         }
     }
 
-    async fn test_server_did_change(original: &str, expected: &str, edits: &[TestEdit]) {
+    #[rstest]
+    #[case(
+        r#"(node_name) @hello
+";" @semicolon"#,
+        r#"(identifier) @goodbye
+";" @punctuation.delimiter"#,
+        &[
+            TestEdit::new("goodbye", (0, 13), (0, 18)),
+            TestEdit::new("identifier", (0, 1), (0, 10)),
+            TestEdit::new("punctuation.delimiter", (1, 5), (1, 14)),
+        ]
+    )]
+    #[case(
+        r#"; Some comment with emojis 🚀🛳️🫡
+(node_name) @hello
+";" @semicolon"#,
+        r#"; Some comment with emojis 🚀🛳️🫡
+(identifier) @goodbye
+";" @punctuation.delimiter"#,
+        &[
+            TestEdit::new("goodbye", (1, 13), (1, 18)),
+            TestEdit::new("identifier", (1, 1), (1, 10)),
+            TestEdit::new("punctuation.delimiter", (2, 5), (2, 14)),
+        ]
+    )]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_server_did_change(
+        #[case] original: &str,
+        #[case] expected: &str,
+        #[case] edits: &[TestEdit],
+    ) {
         // Arrange
         let mut service = initialize_server(&[(TEST_URI.clone(), original)]).await;
 
