@@ -17,14 +17,14 @@ mod tests {
         jsonrpc::{Request, Response},
         lsp_types::{
             notification::{DidChangeConfiguration, DidChangeTextDocument, DidOpenTextDocument},
-            request::{Initialize, References, Rename},
+            request::{Formatting, Initialize, References, Rename},
             ClientCapabilities, DidChangeConfigurationParams, DidChangeTextDocumentParams,
-            DidOpenTextDocumentParams, DocumentChanges, InitializeParams, InitializeResult,
-            Location, OneOf, OptionalVersionedTextDocumentIdentifier, PartialResultParams,
-            Position, Range, ReferenceContext, ReferenceParams, RenameParams,
-            TextDocumentContentChangeEvent, TextDocumentEdit, TextDocumentIdentifier,
-            TextDocumentItem, TextDocumentPositionParams, TextEdit, Url,
-            VersionedTextDocumentIdentifier, WorkDoneProgressParams, WorkspaceEdit,
+            DidOpenTextDocumentParams, DocumentChanges, DocumentFormattingParams,
+            FormattingOptions, InitializeParams, InitializeResult, Location, OneOf,
+            OptionalVersionedTextDocumentIdentifier, PartialResultParams, Position, Range,
+            ReferenceContext, ReferenceParams, RenameParams, TextDocumentContentChangeEvent,
+            TextDocumentEdit, TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams,
+            TextEdit, Url, VersionedTextDocumentIdentifier, WorkDoneProgressParams, WorkspaceEdit,
         },
         LspService,
     };
@@ -569,6 +569,79 @@ function: (identifier) @function)",
         assert_eq!(
             rename_edits,
             Some(lsp_response_to_jsonrpc_response::<Rename>(ws_edit))
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_server_formatting() {
+        // Arrange
+        let mut service = initialize_server(&[(
+            TEST_URI.clone(),
+            r"(    node   
+            )         @cap                 
+;;;; comment     ",
+        )])
+        .await;
+
+        // Act
+        let delta = service
+            .ready()
+            .await
+            .unwrap()
+            .call(lsp_request_to_jsonrpc_request::<Formatting>(
+                DocumentFormattingParams {
+                    text_document: TextDocumentIdentifier {
+                        uri: TEST_URI.clone(),
+                    },
+                    work_done_progress_params: WorkDoneProgressParams::default(),
+                    options: FormattingOptions::default(),
+                },
+            ))
+            .await
+            .unwrap();
+        let mut edits =
+            serde_json::from_value::<Option<Vec<TextEdit>>>(delta.unwrap().into_parts().1.unwrap());
+        edits.as_mut().unwrap().as_mut().unwrap().sort_by(|a, b| {
+            let range_a = a.range;
+            let range_b = b.range;
+            range_b.start.cmp(&range_a.start)
+        });
+        service
+            .ready()
+            .await
+            .unwrap()
+            .call(
+                lsp_notification_to_jsonrpc_request::<DidChangeTextDocument>(
+                    DidChangeTextDocumentParams {
+                        text_document: VersionedTextDocumentIdentifier {
+                            uri: TEST_URI.clone(),
+                            version: 1,
+                        },
+                        content_changes: edits
+                            .unwrap()
+                            .unwrap()
+                            .iter()
+                            .map(|e| TextDocumentContentChangeEvent {
+                                range: Some(e.range),
+                                text: e.new_text.clone(),
+                                range_length: None,
+                            })
+                            .collect(),
+                    },
+                ),
+            )
+            .await
+            .unwrap();
+
+        // Assert
+        let doc = service.inner().document_map.get(&TEST_URI).unwrap();
+        assert_eq!(
+            doc.to_string(),
+            String::from(
+                r"(node) @cap
+
+; comment"
+            )
         );
     }
 }
