@@ -1,5 +1,7 @@
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_eq;
+    use rstest::rstest;
     use serde_json::to_value;
 
     use lazy_static::lazy_static;
@@ -15,15 +17,13 @@ mod tests {
         jsonrpc::{Request, Response},
         lsp_types::{
             notification::{DidChangeConfiguration, DidChangeTextDocument, DidOpenTextDocument},
-            request::Initialize,
-            ClientCapabilities, CompletionOptions, DidChangeConfigurationParams,
-            DidChangeTextDocumentParams, DidOpenTextDocumentParams, DocumentChanges,
-            InitializeParams, InitializeResult, OneOf, OptionalVersionedTextDocumentIdentifier,
-            PartialResultParams, Position, Range, ReferenceContext, ReferenceParams, RenameParams,
-            ServerCapabilities, TextDocumentContentChangeEvent, TextDocumentEdit,
-            TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams,
-            TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
-            VersionedTextDocumentIdentifier, WorkDoneProgressParams, WorkspaceEdit,
+            request::{Initialize, Rename},
+            ClientCapabilities, DidChangeConfigurationParams, DidChangeTextDocumentParams,
+            DidOpenTextDocumentParams, DocumentChanges, InitializeParams, InitializeResult, OneOf,
+            OptionalVersionedTextDocumentIdentifier, PartialResultParams, Position, Range,
+            ReferenceContext, ReferenceParams, RenameParams, TextDocumentContentChangeEvent,
+            TextDocumentEdit, TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams,
+            TextEdit, Url, VersionedTextDocumentIdentifier, WorkDoneProgressParams, WorkspaceEdit,
         },
         LanguageServer, LspService,
     };
@@ -32,6 +32,41 @@ mod tests {
 
     lazy_static! {
         static ref TEST_URI: Url = Url::parse("file:///tmp/test.scm").unwrap();
+        static ref SIMPLE_FILE: &'static str = r#"((identifier) @constant
+ (#match? @constant @constant))
+ ; @constant here"#;
+        static ref COMPLEX_FILE: &'static str = r#"((comment) @injection.content
+  (#set! injection.language "comment"))
+
+; html(`...`), html`...`, sql(`...`), etc.
+(call_expression
+  function: (identifier) @injection.language
+  arguments: [
+    (arguments
+      (template_string) @injection.content)
+    (template_string) @injection.content
+  ]
+  (#lua-match? @injection.language "^[a-zA-Z][a-zA-Z0-9]*$")
+  (#offset! @injection.content 0 1 0 -1)
+  (#set! injection.include-children)
+  ; Languages excluded from auto-injection due to special rules
+  ; - svg uses the html parser
+  ; - css uses the styled parser
+  (#not-any-of? @injection.language "svg" "css")
+  (#not-any-of? @injection.content "test"))
+
+; svg`...` or svg(`...`)
+(call_expression
+  function: (identifier) @_name
+  (#eq? @_name "svg")
+  arguments: [
+    (arguments
+      (template_string) @injection.content)
+    (template_string) @injection.content
+  ]
+  (#offset! @injection.content 0 1 0 -1)
+  (#set! injection.include-children)
+  (#set! injection.language "html"))"#;
     }
 
     // An equivalent function is provided but it is private
@@ -382,9 +417,7 @@ mod tests {
     async fn test_server_did_open_document() {
         // Arrange
         let mut service = initialize_server(&[]).await;
-        let source = r#"
-        "[" @cap
-        "#;
+        let source = r#""[" @cap"#;
 
         // Act
         service
@@ -409,6 +442,13 @@ mod tests {
         assert!(doc_rope.is_some());
         let doc_rope = doc_rope.unwrap();
         assert_eq!(doc_rope.to_string(), source);
+        let tree = service.inner().cst_map.get(&TEST_URI);
+        assert!(tree.is_some());
+        let tree = tree.unwrap();
+        assert_eq!(
+            tree.root_node().utf8_text(source.as_bytes()).unwrap(),
+            doc_rope.to_string()
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -494,21 +534,22 @@ mod tests {
     #[derive(Debug, Clone)]
     struct TestEdit {
         pub text: String,
-        pub start: Position,
-        pub end: Position,
+        pub range: Range,
     }
 
     impl TestEdit {
         fn new(text: &str, start: (u32, u32), end: (u32, u32)) -> Self {
             Self {
                 text: text.to_string(),
-                start: Position {
-                    line: start.0,
-                    character: start.1,
-                },
-                end: Position {
-                    line: end.0,
-                    character: end.1,
+                range: Range {
+                    start: Position {
+                        line: start.0,
+                        character: start.1,
+                    },
+                    end: Position {
+                        line: end.0,
+                        character: end.1,
+                    },
                 },
             }
         }
@@ -517,18 +558,18 @@ mod tests {
     impl From<&TestEdit> for TextDocumentContentChangeEvent {
         fn from(val: &TestEdit) -> Self {
             Self {
-                range: Some(Range {
-                    start: Position {
-                        line: val.start.line,
-                        character: val.start.character,
-                    },
-                    end: Position {
-                        line: val.end.line,
-                        character: val.end.character,
-                    },
-                }),
+                range: Some(val.range),
                 range_length: None,
                 text: val.text.clone(),
+            }
+        }
+    }
+
+    impl From<&TestEdit> for TextEdit {
+        fn from(val: &TestEdit) -> Self {
+            Self {
+                range: val.range,
+                new_text: val.text.clone(),
             }
         }
     }
@@ -573,49 +614,51 @@ mod tests {
         );
     }
 
+    #[rstest]
+    #[case(
+        &SIMPLE_FILE,
+        Position { line: 1, character: 12, },
+        &[
+            TestEdit::new("superlongnamehere", (1, 21), (1, 29)),
+            TestEdit::new("superlongnamehere", (1, 11), (1, 19)),
+            TestEdit::new("superlongnamehere", (0, 15), (0, 23)),
+        ],
+        "superlongnamehere",
+    )]
+    #[case(
+        &COMPLEX_FILE,
+        Position { line: 8, character: 24 },
+        &[
+            TestEdit::new("invariant", (18, 17), (18, 34)),
+            TestEdit::new("invariant", (12, 13), (12, 30)),
+            TestEdit::new("invariant", (9, 23), (9, 40)),
+            TestEdit::new("invariant", (8, 25), (8, 42)),
+        ],
+        "invariant"
+    )]
+    #[case(
+        &COMPLEX_FILE,
+        Position { line: 8, character: 23 },
+        // Doesn't rename when cursor is not in capture
+        &[],
+        "invariant"
+    )]
     #[tokio::test(flavor = "current_thread")]
-    async fn it_renames_captures_0() {
-        let source = r#"((identifier) @constant
- (#match? @cons<CURSOR>tant "^[A-Z][A-Z\\d_]*$"))"#;
-        let expected = r#"((identifier) @invariant
- (#match? @invariant "^[A-Z][A-Z\\d_]*$"))"#;
-        test_server_rename(source, expected, "invariant").await;
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn it_renames_captures_1() {
-        let source = r#"((identifier) @constant
- (#match? @cons<CURSOR>tant "^[A-Z][A-Z\\d_]*$"))"#;
-        let expected = r#"((identifier) @const
- (#match? @const "^[A-Z][A-Z\\d_]*$"))"#;
-        test_server_rename(source, expected, "const").await;
-    }
-
-    async fn test_server_rename(original: &str, expected: &str, new_name: &str) {
+    async fn test_server_rename(
+        #[case] original: &str,
+        #[case] cursor_position: Position,
+        #[case] edits: &[TestEdit],
+        #[case] new_name: &str,
+    ) {
         // Arrange
-        let mut cursor_position: Option<Position> = None;
-        for (line_num, line) in original.lines().enumerate() {
-            if let Some((cursor_idx, _)) = line.match_indices("<CURSOR>").next() {
-                assert!(
-                    cursor_position.is_none(),
-                    "Only one <CURSOR> marker supported for a test input"
-                );
-                cursor_position = Some(Position {
-                    line: line_num as u32,
-                    character: cursor_idx as u32,
-                });
-            }
-        }
-        let cursor_position =
-            cursor_position.expect("Expected one <CURSOR> marker in test input, found none");
-        let mut cleaned_input = original.replace("<CURSOR>", "");
-
-        let service = initialize_server(&[(TEST_URI.clone(), &cleaned_input)]).await;
+        let mut service = initialize_server(&[(TEST_URI.clone(), original)]).await;
 
         // Act
         let rename_edits = service
-            .inner()
-            .rename(RenameParams {
+            .ready()
+            .await
+            .unwrap()
+            .call(lsp_request_to_jsonrpc_request::<Rename>(RenameParams {
                 text_document_position: TextDocumentPositionParams {
                     text_document: TextDocumentIdentifier {
                         uri: TEST_URI.clone(),
@@ -626,70 +669,34 @@ mod tests {
                 work_done_progress_params: WorkDoneProgressParams {
                     work_done_token: None,
                 },
-            })
+            }))
             .await
             .map_err(|e| format!("textDocument/rename call returned error: {e}"))
             .unwrap();
 
-        // apply the edits returned by the server
-        {
-            let translate_range = |range: &Range, source: &str| -> (usize, usize) {
-                let n_lines = source.lines().count();
-
-                assert!(range.start.line as usize <= n_lines);
-                assert!(range.end.line as usize <= n_lines);
-                let start_line_idx: usize = source
-                    .lines()
-                    .take(range.start.line as usize)
-                    .map(|l| l.len() + 1) // + 1 to account for '\n'
-                    .sum();
-                let start = start_line_idx + range.start.character as usize;
-                let end_line_idx: usize = source
-                    .lines()
-                    .take(range.end.line as usize)
-                    .map(|l| l.len() + 1) // + 1 to account for '\n'
-                    .sum();
-                let end = end_line_idx + range.end.character as usize;
-                (start, end)
-            };
-            match rename_edits {
-                None => {} // No edits
-                Some(WorkspaceEdit {
-                    document_changes: Some(DocumentChanges::Edits(edits)),
-                    changes: None,
-                    change_annotations: None,
-                }) => {
-                    for edit in edits {
-                        match edit {
-                            TextDocumentEdit {
-                                text_document:
-                                    OptionalVersionedTextDocumentIdentifier { uri, version: _ },
-                                edits: inner_edits,
-                            } if inner_edits.len() == 1 => {
-                                assert!(
-                                    uri == *TEST_URI,
-                                    "Recieved edit for {uri}, expected {}",
-                                    TEST_URI.clone()
-                                );
-                                if let OneOf::Left(TextEdit { range, new_text }) = &inner_edits[0] {
-                                    let (start, end) = translate_range(range, &cleaned_input);
-                                    cleaned_input.replace_range(start..end, new_text);
-                                } else {
-                                    panic!(
-                                        "Untested rename edit format returned: {:#?}",
-                                        inner_edits[0]
-                                    );
-                                }
-                            }
-                            other => panic!("Untested rename edit format returned: {other:#?}"),
-                        }
-                    }
-                }
-                other => panic!("Untested rename edit format returned: {other:#?}"),
-            }
-        }
-
         // Assert
-        assert_eq!(&cleaned_input, expected);
+        let ws_edit = if edits.is_empty() {
+            None
+        } else {
+            Some(WorkspaceEdit {
+                document_changes: Some(DocumentChanges::Edits(
+                    edits
+                        .iter()
+                        .map(|e| TextDocumentEdit {
+                            text_document: OptionalVersionedTextDocumentIdentifier {
+                                uri: TEST_URI.clone(),
+                                version: None,
+                            },
+                            edits: vec![OneOf::Left(e.into())],
+                        })
+                        .collect(),
+                )),
+                ..Default::default()
+            })
+        };
+        assert_eq!(
+            rename_edits,
+            Some(lsp_response_to_jsonrpc_response::<Rename>(ws_edit))
+        );
     }
 }
