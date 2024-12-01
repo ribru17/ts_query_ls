@@ -34,6 +34,7 @@ mod tests {
 
     lazy_static! {
         static ref TEST_URI: Url = Url::parse("file:///tmp/test.scm").unwrap();
+        static ref TEST_URI_2: Url = Url::parse("file:///tmp/injections.scm").unwrap();
         static ref SIMPLE_FILE: &'static str = r#"((identifier) @constant
  (#match? @constant @constant))
  ; @constant here"#;
@@ -73,14 +74,16 @@ mod tests {
 
     type Coordinate = ((u32, u32), (u32, u32));
 
+    // Always test with id of 1 for simplicity
+    const ID: i64 = 1;
+
     // An equivalent function is provided but it is private
     fn lsp_request_to_jsonrpc_request<R>(params: R::Params) -> Request
     where
         R: tower_lsp::lsp_types::request::Request,
     {
         Request::build(R::METHOD)
-            // Always test with id of 1 for simplicity
-            .id(1)
+            .id(ID)
             .params(to_value(params).unwrap())
             .finish()
     }
@@ -98,7 +101,7 @@ mod tests {
     where
         R: tower_lsp::lsp_types::request::Request,
     {
-        Response::from_ok(1.into(), to_value(params).unwrap())
+        Response::from_ok(ID.into(), to_value(params).unwrap())
     }
 
     #[derive(Debug, Clone)]
@@ -145,7 +148,7 @@ mod tests {
     }
 
     /// Initialize a test server, populating it with fake documents denoted by (uri, text) pairs.
-    async fn initialize_server(documents: &[(Url, &str)]) -> LspService<Backend> {
+    async fn initialize_server(documents: &[(Url, &str)]) -> (LspService<Backend>, Response) {
         let mut parser = Parser::new();
         parser
             .set_language(&QUERY_LANGUAGE)
@@ -175,7 +178,7 @@ mod tests {
         })
         .finish();
 
-        service
+        let init_result = service
             .ready()
             .await
             .unwrap()
@@ -187,62 +190,64 @@ mod tests {
                 },
             ))
             .await
+            .unwrap()
             .unwrap();
 
-        service
+        (service, init_result)
     }
 
+    #[rstest]
+    #[case(&[])]
+    #[case(&[(
+        TEST_URI.clone(),
+        SIMPLE_FILE.clone()
+    ), (
+        TEST_URI_2.clone(),
+        COMPLEX_FILE.clone()
+    )])]
     #[tokio::test(flavor = "current_thread")]
-    async fn test_server_initialize() {
-        use tower::ServiceExt;
-        // Arrange
-        let options = Arc::new(RwLock::new(Options {
-            parser_install_directories: None,
-            parser_aliases: None,
-            language_retrieval_patterns: None,
-        }));
-        let (mut service, _socket) = LspService::new(|client| Backend {
-            client,
-            document_map: DashMap::new(),
-            cst_map: DashMap::new(),
-            symbols_set_map: DashMap::new(),
-            symbols_vec_map: DashMap::new(),
-            fields_set_map: DashMap::new(),
-            fields_vec_map: DashMap::new(),
-            options,
-        });
-
+    async fn test_server_initialize(#[case] documents: &[(Url, &str)]) {
         // Act
-        let resp = service
-            .ready()
-            .await
-            .unwrap()
-            .call(lsp_request_to_jsonrpc_request::<Initialize>(
-                InitializeParams {
-                    capabilities: ClientCapabilities::default(),
-                    root_uri: Some(Url::parse("file:///tmp/").unwrap()),
-                    ..Default::default()
-                },
-            ))
-            .await
-            .unwrap();
+        let (service, response) = initialize_server(documents).await;
 
         // Assert
+        let backend = service.inner();
         assert_eq!(
-            resp,
-            Some(lsp_response_to_jsonrpc_response::<Initialize>(
-                InitializeResult {
-                    capabilities: SERVER_CAPABILITIES.clone(),
-                    ..Default::default()
-                }
-            ))
+            response,
+            lsp_response_to_jsonrpc_response::<Initialize>(InitializeResult {
+                capabilities: SERVER_CAPABILITIES.clone(),
+                ..Default::default()
+            })
         );
+        if documents.is_empty() {
+            assert!(backend.document_map.is_empty());
+            assert!(backend.cst_map.is_empty());
+        } else {
+            assert_eq!(backend.document_map.len(), documents.len());
+            assert_eq!(backend.cst_map.len(), documents.len());
+            for (uri, doc) in documents {
+                assert_eq!(
+                    backend.document_map.get(uri).unwrap().to_string(),
+                    doc.to_string()
+                );
+                assert_eq!(
+                    backend
+                        .cst_map
+                        .get(uri)
+                        .unwrap()
+                        .root_node()
+                        .utf8_text(doc.to_string().as_bytes())
+                        .unwrap(),
+                    doc.to_string()
+                );
+            }
+        }
     }
 
     #[tokio::test(flavor = "current_thread")]
     async fn test_server_did_open_document() {
         // Arrange
-        let mut service = initialize_server(&[]).await;
+        let mut service = initialize_server(&[]).await.0;
         let source = r#""[" @cap"#;
 
         // Act
@@ -280,7 +285,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn test_server_did_change_configuration() {
         // Arrange
-        let mut service = initialize_server(&[]).await;
+        let mut service = initialize_server(&[]).await.0;
 
         // Act
         service
@@ -358,7 +363,7 @@ mod tests {
         #[case] edits: &[TestEdit],
     ) {
         // Arrange
-        let mut service = initialize_server(&[(TEST_URI.clone(), original)]).await;
+        let mut service = initialize_server(&[(TEST_URI.clone(), original)]).await.0;
 
         // Act
         service
@@ -431,7 +436,7 @@ function: (identifier) @function)",
         #[case] ranges: &[Coordinate],
     ) {
         // Arrange
-        let mut service = initialize_server(&[(TEST_URI.clone(), input)]).await;
+        let mut service = initialize_server(&[(TEST_URI.clone(), input)]).await.0;
 
         // Act
         let refs = service
@@ -524,7 +529,7 @@ function: (identifier) @function)",
         #[case] new_name: &str,
     ) {
         // Arrange
-        let mut service = initialize_server(&[(TEST_URI.clone(), original)]).await;
+        let mut service = initialize_server(&[(TEST_URI.clone(), original)]).await.0;
 
         // Act
         let rename_edits = service
@@ -582,7 +587,8 @@ function: (identifier) @function)",
             )         @cap                 
 ;;;; comment     ",
         )])
-        .await;
+        .await
+        .0;
 
         // Act
         let delta = service
@@ -695,7 +701,9 @@ function: (identifier) @function)",
             cursor_position.expect("Expected one <CURSOR> marker in test input, found none");
         let cleaned_input = source.replace("<CURSOR>", "");
 
-        let mut service = initialize_server(&[(TEST_URI.clone(), &cleaned_input)]).await;
+        let mut service = initialize_server(&[(TEST_URI.clone(), &cleaned_input)])
+            .await
+            .0;
         let data = service
             .ready()
             .await
