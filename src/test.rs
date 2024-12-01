@@ -17,14 +17,15 @@ mod tests {
         jsonrpc::{Request, Response},
         lsp_types::{
             notification::{DidChangeConfiguration, DidChangeTextDocument, DidOpenTextDocument},
-            request::{Formatting, Initialize, References, Rename},
-            ClientCapabilities, DidChangeConfigurationParams, DidChangeTextDocumentParams,
-            DidOpenTextDocumentParams, DocumentChanges, DocumentFormattingParams,
-            FormattingOptions, InitializeParams, InitializeResult, Location, OneOf,
-            OptionalVersionedTextDocumentIdentifier, PartialResultParams, Position, Range,
-            ReferenceContext, ReferenceParams, RenameParams, TextDocumentContentChangeEvent,
-            TextDocumentEdit, TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams,
-            TextEdit, Url, VersionedTextDocumentIdentifier, WorkDoneProgressParams, WorkspaceEdit,
+            request::{Completion, Formatting, Initialize, References, Rename},
+            ClientCapabilities, CompletionItemKind, CompletionParams, CompletionResponse,
+            DidChangeConfigurationParams, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
+            DocumentChanges, DocumentFormattingParams, FormattingOptions, InitializeParams,
+            InitializeResult, Location, OneOf, OptionalVersionedTextDocumentIdentifier,
+            PartialResultParams, Position, Range, ReferenceContext, ReferenceParams, RenameParams,
+            TextDocumentContentChangeEvent, TextDocumentEdit, TextDocumentIdentifier,
+            TextDocumentItem, TextDocumentPositionParams, TextEdit, Url,
+            VersionedTextDocumentIdentifier, WorkDoneProgressParams, WorkspaceEdit,
         },
         LspService,
     };
@@ -643,5 +644,130 @@ function: (identifier) @function)",
 ; comment"
             )
         );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn it_provides_capture_completions_0() {
+        let source = r#"((identifier) @constant
+ (#match? @cons<CURSOR> "^[A-Z][A-Z\\d_]*$"))"#;
+        let expected_comps = vec![expected_capture_completion("@constant")];
+        test_server_completions(source, &expected_comps).await;
+    }
+
+    // TODO: Probably want to replicate this test to make sure other completions
+    // aren't offered inside of comments, not just captures
+    #[tokio::test(flavor = "current_thread")]
+    async fn it_doesnt_provide_completions_inside_comments() {
+        let source = r#"((identifier) @constant
+            ; @co<CURSOR>
+            )
+            "#;
+        let expected_comps = Vec::new();
+        test_server_completions(source, &expected_comps).await;
+    }
+
+    // TODO: Other completion tests...
+
+    fn expected_capture_completion(text: &str) -> (&str, Option<CompletionItemKind>) {
+        (text, Some(CompletionItemKind::VARIABLE))
+    }
+    // TODO: helpers for other items we offer completions for...
+
+    async fn test_server_completions(
+        source: &str,
+        expected_completions: &[(&str, Option<CompletionItemKind>)],
+    ) {
+        // Arrange
+        let mut cursor_position: Option<Position> = None;
+        for (line_num, line) in source.lines().enumerate() {
+            if let Some((cursor_idx, _)) = line.match_indices("<CURSOR>").next() {
+                assert!(
+                    cursor_position.is_none(),
+                    "Only one <CURSOR> marker supported for a test input"
+                );
+                cursor_position = Some(Position {
+                    line: line_num as u32,
+                    character: cursor_idx as u32,
+                });
+            }
+        }
+        let cursor_position =
+            cursor_position.expect("Expected one <CURSOR> marker in test input, found none");
+        let cleaned_input = source.replace("<CURSOR>", "");
+
+        let mut service = initialize_server(&[(TEST_URI.clone(), &cleaned_input)]).await;
+        let data = service
+            .ready()
+            .await
+            .unwrap()
+            .call(lsp_request_to_jsonrpc_request::<Completion>(
+                CompletionParams {
+                    text_document_position: TextDocumentPositionParams {
+                        text_document: TextDocumentIdentifier {
+                            uri: TEST_URI.clone(),
+                        },
+                        position: cursor_position,
+                    },
+                    work_done_progress_params: WorkDoneProgressParams {
+                        work_done_token: None,
+                    },
+                    partial_result_params: PartialResultParams {
+                        partial_result_token: None,
+                    },
+                    context: None,
+                },
+            ))
+            .await
+            .map_err(|e| format!("textDocument/completion call returned error: {e}"))
+            .unwrap();
+        let completions = match serde_json::from_value::<Option<CompletionResponse>>(
+            data.unwrap().into_parts().1.unwrap(),
+        ) {
+            Ok(Some(CompletionResponse::List(list))) => list.items,
+            Ok(Some(CompletionResponse::Array(comps))) => comps,
+            Ok(None) => Vec::new(),
+            other => panic!("textDocument/completion call returned unexpected response: {other:?}"),
+        };
+
+        let mut expected_comps = expected_completions.to_vec();
+        'finder_loop: while !expected_comps.is_empty() {
+            for comp in &completions {
+                if let Some(idx) =
+                    expected_comps
+                        .iter()
+                        .enumerate()
+                        .find_map(|(i, (c_text, c_kind))| {
+                            if comp.label.eq(c_text) && comp.kind.eq(c_kind) {
+                                Some(i)
+                            } else {
+                                None
+                            }
+                        })
+                {
+                    expected_comps.remove(idx);
+                    continue 'finder_loop;
+                }
+            }
+            break;
+        }
+
+        // Assert
+        if !expected_comps.is_empty() {
+            let mut msg = "Failed to provide the following completions: ".to_string();
+            for (expected_text, expected_kind) in expected_comps.iter() {
+                msg += &format!(
+                    "{expected_text} -- {}, ",
+                    if let Some(kind) = expected_kind {
+                        format!("{kind:?}")
+                    } else {
+                        "No kind".to_string()
+                    }
+                );
+            }
+            msg.pop(); // remove trailing space
+            msg.pop(); // remove trailing comma
+
+            panic!("{msg}");
+        }
     }
 }
