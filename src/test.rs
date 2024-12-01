@@ -100,6 +100,49 @@ mod tests {
         Response::from_ok(1.into(), to_value(params).unwrap())
     }
 
+    #[derive(Debug, Clone)]
+    struct TestEdit {
+        pub text: String,
+        pub range: Range,
+    }
+
+    impl TestEdit {
+        fn new(text: &str, start: (u32, u32), end: (u32, u32)) -> Self {
+            Self {
+                text: text.to_string(),
+                range: Range {
+                    start: Position {
+                        line: start.0,
+                        character: start.1,
+                    },
+                    end: Position {
+                        line: end.0,
+                        character: end.1,
+                    },
+                },
+            }
+        }
+    }
+
+    impl From<&TestEdit> for TextDocumentContentChangeEvent {
+        fn from(val: &TestEdit) -> Self {
+            Self {
+                range: Some(val.range),
+                range_length: None,
+                text: val.text.clone(),
+            }
+        }
+    }
+
+    impl From<&TestEdit> for TextEdit {
+        fn from(val: &TestEdit) -> Self {
+            Self {
+                range: val.range,
+                new_text: val.text.clone(),
+            }
+        }
+    }
+
     /// Initialize a test server, populating it with fake documents denoted by (uri, text) pairs.
     async fn initialize_server(documents: &[(Url, &str)]) -> LspService<Backend> {
         let mut parser = Parser::new();
@@ -146,97 +189,6 @@ mod tests {
             .unwrap();
 
         service
-    }
-
-    #[rstest]
-    #[case(
-        "(identifier) @variable",
-        Position { line: 0, character: 17 },
-        &[((0, 13), (0, 22))]
-    )]
-    #[case(
-        r#"((identifier) @constant
-(#match? @constant "^[A-Z][A-Z\\d_]*$"))"#,
-        Position { line: 0, character: 17 },
-        &[((0, 14), (0, 23)), ((1, 9), (1, 18))]
-    )]
-    #[case(
-        r"(type_definition declarator: (type_identifier) @name) @definition.type",
-        Position { line: 0, character: 61 },
-        &[((0, 54), (0, 70))]
-    )]
-    #[case(
-        r"(call_expression
-function: (identifier) @function)",
-        Position { line: 0, character: 1 },
-        &[]
-    )]
-    #[case(
-        &COMPLEX_FILE,
-        Position { line: 5, character: 25 },
-        &[((5, 25), (5, 44)), ((11, 15), (11, 34)), ((17, 16), (17, 35))]
-    )]
-    #[tokio::test(flavor = "current_thread")]
-    async fn test_capture_references(
-        #[case] input: &str,
-        #[case] position: Position,
-        #[case] ranges: &[Coordinate],
-    ) {
-        // Arrange
-        let mut service = initialize_server(&[(TEST_URI.clone(), input)]).await;
-
-        // Act
-        let refs = service
-            .ready()
-            .await
-            .unwrap()
-            .call(lsp_request_to_jsonrpc_request::<References>(
-                ReferenceParams {
-                    context: ReferenceContext {
-                        include_declaration: true,
-                    },
-                    partial_result_params: PartialResultParams {
-                        partial_result_token: None,
-                    },
-                    work_done_progress_params: WorkDoneProgressParams::default(),
-                    text_document_position: TextDocumentPositionParams {
-                        text_document: TextDocumentIdentifier {
-                            uri: TEST_URI.clone(),
-                        },
-                        position,
-                    },
-                },
-            ))
-            .await
-            .unwrap();
-
-        // Assert
-        let actual = if ranges.is_empty() {
-            None
-        } else {
-            Some(
-                ranges
-                    .iter()
-                    .map(|r| Location {
-                        uri: TEST_URI.clone(),
-                        range: Range {
-                            start: Position {
-                                line: r.0 .0,
-                                character: r.0 .1,
-                            },
-                            end: Position {
-                                line: r.1 .0,
-                                character: r.1 .1,
-                            },
-                        },
-                    })
-                    .collect(),
-            )
-        };
-        assert_eq!(
-            refs,
-            Some(lsp_response_to_jsonrpc_response::<References>(actual))
-        );
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -373,49 +325,6 @@ function: (identifier) @function)",
         );
     }
 
-    #[derive(Debug, Clone)]
-    struct TestEdit {
-        pub text: String,
-        pub range: Range,
-    }
-
-    impl TestEdit {
-        fn new(text: &str, start: (u32, u32), end: (u32, u32)) -> Self {
-            Self {
-                text: text.to_string(),
-                range: Range {
-                    start: Position {
-                        line: start.0,
-                        character: start.1,
-                    },
-                    end: Position {
-                        line: end.0,
-                        character: end.1,
-                    },
-                },
-            }
-        }
-    }
-
-    impl From<&TestEdit> for TextDocumentContentChangeEvent {
-        fn from(val: &TestEdit) -> Self {
-            Self {
-                range: Some(val.range),
-                range_length: None,
-                text: val.text.clone(),
-            }
-        }
-    }
-
-    impl From<&TestEdit> for TextEdit {
-        fn from(val: &TestEdit) -> Self {
-            Self {
-                range: val.range,
-                new_text: val.text.clone(),
-            }
-        }
-    }
-
     #[rstest]
     #[case(
         r#"(node_name) @hello
@@ -483,6 +392,97 @@ function: (identifier) @function)",
         assert_eq!(
             tree.root_node().utf8_text(expected.as_bytes()).unwrap(),
             expected
+        );
+    }
+
+    #[rstest]
+    #[case(
+        "(identifier) @variable",
+        Position { line: 0, character: 17 },
+        &[((0, 13), (0, 22))]
+    )]
+    #[case(
+        r#"((identifier) @constant
+(#match? @constant "^[A-Z][A-Z\\d_]*$"))"#,
+        Position { line: 0, character: 17 },
+        &[((0, 14), (0, 23)), ((1, 9), (1, 18))]
+    )]
+    #[case(
+        r"(type_definition declarator: (type_identifier) @name) @definition.type",
+        Position { line: 0, character: 61 },
+        &[((0, 54), (0, 70))]
+    )]
+    #[case(
+        r"(call_expression
+function: (identifier) @function)",
+        Position { line: 0, character: 1 },
+        &[]
+    )]
+    #[case(
+        &COMPLEX_FILE,
+        Position { line: 5, character: 25 },
+        &[((5, 25), (5, 44)), ((11, 15), (11, 34)), ((17, 16), (17, 35))]
+    )]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_capture_references(
+        #[case] input: &str,
+        #[case] position: Position,
+        #[case] ranges: &[Coordinate],
+    ) {
+        // Arrange
+        let mut service = initialize_server(&[(TEST_URI.clone(), input)]).await;
+
+        // Act
+        let refs = service
+            .ready()
+            .await
+            .unwrap()
+            .call(lsp_request_to_jsonrpc_request::<References>(
+                ReferenceParams {
+                    context: ReferenceContext {
+                        include_declaration: true,
+                    },
+                    partial_result_params: PartialResultParams {
+                        partial_result_token: None,
+                    },
+                    work_done_progress_params: WorkDoneProgressParams::default(),
+                    text_document_position: TextDocumentPositionParams {
+                        text_document: TextDocumentIdentifier {
+                            uri: TEST_URI.clone(),
+                        },
+                        position,
+                    },
+                },
+            ))
+            .await
+            .unwrap();
+
+        // Assert
+        let actual = if ranges.is_empty() {
+            None
+        } else {
+            Some(
+                ranges
+                    .iter()
+                    .map(|r| Location {
+                        uri: TEST_URI.clone(),
+                        range: Range {
+                            start: Position {
+                                line: r.0 .0,
+                                character: r.0 .1,
+                            },
+                            end: Position {
+                                line: r.1 .0,
+                                character: r.1 .1,
+                            },
+                        },
+                    })
+                    .collect(),
+            )
+        };
+        assert_eq!(
+            refs,
+            Some(lsp_response_to_jsonrpc_response::<References>(actual))
         );
     }
 
