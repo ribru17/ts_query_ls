@@ -17,15 +17,16 @@ mod tests {
         jsonrpc::{Request, Response},
         lsp_types::{
             notification::{DidChangeConfiguration, DidChangeTextDocument, DidOpenTextDocument},
-            request::{Initialize, Rename},
+            request::{Initialize, References, Rename},
             ClientCapabilities, DidChangeConfigurationParams, DidChangeTextDocumentParams,
-            DidOpenTextDocumentParams, DocumentChanges, InitializeParams, InitializeResult, OneOf,
-            OptionalVersionedTextDocumentIdentifier, PartialResultParams, Position, Range,
-            ReferenceContext, ReferenceParams, RenameParams, TextDocumentContentChangeEvent,
-            TextDocumentEdit, TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams,
-            TextEdit, Url, VersionedTextDocumentIdentifier, WorkDoneProgressParams, WorkspaceEdit,
+            DidOpenTextDocumentParams, DocumentChanges, InitializeParams, InitializeResult,
+            Location, OneOf, OptionalVersionedTextDocumentIdentifier, PartialResultParams,
+            Position, Range, ReferenceContext, ReferenceParams, RenameParams,
+            TextDocumentContentChangeEvent, TextDocumentEdit, TextDocumentIdentifier,
+            TextDocumentItem, TextDocumentPositionParams, TextEdit, Url,
+            VersionedTextDocumentIdentifier, WorkDoneProgressParams, WorkspaceEdit,
         },
-        LanguageServer, LspService,
+        LspService,
     };
 
     use crate::{Backend, Options, QUERY_LANGUAGE, SERVER_CAPABILITIES};
@@ -68,6 +69,8 @@ mod tests {
   (#set! injection.include-children)
   (#set! injection.language "html"))"#;
     }
+
+    type Coordinate = ((u32, u32), (u32, u32));
 
     // An equivalent function is provided but it is private
     fn lsp_request_to_jsonrpc_request<R>(params: R::Params) -> Request
@@ -145,226 +148,96 @@ mod tests {
         service
     }
 
-    async fn test_capture_references(input: &str) {
-        let handle_cursor_marker =
-            |input: &mut String,
-             line_num: usize,
-             idx: usize,
-             cursor_position: &mut Option<Position>| {
-                assert!(
-                    cursor_position.is_none(),
-                    "Only one cursor is supported inside text inputs"
-                );
-                *cursor_position = Some(Position {
-                    line: line_num as u32,
-                    character: idx as u32,
-                });
-                *input = input.replacen("<CURSOR>", "", 1);
-            };
-        let handle_ref_marker =
-            |input: &mut String, line_num: usize, idx: usize, ref_positions: &mut Vec<Range>| {
-                let line = input.lines().nth(line_num).unwrap();
-                assert!(
-                    line.chars().nth(idx + "<REF>".len()) == Some('@'),
-                    "capture must immediately follow <REF> marker"
-                );
-                // We temporarily remove any cursor markers to cover the case in
-                // which they share a capture with the current ref. This way, we get
-                // an accurate end index for the word
-                let counting_line = line.replace("<CURSOR>", "");
-                let end = idx
-                    + counting_line
-                        .chars()
-                        .enumerate()
-                        .skip(idx + "<REF>".len() + 1) // skip past "<REF>@"
-                        .take_while(|(_, c)| {
-                            // NOTE: What is the actual legal character set?
-                            c.is_alphanumeric() || c.eq(&'_') || c.eq(&'.')
-                        })
-                        .count()
-                    + 1; // account for skipping past initial '@'
+    #[rstest]
+    #[case(
+        "(identifier) @variable",
+        Position { line: 0, character: 17 },
+        &[((0, 13), (0, 22))]
+    )]
+    #[case(
+        r#"((identifier) @constant
+(#match? @constant "^[A-Z][A-Z\\d_]*$"))"#,
+        Position { line: 0, character: 17 },
+        &[((0, 14), (0, 23)), ((1, 9), (1, 18))]
+    )]
+    #[case(
+        r"(type_definition declarator: (type_identifier) @name) @definition.type",
+        Position { line: 0, character: 61 },
+        &[((0, 54), (0, 70))]
+    )]
+    #[case(
+        r"(call_expression
+function: (identifier) @function)",
+        Position { line: 0, character: 1 },
+        &[]
+    )]
+    #[case(
+        &COMPLEX_FILE,
+        Position { line: 5, character: 25 },
+        &[((5, 25), (5, 44)), ((11, 15), (11, 34)), ((17, 16), (17, 35))]
+    )]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_capture_references(
+        #[case] input: &str,
+        #[case] position: Position,
+        #[case] ranges: &[Coordinate],
+    ) {
+        // Arrange
+        let mut service = initialize_server(&[(TEST_URI.clone(), input)]).await;
 
-                ref_positions.push(Range::new(
-                    Position {
-                        line: line_num as u32,
-                        character: idx as u32,
-                    },
-                    Position {
-                        line: line_num as u32,
-                        character: end as u32,
-                    },
-                ));
-                *input = input.replacen("<REF>", "", 1);
-            };
-
-        let mut cursor_position: Option<Position> = None;
-        let mut expected_refs: Vec<Range> = Vec::new();
-        let mut cleaned_input = input.to_string();
-        // Go through line by line, just pick out the earlier marker instance
-        'finder_loop: loop {
-            for (line_num, line) in cleaned_input.lines().enumerate() {
-                let cursor_idx = line.match_indices("<CURSOR>").next();
-                let ref_idx = line.match_indices("<REF>").next();
-                match (cursor_idx, ref_idx) {
-                    (Some((c_idx, _)), None) => {
-                        handle_cursor_marker(
-                            &mut cleaned_input,
-                            line_num,
-                            c_idx,
-                            &mut cursor_position,
-                        );
-                        continue 'finder_loop;
-                    }
-                    (None, Some((r_idx, _))) => {
-                        handle_ref_marker(&mut cleaned_input, line_num, r_idx, &mut expected_refs);
-                        continue 'finder_loop;
-                    }
-                    (Some((c_idx, _)), Some((r_idx, _))) => {
-                        if c_idx < r_idx {
-                            handle_cursor_marker(
-                                &mut cleaned_input,
-                                line_num,
-                                c_idx,
-                                &mut cursor_position,
-                            );
-                        } else {
-                            handle_ref_marker(
-                                &mut cleaned_input,
-                                line_num,
-                                r_idx,
-                                &mut expected_refs,
-                            );
-                        }
-                        continue 'finder_loop;
-                    }
-                    (None, None) => {}
-                }
-            }
-            break 'finder_loop;
-        }
-
-        let cursor_position =
-            cursor_position.expect("textDocument/references test must contain one <CURSOR> marker");
-
-        let server = initialize_server(&[(TEST_URI.clone(), cleaned_input.as_str())]).await;
-        let found_refs = server
-            .inner()
-            .references(ReferenceParams {
-                text_document_position: TextDocumentPositionParams {
-                    text_document: TextDocumentIdentifier {
-                        uri: TEST_URI.clone(),
-                    },
-                    position: cursor_position,
-                },
-                work_done_progress_params: WorkDoneProgressParams::default(),
-                partial_result_params: PartialResultParams::default(),
-                context: ReferenceContext {
-                    include_declaration: true,
-                },
-            })
+        // Act
+        let refs = service
+            .ready()
             .await
-            .map_err(|e| format!("textDocument/references call returned error: {e}"))
             .unwrap()
-            .unwrap_or_default(); // Prefer an empty `Vec` over `None` so the missing
-                                  // refs get printed in `panic_msg` below
+            .call(lsp_request_to_jsonrpc_request::<References>(
+                ReferenceParams {
+                    context: ReferenceContext {
+                        include_declaration: true,
+                    },
+                    partial_result_params: PartialResultParams {
+                        partial_result_token: None,
+                    },
+                    work_done_progress_params: WorkDoneProgressParams::default(),
+                    text_document_position: TextDocumentPositionParams {
+                        text_document: TextDocumentIdentifier {
+                            uri: TEST_URI.clone(),
+                        },
+                        position,
+                    },
+                },
+            ))
+            .await
+            .unwrap();
 
-        let mut panic_msg = String::new();
-        for reference in found_refs {
-            let Some(idx) = expected_refs
-                .iter()
-                .enumerate()
-                .find(|(_, &r)| r == reference.range)
-                .map(|(i, _)| i)
-            else {
-                let line = cleaned_input
-                    .lines()
-                    .nth(reference.range.start.line as usize)
-                    .unwrap();
-                panic_msg += &format!(
-                    "Found unexpected reference at position ({}, {}), ({}, {}):\n{line}\n{}{}\n",
-                    reference.range.start.line,
-                    reference.range.start.character,
-                    reference.range.end.line,
-                    reference.range.end.character,
-                    " ".repeat(reference.range.start.character as usize),
-                    "^".repeat(
-                        (reference.range.end.character - reference.range.start.character) as usize
-                    ),
-                );
-                continue;
-            };
-            expected_refs.remove(idx);
-        }
-
-        for reference in expected_refs {
-            let line = cleaned_input
-                .lines()
-                .nth(reference.start.line as usize)
-                .unwrap();
-            panic_msg += &format!(
-                "Failed to find expected reference at position ({}, {}), ({}, {}):\n{line}\n{}{}\n",
-                reference.start.line,
-                reference.start.character,
-                reference.end.line,
-                reference.end.character,
-                " ".repeat(reference.start.character as usize),
-                "^".repeat((reference.end.character - reference.start.character) as usize),
-            );
-        }
-
-        assert!(panic_msg.is_empty(), "{panic_msg}");
+        // Assert
+        let actual = if ranges.is_empty() {
+            None
+        } else {
+            Some(
+                ranges
+                    .iter()
+                    .map(|r| Location {
+                        uri: TEST_URI.clone(),
+                        range: Range {
+                            start: Position {
+                                line: r.0 .0,
+                                character: r.0 .1,
+                            },
+                            end: Position {
+                                line: r.1 .0,
+                                character: r.1 .1,
+                            },
+                        },
+                    })
+                    .collect(),
+            )
+        };
+        assert_eq!(
+            refs,
+            Some(lsp_response_to_jsonrpc_response::<References>(actual))
+        );
     }
-
-    /*
-     *  tree-sitter-c queries
-     */
-    #[tokio::test(flavor = "current_thread")]
-    async fn it_gives_references_for_captures_0() {
-        let src = "(identifier) <REF>@variab<CURSOR>le";
-        test_capture_references(src).await;
-    }
-    #[tokio::test(flavor = "current_thread")]
-    async fn it_gives_references_for_captures_1() {
-        let src = r#"((identifier) <REF>@constant
-        (#match? <REF>@c<CURSOR>onstant "^[A-Z][A-Z\\d_]*$"))"#;
-        test_capture_references(src).await;
-    }
-    #[tokio::test(flavor = "current_thread")]
-    async fn it_gives_references_for_captures_2() {
-        let src =
-            r"(type_definition declarator: (type_identifier) @name) <REF>@defin<CURSOR>ition.type";
-        test_capture_references(src).await;
-    }
-    #[tokio::test(flavor = "current_thread")]
-    async fn it_gives_references_for_captures_3() {
-        let src = r"(call_expression
-        function: (identifier) <REF>@<CURSOR>function)";
-        test_capture_references(src).await;
-    }
-
-    /*
-     * Other
-     */
-    #[tokio::test(flavor = "current_thread")]
-    async fn it_gives_references_for_captures_4() {
-        let src = r#"; html(`...`), html`...`, sql(`...`), etc.
-    (call_expression
-      function: (identifier) @injection.language
-      arguments: [
-        (arguments
-          (template_string) <REF>@injection.content)
-        (template_string) <REF>@injection<CURSOR>.content
-      ]
-      (#lua-match? @injection.language "^[a-zA-Z][a-zA-Z0-9]*$")
-      (#offset! <REF>@injection.content 0 1 0 -1)
-      (#set! injection.include-children)
-      ; Languages excluded from auto-injection due to special rules
-      ; - svg uses the html parser
-      ; - css uses the styled parser
-      (#not-any-of? @injection.language "svg" "css"))"#;
-        test_capture_references(src).await;
-    }
-    // TODO: Pull out more tests from other tree-sitter repos
 
     #[tokio::test(flavor = "current_thread")]
     async fn test_server_initialize() {
