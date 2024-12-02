@@ -333,3 +333,92 @@ lazy_static! {
     )
     .unwrap();
 }
+
+#[cfg(test)]
+mod test {
+    use pretty_assertions::assert_eq;
+    use tower::{Service, ServiceExt};
+    use tower_lsp::lsp_types::{
+        notification::DidChangeTextDocument, request::Formatting, DidChangeTextDocumentParams,
+        DocumentFormattingParams, FormattingOptions, TextDocumentContentChangeEvent,
+        TextDocumentIdentifier, VersionedTextDocumentIdentifier, WorkDoneProgressParams,
+    };
+
+    use crate::test_helpers::helpers::{
+        initialize_server, jsonrpc_response_to_lsp_value, lsp_notification_to_jsonrpc_request,
+        lsp_request_to_jsonrpc_request, TEST_URI,
+    };
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_server_formatting() {
+        // Arrange
+        let mut service = initialize_server(&[(
+            TEST_URI.clone(),
+            r"(    node   
+            )         @cap                 
+;;;; comment     ",
+            Vec::new(),
+            Vec::new(),
+        )])
+        .await
+        .0;
+
+        // Act
+        let delta = service
+            .ready()
+            .await
+            .unwrap()
+            .call(lsp_request_to_jsonrpc_request::<Formatting>(
+                DocumentFormattingParams {
+                    text_document: TextDocumentIdentifier {
+                        uri: TEST_URI.clone(),
+                    },
+                    work_done_progress_params: WorkDoneProgressParams::default(),
+                    options: FormattingOptions::default(),
+                },
+            ))
+            .await
+            .unwrap();
+        let mut edits = jsonrpc_response_to_lsp_value::<Formatting>(delta.unwrap()).unwrap();
+        edits.sort_by(|a, b| {
+            let range_a = a.range;
+            let range_b = b.range;
+            range_b.start.cmp(&range_a.start)
+        });
+        service
+            .ready()
+            .await
+            .unwrap()
+            .call(
+                lsp_notification_to_jsonrpc_request::<DidChangeTextDocument>(
+                    DidChangeTextDocumentParams {
+                        text_document: VersionedTextDocumentIdentifier {
+                            uri: TEST_URI.clone(),
+                            version: 1,
+                        },
+                        content_changes: edits
+                            .iter()
+                            .map(|e| TextDocumentContentChangeEvent {
+                                range: Some(e.range),
+                                text: e.new_text.clone(),
+                                range_length: None,
+                            })
+                            .collect(),
+                    },
+                ),
+            )
+            .await
+            .unwrap();
+
+        // Assert
+        let doc = service.inner().document_map.get(&TEST_URI).unwrap();
+        assert_eq!(
+            doc.to_string(),
+            String::from(
+                r"(node) @cap
+
+; comment"
+            )
+        );
+    }
+}

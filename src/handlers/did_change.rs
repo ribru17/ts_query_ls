@@ -81,3 +81,91 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use pretty_assertions::assert_eq;
+    use rstest::rstest;
+    use tower::{Service, ServiceExt};
+    use tower_lsp::lsp_types::{
+        notification::DidChangeTextDocument, DidChangeTextDocumentParams,
+        TextDocumentContentChangeEvent, VersionedTextDocumentIdentifier,
+    };
+
+    use crate::test_helpers::helpers::{
+        initialize_server, lsp_notification_to_jsonrpc_request, TestEdit, TEST_URI,
+    };
+
+    #[rstest]
+    #[case(
+        r#"(node_name) @hello
+";" @semicolon"#,
+        r#"(identifier) @goodbye
+";" @punctuation.delimiter"#,
+        &[
+            TestEdit::new("goodbye", (0, 13), (0, 18)),
+            TestEdit::new("identifier", (0, 1), (0, 10)),
+            TestEdit::new("punctuation.delimiter", (1, 5), (1, 14)),
+        ]
+    )]
+    #[case(
+        r#"; Some comment with emojis 🚀🛳️🫡
+(node_name) @hello
+";" @semicolon"#,
+        r#"; Some comment with emojis 🚀🛳️🫡
+(identifier) @goodbye
+";" @punctuation.delimiter"#,
+        &[
+            TestEdit::new("goodbye", (1, 13), (1, 18)),
+            TestEdit::new("identifier", (1, 1), (1, 10)),
+            TestEdit::new("punctuation.delimiter", (2, 5), (2, 14)),
+        ]
+    )]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_server_did_change(
+        #[case] original: &str,
+        #[case] expected: &str,
+        #[case] edits: &[TestEdit],
+    ) {
+        // Arrange
+        let mut service =
+            initialize_server(&[(TEST_URI.clone(), original, Vec::new(), Vec::new())])
+                .await
+                .0;
+
+        // Act
+        service
+            .ready()
+            .await
+            .unwrap()
+            .call(
+                lsp_notification_to_jsonrpc_request::<DidChangeTextDocument>(
+                    DidChangeTextDocumentParams {
+                        text_document: VersionedTextDocumentIdentifier {
+                            uri: TEST_URI.clone(),
+                            version: 1,
+                        },
+                        content_changes: edits
+                            .iter()
+                            .map(Into::<TextDocumentContentChangeEvent>::into)
+                            .collect(),
+                    },
+                ),
+            )
+            .await
+            .unwrap();
+
+        // Assert
+        let doc = service.inner().document_map.get(&TEST_URI);
+        let tree = service.inner().cst_map.get(&TEST_URI);
+        assert!(doc.is_some());
+        let doc = doc.unwrap();
+        assert_eq!(doc.to_string(), expected);
+        assert!(tree.is_some());
+        let tree = tree.unwrap();
+        assert_eq!(
+            tree.root_node().utf8_text(expected.as_bytes()).unwrap(),
+            expected
+        );
+    }
+}

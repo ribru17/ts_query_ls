@@ -24,7 +24,7 @@ use tree_sitter::{wasmtime::Engine, Language, Tree};
 use handlers::*;
 
 mod handlers;
-mod test;
+mod test_helpers;
 mod util;
 
 lazy_static! {
