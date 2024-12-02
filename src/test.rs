@@ -21,14 +21,14 @@ mod tests {
         lsp_types::{
             notification::{DidChangeConfiguration, DidChangeTextDocument, DidOpenTextDocument},
             request::{Completion, Formatting, Initialize, References, Rename},
-            ClientCapabilities, CompletionItemKind, CompletionParams, CompletionResponse,
-            DidChangeConfigurationParams, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
-            DocumentChanges, DocumentFormattingParams, FormattingOptions, InitializeParams,
-            InitializeResult, Location, OneOf, OptionalVersionedTextDocumentIdentifier,
-            PartialResultParams, Position, Range, ReferenceContext, ReferenceParams, RenameParams,
-            TextDocumentContentChangeEvent, TextDocumentEdit, TextDocumentIdentifier,
-            TextDocumentItem, TextDocumentPositionParams, TextEdit, Url,
-            VersionedTextDocumentIdentifier, WorkDoneProgressParams, WorkspaceEdit,
+            ClientCapabilities, CompletionItem, CompletionItemKind, CompletionParams,
+            CompletionResponse, DidChangeConfigurationParams, DidChangeTextDocumentParams,
+            DidOpenTextDocumentParams, DocumentChanges, DocumentFormattingParams,
+            FormattingOptions, InitializeParams, InitializeResult, Location, OneOf,
+            OptionalVersionedTextDocumentIdentifier, PartialResultParams, Position, Range,
+            ReferenceContext, ReferenceParams, RenameParams, TextDocumentContentChangeEvent,
+            TextDocumentEdit, TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams,
+            TextEdit, Url, VersionedTextDocumentIdentifier, WorkDoneProgressParams, WorkspaceEdit,
         },
         LspService,
     };
@@ -105,6 +105,13 @@ mod tests {
         R: tower_lsp::lsp_types::request::Request,
     {
         Response::from_ok(ID.into(), to_value(params).unwrap())
+    }
+
+    fn jsonrpc_response_to_lsp_value<R>(response: Response) -> R::Result
+    where
+        R: tower_lsp::lsp_types::request::Request,
+    {
+        serde_json::from_value::<R::Result>(response.result().unwrap().clone()).unwrap()
     }
 
     #[derive(Debug, Clone)]
@@ -677,9 +684,8 @@ function: (identifier) @function)",
             ))
             .await
             .unwrap();
-        let mut edits =
-            serde_json::from_value::<Option<Vec<TextEdit>>>(delta.unwrap().into_parts().1.unwrap());
-        edits.as_mut().unwrap().as_mut().unwrap().sort_by(|a, b| {
+        let mut edits = jsonrpc_response_to_lsp_value::<Formatting>(delta.unwrap()).unwrap();
+        edits.sort_by(|a, b| {
             let range_a = a.range;
             let range_b = b.range;
             range_b.start.cmp(&range_a.start)
@@ -696,8 +702,6 @@ function: (identifier) @function)",
                             version: 1,
                         },
                         content_changes: edits
-                            .unwrap()
-                            .unwrap()
                             .iter()
                             .map(|e| TextDocumentContentChangeEvent {
                                 range: Some(e.range),
@@ -723,139 +727,89 @@ function: (identifier) @function)",
         );
     }
 
+    #[rstest]
+    #[case(
+        r#"((identifier) @constant
+(#match? @cons "^[A-Z][A-Z\\d_]*$"))"#,
+        Position { line: 1, character: 14 },
+        &[SymbolInfo { label: String::from("identifier"), named: true }],
+        &["operator"],
+        &[("@constant", CompletionItemKind::VARIABLE)]
+    )]
+    #[case(
+        r#"((ident) @constant
+(#match? @constant "^[A-Z][A-Z\\d_]*$"))"#,
+        Position { line: 0, character: 6 },
+        &[SymbolInfo { label: String::from("identifier"), named: true }],
+        &["operator"],
+        &[("identifier", CompletionItemKind::CLASS), ("operator: ", CompletionItemKind::FIELD)]
+    )]
+    #[case(
+        r"((constant) @constant
+; @co
+)
+",
+        Position { line: 1, character: 4 },
+        &[SymbolInfo { label: String::from("constant"), named: true }],
+        &["operator"],
+        &[]
+    )]
     #[tokio::test(flavor = "current_thread")]
-    async fn it_provides_capture_completions() {
-        let source = r#"((identifier) @constant
- (#match? @cons<CURSOR> "^[A-Z][A-Z\\d_]*$"))"#;
-        let expected_comps = vec![expected_capture_completion("@constant")];
-        test_server_completions(source, &expected_comps).await;
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn it_provides_symbol_completions() {
-        let source = r#"((ident<CURSOR>) @constant
-    (#match? @constant "^[A-Z][A-Z\\d_]*$"))"#;
-        let expected_comps = vec![expected_named_symbol_completion("identifier")];
-        test_server_completions(source, &expected_comps).await;
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn it_doesnt_provide_completions_inside_comments() {
-        let source = r"((identifier) @constant
-            ; @co<CURSOR>
-            )
-            ";
-        let expected_comps = Vec::new();
-        test_server_completions(source, &expected_comps).await;
-    }
-
-    // TODO: Other completion tests...
-
-    fn expected_capture_completion(text: &str) -> (&str, Option<CompletionItemKind>) {
-        (text, Some(CompletionItemKind::VARIABLE))
-    }
-
-    // fn expected_field_completion(text: &str) -> (&str, Option<CompletionItemKind>) {
-    //     (text, Some(CompletionItemKind::FIELD))
-    // }
-    //
-    fn expected_named_symbol_completion(text: &str) -> (&str, Option<CompletionItemKind>) {
-        (text, Some(CompletionItemKind::CLASS))
-    }
-
-    // fn expected_unnamed_symbol_completion(text: &str) -> (&str, Option<CompletionItemKind>) {
-    //     (text, Some(CompletionItemKind::CONSTANT))
-    // }
-
     async fn test_server_completions(
-        source: &str,
-        expected_completions: &[(&str, Option<CompletionItemKind>)],
+        #[case] source: &str,
+        #[case] position: Position,
+        #[case] symbols: &[SymbolInfo],
+        #[case] fields: &[&str],
+        #[case] expected_completions: &[(&str, CompletionItemKind)],
     ) {
         // Arrange
-        let mut cursor_position: Option<Position> = None;
-        for (line_num, line) in source.lines().enumerate() {
-            if let Some((cursor_idx, _)) = line.match_indices("<CURSOR>").next() {
-                assert!(
-                    cursor_position.is_none(),
-                    "Only one <CURSOR> marker supported for a test input"
-                );
-                cursor_position = Some(Position {
-                    line: line_num as u32,
-                    character: cursor_idx as u32,
-                });
-            }
-        }
-        let cursor_position =
-            cursor_position.expect("Expected one <CURSOR> marker in test input, found none");
-        let cleaned_input = source.replace("<CURSOR>", "");
+        let mut service =
+            initialize_server(&[(TEST_URI.clone(), source, symbols.to_vec(), fields.to_vec())])
+                .await
+                .0;
 
-        let mut service = initialize_server(&[(
-            TEST_URI.clone(),
-            &cleaned_input,
-            vec![SymbolInfo {
-                named: true,
-                label: String::from("identifier"),
-            }],
-            Vec::new(),
-        )])
-        .await
-        .0;
-        let data = service
+        // Act
+        let completions = service
             .ready()
             .await
             .unwrap()
             .call(lsp_request_to_jsonrpc_request::<Completion>(
                 CompletionParams {
+                    context: None,
                     text_document_position: TextDocumentPositionParams {
+                        position,
                         text_document: TextDocumentIdentifier {
                             uri: TEST_URI.clone(),
                         },
-                        position: cursor_position,
                     },
-                    work_done_progress_params: WorkDoneProgressParams {
-                        work_done_token: None,
-                    },
-                    partial_result_params: PartialResultParams {
-                        partial_result_token: None,
-                    },
-                    context: None,
+                    partial_result_params: PartialResultParams::default(),
+                    work_done_progress_params: WorkDoneProgressParams::default(),
                 },
             ))
             .await
             .map_err(|e| format!("textDocument/completion call returned error: {e}"))
             .unwrap();
-        let completions = match serde_json::from_value::<Option<CompletionResponse>>(
-            data.unwrap().into_parts().1.unwrap(),
-        ) {
-            Ok(Some(CompletionResponse::List(list))) => list.items,
-            Ok(Some(CompletionResponse::Array(comps))) => comps,
-            Ok(None) => Vec::new(),
-            other => panic!("textDocument/completion call returned unexpected response: {other:?}"),
-        };
-
-        let mut expected_comps = expected_completions.to_vec();
-        'finder_loop: while !expected_comps.is_empty() {
-            for comp in &completions {
-                if let Some(idx) =
-                    expected_comps
-                        .iter()
-                        .enumerate()
-                        .find_map(|(i, (c_text, c_kind))| {
-                            if comp.label.eq(c_text) && comp.kind.eq(c_kind) {
-                                Some(i)
-                            } else {
-                                None
-                            }
-                        })
-                {
-                    expected_comps.remove(idx);
-                    continue 'finder_loop;
-                }
-            }
-            break;
-        }
 
         // Assert
-        assert!(expected_comps.is_empty(), "Failed to provide the following completions:\n{expected_comps:#?}\nProvided completions:\n{completions:#?}");
+        let actual_completions = if expected_completions.is_empty() {
+            None
+        } else {
+            Some(CompletionResponse::Array(
+                expected_completions
+                    .iter()
+                    .map(|c| CompletionItem {
+                        label: c.0.to_string(),
+                        kind: Some(c.1),
+                        ..Default::default()
+                    })
+                    .collect(),
+            ))
+        };
+        assert_eq!(
+            completions,
+            Some(lsp_response_to_jsonrpc_response::<Completion>(
+                actual_completions
+            ))
+        );
     }
 }
