@@ -8,21 +8,10 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@1.82.0
-        id: toolchain
-      - run: cargo build --bins --tests
-
   lint:
     name: Lint
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: build
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@1.82.0
@@ -47,7 +36,6 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: build
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@1.82.0
