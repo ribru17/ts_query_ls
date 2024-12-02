@@ -6,7 +6,10 @@ mod tests {
     use serde_json::to_value;
 
     use lazy_static::lazy_static;
-    use std::{collections::BTreeMap, sync::Arc};
+    use std::{
+        collections::{BTreeMap, HashSet},
+        sync::Arc,
+    };
     use tree_sitter::Parser;
 
     use tower::{Service, ServiceExt};
@@ -30,7 +33,7 @@ mod tests {
         LspService,
     };
 
-    use crate::{Backend, Options, QUERY_LANGUAGE, SERVER_CAPABILITIES};
+    use crate::{Backend, Options, SymbolInfo, QUERY_LANGUAGE, SERVER_CAPABILITIES};
 
     lazy_static! {
         static ref TEST_URI: Url = Url::parse("file:///tmp/test.scm").unwrap();
@@ -147,8 +150,10 @@ mod tests {
         }
     }
 
-    /// Initialize a test server, populating it with fake documents denoted by (uri, text) pairs.
-    async fn initialize_server(documents: &[(Url, &str)]) -> (LspService<Backend>, Response) {
+    /// Initialize a test server, populating it with fake documents denoted by (uri, text, symbols, fields) tuples.
+    async fn initialize_server(
+        documents: &[(Url, &str, Vec<SymbolInfo>, Vec<&str>)],
+    ) -> (LspService<Backend>, Response) {
         let mut parser = Parser::new();
         parser
             .set_language(&QUERY_LANGUAGE)
@@ -158,25 +163,40 @@ mod tests {
             parser_aliases: None,
             language_retrieval_patterns: None,
         }));
-        let (mut service, _socket) = LspService::build(|client| Backend {
-            client,
-            document_map: DashMap::from_iter(
-                documents
-                    .iter()
-                    .map(|(uri, source)| (uri.clone(), Rope::from(*source))),
-            ),
-            cst_map: DashMap::from_iter(
-                documents
-                    .iter()
-                    .map(|(uri, source)| (uri.clone(), parser.parse(*source, None).unwrap())),
-            ),
-            symbols_set_map: DashMap::new(),
-            symbols_vec_map: DashMap::new(),
-            fields_set_map: DashMap::new(),
-            fields_vec_map: DashMap::new(),
-            options,
-        })
-        .finish();
+        let (mut service, _socket) =
+            LspService::build(|client| Backend {
+                client,
+                document_map: DashMap::from_iter(
+                    documents
+                        .iter()
+                        .map(|(uri, source, _, _)| (uri.clone(), Rope::from(*source))),
+                ),
+                cst_map: DashMap::from_iter(documents.iter().map(|(uri, source, _, _)| {
+                    (uri.clone(), parser.parse(*source, None).unwrap())
+                })),
+                symbols_set_map: DashMap::from_iter(documents.iter().map(
+                    |(uri, _, symbols, _)| (uri.clone(), HashSet::from_iter(symbols.clone())),
+                )),
+                symbols_vec_map: DashMap::from_iter(
+                    documents
+                        .iter()
+                        .map(|(uri, _, symbols, _)| (uri.clone(), symbols.clone())),
+                ),
+                fields_set_map: DashMap::from_iter(documents.iter().map(|(uri, _, _, fields)| {
+                    (
+                        uri.clone(),
+                        HashSet::from_iter(fields.iter().map(ToString::to_string)),
+                    )
+                })),
+                fields_vec_map: DashMap::from_iter(documents.iter().map(|(uri, _, _, fields)| {
+                    (
+                        uri.clone(),
+                        fields.clone().iter().map(ToString::to_string).collect(),
+                    )
+                })),
+                options,
+            })
+            .finish();
 
         let init_result = service
             .ready()
@@ -200,13 +220,23 @@ mod tests {
     #[case(&[])]
     #[case(&[(
         TEST_URI.clone(),
-        SIMPLE_FILE.clone()
+        SIMPLE_FILE.clone(),
+        Vec::new(),
+        Vec::new(),
     ), (
         TEST_URI_2.clone(),
-        COMPLEX_FILE.clone()
+        COMPLEX_FILE.clone(),
+        vec![
+            SymbolInfo { named: true, label: String::from("identifier") },
+            SymbolInfo { named: false, label: String::from(";") }
+        ],
+        vec![
+            "operator",
+            "content",
+        ],
     )])]
     #[tokio::test(flavor = "current_thread")]
-    async fn test_server_initialize(#[case] documents: &[(Url, &str)]) {
+    async fn test_server_initialize(#[case] documents: &[(Url, &str, Vec<SymbolInfo>, Vec<&str>)]) {
         // Act
         let (service, response) = initialize_server(documents).await;
 
@@ -219,27 +249,58 @@ mod tests {
                 ..Default::default()
             })
         );
-        if documents.is_empty() {
-            assert!(backend.document_map.is_empty());
-            assert!(backend.cst_map.is_empty());
-        } else {
-            assert_eq!(backend.document_map.len(), documents.len());
-            assert_eq!(backend.cst_map.len(), documents.len());
-            for (uri, doc) in documents {
-                assert_eq!(
-                    backend.document_map.get(uri).unwrap().to_string(),
-                    (*doc).to_string()
-                );
-                assert_eq!(
-                    backend
-                        .cst_map
-                        .get(uri)
-                        .unwrap()
-                        .root_node()
-                        .utf8_text((*doc).to_string().as_bytes())
-                        .unwrap(),
-                    (*doc).to_string()
-                );
+        assert_eq!(backend.document_map.len(), documents.len());
+        assert_eq!(backend.cst_map.len(), documents.len());
+        assert_eq!(backend.symbols_vec_map.len(), documents.len());
+        assert_eq!(backend.symbols_set_map.len(), documents.len());
+        assert_eq!(backend.fields_vec_map.len(), documents.len());
+        assert_eq!(backend.fields_set_map.len(), documents.len());
+        for (uri, doc, symbols, fields) in documents {
+            assert_eq!(
+                backend.document_map.get(uri).unwrap().to_string(),
+                (*doc).to_string()
+            );
+            assert_eq!(
+                backend
+                    .cst_map
+                    .get(uri)
+                    .unwrap()
+                    .root_node()
+                    .utf8_text((*doc).to_string().as_bytes())
+                    .unwrap(),
+                (*doc).to_string()
+            );
+            assert!(backend
+                .symbols_vec_map
+                .get(uri)
+                .is_some_and(|v| v.len() == symbols.len()));
+            assert!(backend
+                .symbols_set_map
+                .get(uri)
+                .is_some_and(|v| v.len() == symbols.len()));
+            for symbol in symbols {
+                assert!(backend.symbols_vec_map.get(uri).unwrap().contains(symbol));
+                assert!(backend.symbols_set_map.get(uri).unwrap().contains(symbol));
+            }
+            assert!(backend
+                .fields_vec_map
+                .get(uri)
+                .is_some_and(|v| v.len() == fields.len()));
+            assert!(backend
+                .fields_set_map
+                .get(uri)
+                .is_some_and(|v| v.len() == fields.len()));
+            for field in fields {
+                assert!(backend
+                    .fields_vec_map
+                    .get(uri)
+                    .unwrap()
+                    .contains(&field.to_string()));
+                assert!(backend
+                    .fields_set_map
+                    .get(uri)
+                    .unwrap()
+                    .contains(&field.to_string()));
             }
         }
     }
@@ -363,7 +424,10 @@ mod tests {
         #[case] edits: &[TestEdit],
     ) {
         // Arrange
-        let mut service = initialize_server(&[(TEST_URI.clone(), original)]).await.0;
+        let mut service =
+            initialize_server(&[(TEST_URI.clone(), original, Vec::new(), Vec::new())])
+                .await
+                .0;
 
         // Act
         service
@@ -436,7 +500,9 @@ function: (identifier) @function)",
         #[case] ranges: &[Coordinate],
     ) {
         // Arrange
-        let mut service = initialize_server(&[(TEST_URI.clone(), input)]).await.0;
+        let mut service = initialize_server(&[(TEST_URI.clone(), input, Vec::new(), Vec::new())])
+            .await
+            .0;
 
         // Act
         let refs = service
@@ -529,7 +595,10 @@ function: (identifier) @function)",
         #[case] new_name: &str,
     ) {
         // Arrange
-        let mut service = initialize_server(&[(TEST_URI.clone(), original)]).await.0;
+        let mut service =
+            initialize_server(&[(TEST_URI.clone(), original, Vec::new(), Vec::new())])
+                .await
+                .0;
 
         // Act
         let rename_edits = service
@@ -586,6 +655,8 @@ function: (identifier) @function)",
             r"(    node   
             )         @cap                 
 ;;;; comment     ",
+            Vec::new(),
+            Vec::new(),
         )])
         .await
         .0;
@@ -721,9 +792,10 @@ function: (identifier) @function)",
             cursor_position.expect("Expected one <CURSOR> marker in test input, found none");
         let cleaned_input = source.replace("<CURSOR>", "");
 
-        let mut service = initialize_server(&[(TEST_URI.clone(), &cleaned_input)])
-            .await
-            .0;
+        let mut service =
+            initialize_server(&[(TEST_URI.clone(), &cleaned_input, Vec::new(), Vec::new())])
+                .await
+                .0;
         let data = service
             .ready()
             .await
