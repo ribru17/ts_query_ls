@@ -2,7 +2,7 @@ use std::{env::set_current_dir, path::PathBuf};
 
 use log::{error, info};
 use tower_lsp::jsonrpc::Result;
-use tower_lsp::lsp_types::{InitializeParams, InitializeResult};
+use tower_lsp::lsp_types::{InitializeParams, InitializeResult, ServerInfo};
 
 use crate::{Backend, SERVER_CAPABILITIES};
 
@@ -17,7 +17,10 @@ pub async fn initialize(_backend: &Backend, params: InitializeParams) -> Result<
 
     Ok(InitializeResult {
         capabilities: SERVER_CAPABILITIES.clone(),
-        ..Default::default()
+        server_info: Some(ServerInfo {
+            name: String::from("ts_query_ls"),
+            version: Some(env!("CARGO_PKG_VERSION").to_string()),
+        }),
     })
 }
 
@@ -25,7 +28,7 @@ pub async fn initialize(_backend: &Backend, params: InitializeParams) -> Result<
 mod test {
     use pretty_assertions::assert_eq;
     use rstest::rstest;
-    use tower_lsp::lsp_types::{request::Initialize, InitializeResult, Url};
+    use tower_lsp::lsp_types::{request::Initialize, InitializeResult, ServerInfo, Url};
 
     use crate::{
         test_helpers::helpers::{
@@ -65,7 +68,10 @@ mod test {
             response,
             lsp_response_to_jsonrpc_response::<Initialize>(InitializeResult {
                 capabilities: SERVER_CAPABILITIES.clone(),
-                ..Default::default()
+                server_info: Some(ServerInfo {
+                    name: String::from("ts_query_ls"),
+                    version: Some(String::from("1.4.1")),
+                }),
             })
         );
         assert_eq!(backend.document_map.len(), documents.len());
