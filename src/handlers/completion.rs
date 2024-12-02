@@ -165,7 +165,7 @@ mod test {
         &[]
     )]
     #[tokio::test(flavor = "current_thread")]
-    async fn test_server_completions(
+    async fn server_completions(
         #[case] source: &str,
         #[case] position: Position,
         #[case] symbols: &[SymbolInfo],

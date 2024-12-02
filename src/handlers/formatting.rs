@@ -350,7 +350,7 @@ mod test {
     };
 
     #[tokio::test(flavor = "current_thread")]
-    async fn test_server_formatting() {
+    async fn server_formatting() {
         // Arrange
         let mut service = initialize_server(&[(
             TEST_URI.clone(),

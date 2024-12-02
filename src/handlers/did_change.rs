@@ -122,7 +122,7 @@ mod test {
         ]
     )]
     #[tokio::test(flavor = "current_thread")]
-    async fn test_server_did_change(
+    async fn server_did_change(
         #[case] original: &str,
         #[case] expected: &str,
         #[case] edits: &[TestEdit],
