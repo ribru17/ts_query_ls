@@ -86,7 +86,10 @@ vim.api.nvim_create_autocmd('FileType', {
 - [x] Recognize parsers built for `WASM`
 - [x] Document formatting compatible with the `nvim-treesitter` formatter
 - [x] Code cleanup
-- [ ] Add tests for all functionality
+- [x] Add tests for all* functionality
+
+> *All handlers are tested, but core functionality like language loading will be
+> more complicated, and does not yet have test coverage.
 
 ### Packaging
 
