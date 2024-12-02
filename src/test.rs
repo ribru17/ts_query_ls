@@ -731,17 +731,14 @@ function: (identifier) @function)",
         test_server_completions(source, &expected_comps).await;
     }
 
-    //    TODO: Requires server's `symbols_vec_map` to be populated
-    //    #[tokio::test(flavor = "current_thread")]
-    //    async fn it_provides_symbol_completions() {
-    //        let source = r#"((ident<CURSOR>) @constant
-    // (#match? @constant "^[A-Z][A-Z\\d_]*$"))"#;
-    //        let expected_comps = vec![expected_named_symbol_completion("identifier")];
-    //        test_server_completions(source, &expected_comps).await;
-    //    }
+    #[tokio::test(flavor = "current_thread")]
+    async fn it_provides_symbol_completions() {
+        let source = r#"((ident<CURSOR>) @constant
+    (#match? @constant "^[A-Z][A-Z\\d_]*$"))"#;
+        let expected_comps = vec![expected_named_symbol_completion("identifier")];
+        test_server_completions(source, &expected_comps).await;
+    }
 
-    // TODO: Probably want to replicate this test to make sure other completions
-    // aren't offered inside of comments, not just captures
     #[tokio::test(flavor = "current_thread")]
     async fn it_doesnt_provide_completions_inside_comments() {
         let source = r"((identifier) @constant
@@ -762,10 +759,10 @@ function: (identifier) @function)",
     //     (text, Some(CompletionItemKind::FIELD))
     // }
     //
-    // fn expected_named_symbol_completion(text: &str) -> (&str, Option<CompletionItemKind>) {
-    //     (text, Some(CompletionItemKind::CLASS))
-    // }
-    //
+    fn expected_named_symbol_completion(text: &str) -> (&str, Option<CompletionItemKind>) {
+        (text, Some(CompletionItemKind::CLASS))
+    }
+
     // fn expected_unnamed_symbol_completion(text: &str) -> (&str, Option<CompletionItemKind>) {
     //     (text, Some(CompletionItemKind::CONSTANT))
     // }
@@ -792,10 +789,17 @@ function: (identifier) @function)",
             cursor_position.expect("Expected one <CURSOR> marker in test input, found none");
         let cleaned_input = source.replace("<CURSOR>", "");
 
-        let mut service =
-            initialize_server(&[(TEST_URI.clone(), &cleaned_input, Vec::new(), Vec::new())])
-                .await
-                .0;
+        let mut service = initialize_server(&[(
+            TEST_URI.clone(),
+            &cleaned_input,
+            vec![SymbolInfo {
+                named: true,
+                label: String::from("identifier"),
+            }],
+            Vec::new(),
+        )])
+        .await
+        .0;
         let data = service
             .ready()
             .await
