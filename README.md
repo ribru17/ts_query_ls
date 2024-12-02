@@ -85,7 +85,7 @@ vim.api.nvim_create_autocmd('FileType', {
     should be exposed to gather pattern information more efficiently
 - [x] Recognize parsers built for `WASM`
 - [x] Document formatting compatible with the `nvim-treesitter` formatter
-- [ ] Code cleanup
+- [x] Code cleanup
 - [ ] Add tests for all functionality
 
 ### Packaging
@@ -93,8 +93,7 @@ vim.api.nvim_create_autocmd('FileType', {
 - [ ] [`homebrew`](https://github.com/Homebrew/homebrew-core)
       ([in progress](https://github.com/Homebrew/homebrew-core/pull/197587),
       requires repo to reach 75 GitHub stars)
-- [ ] [`nixpkgs`](https://github.com/NixOS/nixpkgs)
-      ([in progress](https://github.com/NixOS/nixpkgs/pull/350834))
+- [x] [`nixpkgs`](https://github.com/NixOS/nixpkgs)
 - [ ] [`mason.nvim`](https://github.com/mason-org/mason-registry)
       ([in progress](https://github.com/mason-org/mason-registry/pull/7849))
 

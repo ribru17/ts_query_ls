@@ -1,0 +1,125 @@
+use std::collections::HashSet;
+
+use log::info;
+use regex::Regex;
+use ropey::Rope;
+use tower_lsp::lsp_types::DidOpenTextDocumentParams;
+use tree_sitter::Parser;
+
+use crate::{
+    util::{get_diagnostics, get_language, TextProviderRope},
+    Backend, SymbolInfo, ENGINE, QUERY_LANGUAGE,
+};
+
+pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
+    let uri = &params.text_document.uri;
+    info!("ts_query_ls did_ops: {params:?}");
+    let contents = params.text_document.text;
+    let rope = Rope::from_str(&contents);
+    let mut parser = Parser::new();
+    parser
+        .set_language(&QUERY_LANGUAGE)
+        .expect("Error loading Query grammar");
+    backend.document_map.insert(uri.clone(), rope.clone());
+    backend
+        .cst_map
+        .insert(uri.clone(), parser.parse(&contents, None).unwrap());
+
+    // Get language, if it exists
+    let mut lang = None;
+    if let Ok(options) = backend.options.read() {
+        let mut language_retrieval_regexes: Vec<Regex> = options
+            .language_retrieval_patterns
+            .clone()
+            .unwrap_or(vec![])
+            .iter()
+            .map(|r| Regex::new(r).unwrap())
+            .collect();
+        language_retrieval_regexes.push(Regex::new(r"queries/([^/]+)/[^/]+\.scm$").unwrap());
+        language_retrieval_regexes
+            .push(Regex::new(r"tree-sitter-([^/]+)/queries/[^/]+\.scm$").unwrap());
+        let mut captures = None;
+        for re in language_retrieval_regexes {
+            if let Some(caps) = re.captures(uri.as_str()) {
+                captures = Some(caps);
+                break;
+            }
+        }
+        lang = captures
+            .and_then(|captures| captures.get(1))
+            .and_then(|cap| {
+                let cap_str = cap.as_str();
+                get_language(
+                    options
+                        .parser_aliases
+                        .as_ref()
+                        .and_then(|map| map.get(cap_str))
+                        .unwrap_or(&cap_str.to_owned())
+                        .as_str(),
+                    &options.parser_install_directories,
+                    &ENGINE,
+                )
+            });
+    }
+
+    // Initialize language info
+    let mut symbols_vec: Vec<SymbolInfo> = vec![];
+    let mut symbols_set: HashSet<SymbolInfo> = HashSet::new();
+    let mut fields_vec: Vec<String> = vec![];
+    let mut fields_set: HashSet<String> = HashSet::new();
+    if let Some(lang) = lang {
+        let error_symbol = SymbolInfo {
+            label: "ERROR".to_owned(),
+            named: true,
+        };
+        symbols_set.insert(error_symbol.clone());
+        symbols_vec.push(error_symbol);
+        for i in 0..lang.node_kind_count() as u16 {
+            let named = lang.node_kind_is_named(i);
+            let label = if named {
+                lang.node_kind_for_id(i).unwrap().to_owned()
+            } else {
+                lang.node_kind_for_id(i)
+                    .unwrap()
+                    .replace('\\', r"\\")
+                    .replace('"', r#"\""#)
+                    .replace('\n', r"\n")
+            };
+            let symbol_info = SymbolInfo { label, named };
+            if symbols_set.contains(&symbol_info) || !lang.node_kind_is_visible(i) {
+                continue;
+            }
+            symbols_set.insert(symbol_info.clone());
+            symbols_vec.push(symbol_info);
+        }
+        // Field IDs go from 1 to nfields inclusive (extra index 0 maps to NULL)
+        for i in 1..=lang.field_count() as u16 {
+            let field_name = lang.field_name_for_id(i).unwrap().to_owned();
+            if !fields_set.contains(&field_name) {
+                fields_set.insert(field_name.clone());
+                fields_vec.push(field_name);
+            }
+        }
+    }
+    backend.symbols_vec_map.insert(uri.to_owned(), symbols_vec);
+    backend.symbols_set_map.insert(uri.to_owned(), symbols_set);
+    backend.fields_vec_map.insert(uri.to_owned(), fields_vec);
+    backend.fields_set_map.insert(uri.to_owned(), fields_set);
+
+    // Publish diagnostics
+    if let (Some(tree), Some(symbols), Some(fields)) = (
+        backend.cst_map.get(uri),
+        backend.symbols_set_map.get(uri),
+        backend.fields_set_map.get(uri),
+    ) {
+        let provider = TextProviderRope(&rope);
+        backend
+            .client
+            .publish_diagnostics(
+                uri.clone(),
+                get_diagnostics(&tree, &rope, &provider, &symbols, &fields),
+                None,
+            )
+            .await;
+    }
+}
