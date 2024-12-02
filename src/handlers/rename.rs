@@ -1,5 +1,3 @@
-use std::cmp::Ordering;
-
 use log::warn;
 use regex::Regex;
 use tower_lsp::{
@@ -49,7 +47,7 @@ pub async fn rename(backend: &Backend, params: RenameParams) -> Result<Option<Wo
             "New name is not a valid identifier",
         ));
     }
-    let mut text_document_edits: Vec<TextDocumentEdit> = vec![];
+    let mut text_document_edits = vec![];
     let provider = TextProviderRope(&rope);
     get_references(
         &tree.root_node(),
@@ -63,35 +61,21 @@ pub async fn rename(backend: &Backend, params: RenameParams) -> Result<Option<Wo
     .for_each(|mut elem| {
         // Don't include the preceding `@`
         elem.range.start.character += 1;
-        text_document_edits.push(TextDocumentEdit {
-            text_document: OptionalVersionedTextDocumentIdentifier {
-                uri: elem.uri,
-                // TODO: Support versioned edits
-                version: None,
-            },
-            edits: vec![OneOf::Left(TextEdit {
-                range: elem.range,
-                new_text: new_name.to_owned(),
-            })],
-        });
-    });
-    // Apply edits from end to start, to prevent offset inaccuracies
-    text_document_edits.sort_by(|a, b| {
-        if let OneOf::Left(a) = &a.edits[0] {
-            if let OneOf::Left(b) = &b.edits[0] {
-                let range_a = a.range;
-                let range_b = b.range;
-                range_b.start.cmp(&range_a.start)
-            } else {
-                Ordering::Equal
-            }
-        } else {
-            Ordering::Equal
-        }
+        text_document_edits.push(OneOf::Left(TextEdit {
+            range: elem.range,
+            new_text: new_name.to_owned(),
+        }));
     });
 
     Ok(Some(WorkspaceEdit {
-        document_changes: Some(DocumentChanges::Edits(text_document_edits)),
+        document_changes: Some(DocumentChanges::Edits(vec![TextDocumentEdit {
+            text_document: OptionalVersionedTextDocumentIdentifier {
+                uri: uri.clone(),
+                // TODO: Support versioned edits
+                version: None,
+            },
+            edits: text_document_edits,
+        }])),
         changes: None,
         change_annotations: None,
     }))
@@ -118,9 +102,9 @@ mod test {
         &SIMPLE_FILE,
         Position { line: 1, character: 12, },
         &[
-            TestEdit::new("superlongnamehere", (1, 21), (1, 29)),
-            TestEdit::new("superlongnamehere", (1, 11), (1, 19)),
             TestEdit::new("superlongnamehere", (0, 15), (0, 23)),
+            TestEdit::new("superlongnamehere", (1, 11), (1, 19)),
+            TestEdit::new("superlongnamehere", (1, 21), (1, 29)),
         ],
         "superlongnamehere",
     )]
@@ -128,10 +112,10 @@ mod test {
         &COMPLEX_FILE,
         Position { line: 8, character: 24 },
         &[
-            TestEdit::new("invariant", (18, 17), (18, 34)),
-            TestEdit::new("invariant", (12, 13), (12, 30)),
-            TestEdit::new("invariant", (9, 23), (9, 40)),
             TestEdit::new("invariant", (8, 25), (8, 42)),
+            TestEdit::new("invariant", (9, 23), (9, 40)),
+            TestEdit::new("invariant", (12, 13), (12, 30)),
+            TestEdit::new("invariant", (18, 17), (18, 34)),
         ],
         "invariant"
     )]
@@ -181,18 +165,13 @@ mod test {
             None
         } else {
             Some(WorkspaceEdit {
-                document_changes: Some(DocumentChanges::Edits(
-                    edits
-                        .iter()
-                        .map(|e| TextDocumentEdit {
-                            text_document: OptionalVersionedTextDocumentIdentifier {
-                                uri: TEST_URI.clone(),
-                                version: None,
-                            },
-                            edits: vec![OneOf::Left(e.into())],
-                        })
-                        .collect(),
-                )),
+                document_changes: Some(DocumentChanges::Edits(vec![TextDocumentEdit {
+                    text_document: OptionalVersionedTextDocumentIdentifier {
+                        uri: TEST_URI.clone(),
+                        version: None,
+                    },
+                    edits: edits.iter().map(|e| OneOf::Left(e.into())).collect(),
+                }])),
                 ..Default::default()
             })
         };
