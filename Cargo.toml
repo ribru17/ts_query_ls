@@ -27,3 +27,8 @@ tree-sitter-query = { git = "https://github.com/tree-sitter-grammars/tree-sitter
 
 [build-dependencies]
 cc = "1.1.30"
+
+[dev-dependencies]
+pretty_assertions = "1.4.1"
+rstest = "0.23.0"
+tower = { version = "0.5.1", features = ["util"] }

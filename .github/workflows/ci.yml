@@ -43,14 +43,13 @@ jobs:
           components: rustfmt
       - run: cargo fmt --check
 
-  # TODO: Run this once tests are added
-  # test:
-  #   name: Test
-  #   runs-on: ubuntu-latest
-  #   timeout-minutes: 10
-  #   needs: build
-  #   steps:
-  #     - uses: actions/checkout@v3
-  #     - uses: dtolnay/rust-toolchain@1.82.0
-  #       id: toolchain
-  #     - run: cargo test
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: build
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@1.82.0
+        id: toolchain
+      - run: cargo test
