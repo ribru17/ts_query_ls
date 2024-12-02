@@ -96,3 +96,109 @@ pub async fn rename(backend: &Backend, params: RenameParams) -> Result<Option<Wo
         change_annotations: None,
     }))
 }
+
+#[cfg(test)]
+mod test {
+    use pretty_assertions::assert_eq;
+    use rstest::rstest;
+    use tower::{Service, ServiceExt};
+    use tower_lsp::lsp_types::{
+        request::Rename, DocumentChanges, OneOf, OptionalVersionedTextDocumentIdentifier, Position,
+        RenameParams, TextDocumentEdit, TextDocumentIdentifier, TextDocumentPositionParams,
+        WorkDoneProgressParams, WorkspaceEdit,
+    };
+
+    use crate::test_helpers::helpers::{
+        initialize_server, lsp_request_to_jsonrpc_request, lsp_response_to_jsonrpc_response,
+        TestEdit, COMPLEX_FILE, SIMPLE_FILE, TEST_URI,
+    };
+
+    #[rstest]
+    #[case(
+        &SIMPLE_FILE,
+        Position { line: 1, character: 12, },
+        &[
+            TestEdit::new("superlongnamehere", (1, 21), (1, 29)),
+            TestEdit::new("superlongnamehere", (1, 11), (1, 19)),
+            TestEdit::new("superlongnamehere", (0, 15), (0, 23)),
+        ],
+        "superlongnamehere",
+    )]
+    #[case(
+        &COMPLEX_FILE,
+        Position { line: 8, character: 24 },
+        &[
+            TestEdit::new("invariant", (18, 17), (18, 34)),
+            TestEdit::new("invariant", (12, 13), (12, 30)),
+            TestEdit::new("invariant", (9, 23), (9, 40)),
+            TestEdit::new("invariant", (8, 25), (8, 42)),
+        ],
+        "invariant"
+    )]
+    #[case(
+        &COMPLEX_FILE,
+        Position { line: 8, character: 23 },
+        // Doesn't rename when cursor is not in capture
+        &[],
+        "invariant"
+    )]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_server_rename(
+        #[case] original: &str,
+        #[case] cursor_position: Position,
+        #[case] edits: &[TestEdit],
+        #[case] new_name: &str,
+    ) {
+        // Arrange
+        let mut service =
+            initialize_server(&[(TEST_URI.clone(), original, Vec::new(), Vec::new())])
+                .await
+                .0;
+
+        // Act
+        let rename_edits = service
+            .ready()
+            .await
+            .unwrap()
+            .call(lsp_request_to_jsonrpc_request::<Rename>(RenameParams {
+                text_document_position: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier {
+                        uri: TEST_URI.clone(),
+                    },
+                    position: cursor_position,
+                },
+                new_name: new_name.to_string(),
+                work_done_progress_params: WorkDoneProgressParams {
+                    work_done_token: None,
+                },
+            }))
+            .await
+            .map_err(|e| format!("textDocument/rename call returned error: {e}"))
+            .unwrap();
+
+        // Assert
+        let ws_edit = if edits.is_empty() {
+            None
+        } else {
+            Some(WorkspaceEdit {
+                document_changes: Some(DocumentChanges::Edits(
+                    edits
+                        .iter()
+                        .map(|e| TextDocumentEdit {
+                            text_document: OptionalVersionedTextDocumentIdentifier {
+                                uri: TEST_URI.clone(),
+                                version: None,
+                            },
+                            edits: vec![OneOf::Left(e.into())],
+                        })
+                        .collect(),
+                )),
+                ..Default::default()
+            })
+        };
+        assert_eq!(
+            rename_edits,
+            Some(lsp_response_to_jsonrpc_response::<Rename>(ws_edit))
+        );
+    }
+}

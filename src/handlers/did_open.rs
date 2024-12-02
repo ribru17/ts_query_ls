@@ -123,3 +123,54 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
             .await;
     }
 }
+
+#[cfg(test)]
+mod test {
+    use pretty_assertions::assert_eq;
+    use tower::{Service, ServiceExt};
+    use tower_lsp::lsp_types::{
+        notification::DidOpenTextDocument, DidOpenTextDocumentParams, TextDocumentItem,
+    };
+
+    use crate::test_helpers::helpers::{
+        initialize_server, lsp_notification_to_jsonrpc_request, TEST_URI,
+    };
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_server_did_open_document() {
+        // Arrange
+        let mut service = initialize_server(&[]).await.0;
+        let source = r#""[" @cap"#;
+
+        // Act
+        service
+            .ready()
+            .await
+            .unwrap()
+            .call(lsp_notification_to_jsonrpc_request::<DidOpenTextDocument>(
+                DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: TEST_URI.clone(),
+                        language_id: String::from("query"),
+                        version: 0,
+                        text: String::from(source),
+                    },
+                },
+            ))
+            .await
+            .unwrap();
+
+        // Assert
+        let doc_rope = service.inner().document_map.get(&TEST_URI);
+        assert!(doc_rope.is_some());
+        let doc_rope = doc_rope.unwrap();
+        assert_eq!(doc_rope.to_string(), source);
+        let tree = service.inner().cst_map.get(&TEST_URI);
+        assert!(tree.is_some());
+        let tree = tree.unwrap();
+        assert_eq!(
+            tree.root_node().utf8_text(source.as_bytes()).unwrap(),
+            doc_rope.to_string()
+        );
+    }
+}

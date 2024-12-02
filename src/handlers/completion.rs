@@ -117,3 +117,109 @@ pub async fn completion(
 
     Ok(Some(CompletionResponse::Array(completion_items)))
 }
+
+#[cfg(test)]
+mod test {
+    use pretty_assertions::assert_eq;
+    use rstest::rstest;
+    use tower::{Service, ServiceExt};
+    use tower_lsp::lsp_types::{
+        request::Completion, CompletionItem, CompletionItemKind, CompletionParams,
+        CompletionResponse, PartialResultParams, Position, TextDocumentIdentifier,
+        TextDocumentPositionParams, WorkDoneProgressParams,
+    };
+
+    use crate::{
+        test_helpers::helpers::{
+            initialize_server, lsp_request_to_jsonrpc_request, lsp_response_to_jsonrpc_response,
+            TEST_URI,
+        },
+        SymbolInfo,
+    };
+
+    #[rstest]
+    #[case(
+        r#"((identifier) @constant
+(#match? @cons "^[A-Z][A-Z\\d_]*$"))"#,
+        Position { line: 1, character: 14 },
+        &[SymbolInfo { label: String::from("identifier"), named: true }],
+        &["operator"],
+        &[("@constant", CompletionItemKind::VARIABLE)]
+    )]
+    #[case(
+        r#"((ident) @constant
+(#match? @constant "^[A-Z][A-Z\\d_]*$"))"#,
+        Position { line: 0, character: 6 },
+        &[SymbolInfo { label: String::from("identifier"), named: true }],
+        &["operator"],
+        &[("identifier", CompletionItemKind::CLASS), ("operator: ", CompletionItemKind::FIELD)]
+    )]
+    #[case(
+        r"((constant) @constant
+; @co
+)
+",
+        Position { line: 1, character: 4 },
+        &[SymbolInfo { label: String::from("constant"), named: true }],
+        &["operator"],
+        &[]
+    )]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_server_completions(
+        #[case] source: &str,
+        #[case] position: Position,
+        #[case] symbols: &[SymbolInfo],
+        #[case] fields: &[&str],
+        #[case] expected_completions: &[(&str, CompletionItemKind)],
+    ) {
+        // Arrange
+        let mut service =
+            initialize_server(&[(TEST_URI.clone(), source, symbols.to_vec(), fields.to_vec())])
+                .await
+                .0;
+
+        // Act
+        let completions = service
+            .ready()
+            .await
+            .unwrap()
+            .call(lsp_request_to_jsonrpc_request::<Completion>(
+                CompletionParams {
+                    context: None,
+                    text_document_position: TextDocumentPositionParams {
+                        position,
+                        text_document: TextDocumentIdentifier {
+                            uri: TEST_URI.clone(),
+                        },
+                    },
+                    partial_result_params: PartialResultParams::default(),
+                    work_done_progress_params: WorkDoneProgressParams::default(),
+                },
+            ))
+            .await
+            .map_err(|e| format!("textDocument/completion call returned error: {e}"))
+            .unwrap();
+
+        // Assert
+        let actual_completions = if expected_completions.is_empty() {
+            None
+        } else {
+            Some(CompletionResponse::Array(
+                expected_completions
+                    .iter()
+                    .map(|c| CompletionItem {
+                        label: c.0.to_string(),
+                        kind: Some(c.1),
+                        ..Default::default()
+                    })
+                    .collect(),
+            ))
+        };
+        assert_eq!(
+            completions,
+            Some(lsp_response_to_jsonrpc_response::<Completion>(
+                actual_completions
+            ))
+        );
+    }
+}

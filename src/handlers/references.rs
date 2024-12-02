@@ -53,3 +53,115 @@ pub async fn references(
         .collect(),
     ))
 }
+
+#[cfg(test)]
+mod test {
+    use pretty_assertions::assert_eq;
+    use rstest::rstest;
+    use tower::{Service, ServiceExt};
+    use tower_lsp::lsp_types::{
+        request::References, Location, PartialResultParams, Position, Range, ReferenceContext,
+        ReferenceParams, TextDocumentIdentifier, TextDocumentPositionParams,
+        WorkDoneProgressParams,
+    };
+
+    use crate::test_helpers::helpers::{
+        initialize_server, lsp_request_to_jsonrpc_request, lsp_response_to_jsonrpc_response,
+        COMPLEX_FILE, TEST_URI,
+    };
+
+    type Coordinate = ((u32, u32), (u32, u32));
+
+    #[rstest]
+    #[case(
+        "(identifier) @variable",
+        Position { line: 0, character: 17 },
+        &[((0, 13), (0, 22))]
+    )]
+    #[case(
+        r#"((identifier) @constant
+(#match? @constant "^[A-Z][A-Z\\d_]*$"))"#,
+        Position { line: 0, character: 17 },
+        &[((0, 14), (0, 23)), ((1, 9), (1, 18))]
+    )]
+    #[case(
+        r"(type_definition declarator: (type_identifier) @name) @definition.type",
+        Position { line: 0, character: 61 },
+        &[((0, 54), (0, 70))]
+    )]
+    #[case(
+        r"(call_expression
+function: (identifier) @function)",
+        Position { line: 0, character: 1 },
+        &[]
+    )]
+    #[case(
+        &COMPLEX_FILE,
+        Position { line: 5, character: 25 },
+        &[((5, 25), (5, 44)), ((11, 15), (11, 34)), ((17, 16), (17, 35))]
+    )]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_capture_references(
+        #[case] input: &str,
+        #[case] position: Position,
+        #[case] ranges: &[Coordinate],
+    ) {
+        // Arrange
+        let mut service = initialize_server(&[(TEST_URI.clone(), input, Vec::new(), Vec::new())])
+            .await
+            .0;
+
+        // Act
+        let refs = service
+            .ready()
+            .await
+            .unwrap()
+            .call(lsp_request_to_jsonrpc_request::<References>(
+                ReferenceParams {
+                    context: ReferenceContext {
+                        include_declaration: true,
+                    },
+                    partial_result_params: PartialResultParams {
+                        partial_result_token: None,
+                    },
+                    work_done_progress_params: WorkDoneProgressParams::default(),
+                    text_document_position: TextDocumentPositionParams {
+                        text_document: TextDocumentIdentifier {
+                            uri: TEST_URI.clone(),
+                        },
+                        position,
+                    },
+                },
+            ))
+            .await
+            .unwrap();
+
+        // Assert
+        let actual = if ranges.is_empty() {
+            None
+        } else {
+            Some(
+                ranges
+                    .iter()
+                    .map(|r| Location {
+                        uri: TEST_URI.clone(),
+                        range: Range {
+                            start: Position {
+                                line: r.0 .0,
+                                character: r.0 .1,
+                            },
+                            end: Position {
+                                line: r.1 .0,
+                                character: r.1 .1,
+                            },
+                        },
+                    })
+                    .collect(),
+            )
+        };
+        assert_eq!(
+            refs,
+            Some(lsp_response_to_jsonrpc_response::<References>(actual))
+        );
+    }
+}
