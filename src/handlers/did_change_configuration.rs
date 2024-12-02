@@ -29,7 +29,7 @@ mod test {
     };
 
     #[tokio::test(flavor = "current_thread")]
-    async fn test_server_did_change_configuration() {
+    async fn server_did_change_configuration() {
         // Arrange
         let mut service = initialize_server(&[]).await.0;
 

@@ -101,7 +101,7 @@ function: (identifier) @function)",
         &[((5, 25), (5, 44)), ((11, 15), (11, 34)), ((17, 16), (17, 35))]
     )]
     #[tokio::test(flavor = "current_thread")]
-    async fn test_capture_references(
+    async fn capture_references(
         #[case] input: &str,
         #[case] position: Position,
         #[case] ranges: &[Coordinate],

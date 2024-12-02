@@ -143,7 +143,7 @@ mod test {
         "invariant"
     )]
     #[tokio::test(flavor = "current_thread")]
-    async fn test_server_rename(
+    async fn server_rename(
         #[case] original: &str,
         #[case] cursor_position: Position,
         #[case] edits: &[TestEdit],

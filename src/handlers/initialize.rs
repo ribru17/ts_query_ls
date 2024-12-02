@@ -55,7 +55,7 @@ mod test {
         ],
     )])]
     #[tokio::test(flavor = "current_thread")]
-    async fn test_server_initialize(#[case] documents: &[(Url, &str, Vec<SymbolInfo>, Vec<&str>)]) {
+    async fn server_initialize(#[case] documents: &[(Url, &str, Vec<SymbolInfo>, Vec<&str>)]) {
         // Act
         let (service, response) = initialize_server(documents).await;
 
