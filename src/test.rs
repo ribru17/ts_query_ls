@@ -1,11 +1,11 @@
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
+    use ropey::Rope;
     use rstest::rstest;
     use serde_json::to_value;
 
     use lazy_static::lazy_static;
-    use ropey::Rope;
     use std::{collections::BTreeMap, sync::Arc};
     use tree_sitter::Parser;
 
@@ -35,9 +35,9 @@ mod tests {
     lazy_static! {
         static ref TEST_URI: Url = Url::parse("file:///tmp/test.scm").unwrap();
         static ref TEST_URI_2: Url = Url::parse("file:///tmp/injections.scm").unwrap();
-        static ref SIMPLE_FILE: &'static str = r#"((identifier) @constant
+        static ref SIMPLE_FILE: &'static str = r"((identifier) @constant
  (#match? @constant @constant))
- ; @constant here"#;
+ ; @constant here";
         static ref COMPLEX_FILE: &'static str = r#"((comment) @injection.content
   (#set! injection.language "comment"))
 
@@ -228,7 +228,7 @@ mod tests {
             for (uri, doc) in documents {
                 assert_eq!(
                     backend.document_map.get(uri).unwrap().to_string(),
-                    doc.to_string()
+                    (*doc).to_string()
                 );
                 assert_eq!(
                     backend
@@ -236,9 +236,9 @@ mod tests {
                         .get(uri)
                         .unwrap()
                         .root_node()
-                        .utf8_text(doc.to_string().as_bytes())
+                        .utf8_text((*doc).to_string().as_bytes())
                         .unwrap(),
-                    doc.to_string()
+                    (*doc).to_string()
                 );
             }
         }
@@ -653,21 +653,30 @@ function: (identifier) @function)",
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn it_provides_capture_completions_0() {
+    async fn it_provides_capture_completions() {
         let source = r#"((identifier) @constant
  (#match? @cons<CURSOR> "^[A-Z][A-Z\\d_]*$"))"#;
         let expected_comps = vec![expected_capture_completion("@constant")];
         test_server_completions(source, &expected_comps).await;
     }
 
+    //    TODO: Requires server's `symbols_vec_map` to be populated
+    //    #[tokio::test(flavor = "current_thread")]
+    //    async fn it_provides_symbol_completions() {
+    //        let source = r#"((ident<CURSOR>) @constant
+    // (#match? @constant "^[A-Z][A-Z\\d_]*$"))"#;
+    //        let expected_comps = vec![expected_named_symbol_completion("identifier")];
+    //        test_server_completions(source, &expected_comps).await;
+    //    }
+
     // TODO: Probably want to replicate this test to make sure other completions
     // aren't offered inside of comments, not just captures
     #[tokio::test(flavor = "current_thread")]
     async fn it_doesnt_provide_completions_inside_comments() {
-        let source = r#"((identifier) @constant
+        let source = r"((identifier) @constant
             ; @co<CURSOR>
             )
-            "#;
+            ";
         let expected_comps = Vec::new();
         test_server_completions(source, &expected_comps).await;
     }
@@ -677,7 +686,18 @@ function: (identifier) @function)",
     fn expected_capture_completion(text: &str) -> (&str, Option<CompletionItemKind>) {
         (text, Some(CompletionItemKind::VARIABLE))
     }
-    // TODO: helpers for other items we offer completions for...
+
+    // fn expected_field_completion(text: &str) -> (&str, Option<CompletionItemKind>) {
+    //     (text, Some(CompletionItemKind::FIELD))
+    // }
+    //
+    // fn expected_named_symbol_completion(text: &str) -> (&str, Option<CompletionItemKind>) {
+    //     (text, Some(CompletionItemKind::CLASS))
+    // }
+    //
+    // fn expected_unnamed_symbol_completion(text: &str) -> (&str, Option<CompletionItemKind>) {
+    //     (text, Some(CompletionItemKind::CONSTANT))
+    // }
 
     async fn test_server_completions(
         source: &str,
@@ -760,22 +780,6 @@ function: (identifier) @function)",
         }
 
         // Assert
-        if !expected_comps.is_empty() {
-            let mut msg = "Failed to provide the following completions: ".to_string();
-            for (expected_text, expected_kind) in expected_comps.iter() {
-                msg += &format!(
-                    "{expected_text} -- {}, ",
-                    if let Some(kind) = expected_kind {
-                        format!("{kind:?}")
-                    } else {
-                        "No kind".to_string()
-                    }
-                );
-            }
-            msg.pop(); // remove trailing space
-            msg.pop(); // remove trailing comma
-
-            panic!("{msg}");
-        }
+        assert!(expected_comps.is_empty(), "Failed to provide the following completions:\n{expected_comps:#?}\nProvided completions:\n{completions:#?}");
     }
 }
