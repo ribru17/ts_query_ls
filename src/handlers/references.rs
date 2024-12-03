@@ -31,6 +31,7 @@ pub async fn references(
         Some(value) => value,
     };
 
+    let include_def = params.context.include_declaration;
     let query = Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap();
     let mut cursor = QueryCursor::new();
     let provider = TextProviderRope(&rope);
@@ -49,7 +50,13 @@ pub async fn references(
             &provider,
             &rope,
         )
-        .map(|node| ts_node_to_lsp_location(uri, &node, &rope))
+        .filter_map(|node| {
+            if include_def || node.parent().is_some_and(|p| p.kind() == "parameters") {
+                Some(ts_node_to_lsp_location(uri, &node, &rope))
+            } else {
+                None
+            }
+        })
         .collect(),
     ))
 }
@@ -76,34 +83,46 @@ mod test {
     #[case(
         "(identifier) @variable",
         Position { line: 0, character: 17 },
+        true,
         &[((0, 13), (0, 22))]
     )]
     #[case(
         r#"((identifier) @constant
 (#match? @constant "^[A-Z][A-Z\\d_]*$"))"#,
         Position { line: 0, character: 17 },
+        true,
         &[((0, 14), (0, 23)), ((1, 9), (1, 18))]
     )]
     #[case(
         r"(type_definition declarator: (type_identifier) @name) @definition.type",
         Position { line: 0, character: 61 },
+        true,
         &[((0, 54), (0, 70))]
     )]
     #[case(
         r"(call_expression
 function: (identifier) @function)",
         Position { line: 0, character: 1 },
+        true,
         &[]
     )]
     #[case(
         &COMPLEX_FILE,
         Position { line: 5, character: 25 },
+        true,
         &[((5, 25), (5, 44)), ((11, 15), (11, 34)), ((17, 16), (17, 35))]
+    )]
+    #[case(
+        &COMPLEX_FILE,
+        Position { line: 12, character: 13 },
+        false,
+        &[((12, 12), (12, 30)), ((18, 16), (18, 34))]
     )]
     #[tokio::test(flavor = "current_thread")]
     async fn capture_references(
         #[case] input: &str,
         #[case] position: Position,
+        #[case] include_declaration: bool,
         #[case] ranges: &[Coordinate],
     ) {
         // Arrange
@@ -119,7 +138,7 @@ function: (identifier) @function)",
             .call(lsp_request_to_jsonrpc_request::<References>(
                 ReferenceParams {
                     context: ReferenceContext {
-                        include_declaration: true,
+                        include_declaration,
                     },
                     partial_result_params: PartialResultParams {
                         partial_result_token: None,
