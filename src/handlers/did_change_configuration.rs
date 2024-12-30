@@ -35,14 +35,21 @@ mod test {
                     DidChangeConfigurationParams {
                         settings: serde_json::from_str(
                             r#"
-                    {
-                      "parser_aliases": {
-                        "ecma": "javascript",
-                        "jsx": "javascript",
-                        "foolang": "barlang"
-                      }
-                    }
-                    "#,
+                            {
+                              "parser_aliases": {
+                                "ecma": "javascript",
+                                "jsx": "javascript",
+                                "foolang": "barlang"
+                              },
+                              "parser_install_directories": [
+                                "/my/directory/",
+                                "/tmp/tree-sitter/parsers/"
+                              ],
+                              "language_retrieval_patterns": [
+                                "\\.ts\\-([^/]+)\\-parser\\.wasm"
+                              ]
+                            }
+                            "#,
                         )
                         .unwrap(),
                     },
@@ -63,8 +70,13 @@ mod test {
                     ("jsx".to_string(), "javascript".to_string()),
                     ("foolang".to_string(), "barlang".to_string())
                 ])),
-                parser_install_directories: None,
-                language_retrieval_patterns: None
+                parser_install_directories: Some(vec![
+                    String::from("/my/directory/"),
+                    String::from("/tmp/tree-sitter/parsers/"),
+                ]),
+                language_retrieval_patterns: Some(vec![String::from(
+                    r"\.ts\-([^/]+)\-parser\.wasm"
+                )])
             }
         );
     }
