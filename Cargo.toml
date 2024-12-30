@@ -1,6 +1,6 @@
 [package]
 name = "ts_query_ls"
-version = "1.4.1"
+version = "1.4.2"
 authors = ["Riley Bruins <ribru17@gmail.com>"]
 edition = "2021"
 description = "An LSP implementation for Tree-sitter's query files"
