@@ -6,8 +6,10 @@ use std::{
 };
 
 use lazy_static::lazy_static;
+use log::warn;
 use regex::Regex;
 use ropey::Rope;
+use serde_json::Value;
 use streaming_iterator::StreamingIterator;
 use tower_lsp::lsp_types::{
     Diagnostic, DiagnosticSeverity, Location, Position, Range, TextDocumentContentChangeEvent,
@@ -18,7 +20,7 @@ use tree_sitter::{
     QueryPredicateArg, TextProvider, Tree, WasmStore,
 };
 
-use crate::{SymbolInfo, QUERY_LANGUAGE};
+use crate::{Backend, Options, SymbolInfo, QUERY_LANGUAGE};
 
 lazy_static! {
     static ref LINE_START: Regex = Regex::new(r"^([^\S\r\n]*)").unwrap();
@@ -601,4 +603,15 @@ pub fn format_iter(
             lines.last_mut().unwrap().push(' ');
         }
     }
+}
+
+pub fn set_configuration_options(backend: &Backend, options: Value) {
+    let Ok(parsed_options) = serde_json::from_value::<Options>(options) else {
+        warn!("Unable to parse configuration settings!",);
+        return;
+    };
+    let mut options = backend.options.write().unwrap();
+    options.parser_install_directories = parsed_options.parser_install_directories;
+    options.parser_aliases = parsed_options.parser_aliases;
+    options.language_retrieval_patterns = parsed_options.language_retrieval_patterns;
 }
