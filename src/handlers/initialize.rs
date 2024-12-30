@@ -4,15 +4,20 @@ use log::{error, info};
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{InitializeParams, InitializeResult, ServerInfo};
 
+use crate::util::set_configuration_options;
 use crate::{Backend, SERVER_CAPABILITIES};
 
-pub async fn initialize(_backend: &Backend, params: InitializeParams) -> Result<InitializeResult> {
+pub async fn initialize(backend: &Backend, params: InitializeParams) -> Result<InitializeResult> {
     info!("ts_query_ls initialize: {params:?}");
     if let Some(root_uri) = params.root_uri {
         let root = PathBuf::from(root_uri.path());
         if set_current_dir(&root).is_err() {
             error!("Failed to set root directory to {:?}", root);
         };
+    }
+
+    if let Some(init_options) = params.initialization_options {
+        set_configuration_options(backend, init_options);
     }
 
     Ok(InitializeResult {
