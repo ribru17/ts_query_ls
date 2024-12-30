@@ -1,2 +1,4 @@
 /target
 run.lua
+editors/code/out
+***/*.vsix
