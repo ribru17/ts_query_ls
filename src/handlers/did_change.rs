@@ -129,9 +129,7 @@ mod test {
     ) {
         // Arrange
         let mut service =
-            initialize_server(&[(TEST_URI.clone(), original, Vec::new(), Vec::new())])
-                .await
-                .0;
+            initialize_server(&[(TEST_URI.clone(), original, Vec::new(), Vec::new())]).await;
 
         // Act
         service

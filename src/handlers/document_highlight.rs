@@ -189,9 +189,8 @@ expression: (boolean) @boolean",
         #[case] highlights: &[Highlight],
     ) {
         // Arrange
-        let mut service = initialize_server(&[(TEST_URI.clone(), input, Vec::new(), Vec::new())])
-            .await
-            .0;
+        let mut service =
+            initialize_server(&[(TEST_URI.clone(), input, Vec::new(), Vec::new())]).await;
 
         // Act
         let refs = service

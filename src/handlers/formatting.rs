@@ -360,8 +360,7 @@ mod test {
             Vec::new(),
             Vec::new(),
         )])
-        .await
-        .0;
+        .await;
 
         // Act
         let delta = service
