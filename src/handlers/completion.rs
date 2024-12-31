@@ -175,8 +175,7 @@ mod test {
         // Arrange
         let mut service =
             initialize_server(&[(TEST_URI.clone(), source, symbols.to_vec(), fields.to_vec())])
-                .await
-                .0;
+                .await;
 
         // Act
         let completions = service

@@ -32,106 +32,94 @@ pub async fn initialize(backend: &Backend, params: InitializeParams) -> Result<I
 #[cfg(test)]
 mod test {
     use pretty_assertions::assert_eq;
-    use rstest::rstest;
-    use tower_lsp::lsp_types::{request::Initialize, InitializeResult, ServerInfo, Url};
-
-    use crate::{
-        test_helpers::helpers::{
-            initialize_server, lsp_response_to_jsonrpc_response, COMPLEX_FILE, SIMPLE_FILE,
-            TEST_URI, TEST_URI_2,
+    use tower::{Service, ServiceExt};
+    use tower_lsp::{
+        lsp_types::{
+            request::Initialize, ClientCapabilities, InitializeParams, InitializeResult,
+            ServerInfo, Url,
         },
-        SymbolInfo, SERVER_CAPABILITIES,
+        LspService,
     };
 
-    #[rstest]
-    #[case(&[])]
-    #[case(&[(
-        TEST_URI.clone(),
-        SIMPLE_FILE.clone(),
-        Vec::new(),
-        Vec::new(),
-    ), (
-        TEST_URI_2.clone(),
-        COMPLEX_FILE.clone(),
-        vec![
-            SymbolInfo { named: true, label: String::from("identifier") },
-            SymbolInfo { named: false, label: String::from(";") }
-        ],
-        vec![
-            "operator",
-            "content",
-        ],
-    )])]
+    use crate::{
+        test_helpers::helpers::{lsp_request_to_jsonrpc_request, lsp_response_to_jsonrpc_response},
+        Backend, Options, SERVER_CAPABILITIES,
+    };
+
     #[tokio::test(flavor = "current_thread")]
-    async fn server_initialize(#[case] documents: &[(Url, &str, Vec<SymbolInfo>, Vec<&str>)]) {
+    async fn server_initialize() {
+        // Arrange
+        let (mut service, _socket) = LspService::build(|client| Backend {
+            client,
+            document_map: Default::default(),
+            cst_map: Default::default(),
+            symbols_set_map: Default::default(),
+            symbols_vec_map: Default::default(),
+            fields_set_map: Default::default(),
+            fields_vec_map: Default::default(),
+            options: Default::default(),
+        })
+        .finish();
+        let options = r#"
+            {
+              "parser_aliases": {
+                "ecma": "javascript",
+                "jsx": "javascript",
+                "foolang": "barlang"
+              },
+              "parser_install_directories": [
+                "/my/directory/",
+                "/tmp/tree-sitter/parsers/"
+              ],
+              "language_retrieval_patterns": [
+                "\\.ts\\-([^/]+)\\-parser\\.wasm"
+              ]
+            }
+        "#;
+
         // Act
-        let (service, response) = initialize_server(documents).await;
+        let init_result = service
+            .ready()
+            .await
+            .unwrap()
+            .call(lsp_request_to_jsonrpc_request::<Initialize>(
+                InitializeParams {
+                    capabilities: ClientCapabilities::default(),
+                    root_uri: Some(Url::parse("file:///tmp/").unwrap()),
+                    initialization_options: Some(serde_json::from_str(options).unwrap()),
+                    ..Default::default()
+                },
+            ))
+            .await
+            .unwrap();
 
         // Assert
-        let backend = service.inner();
         assert_eq!(
-            response,
-            lsp_response_to_jsonrpc_response::<Initialize>(InitializeResult {
-                capabilities: SERVER_CAPABILITIES.clone(),
-                server_info: Some(ServerInfo {
-                    name: String::from("ts_query_ls"),
-                    version: Some(String::from("1.4.2")),
-                }),
-            })
+            init_result,
+            Some(lsp_response_to_jsonrpc_response::<Initialize>(
+                InitializeResult {
+                    capabilities: SERVER_CAPABILITIES.clone(),
+                    server_info: Some(ServerInfo {
+                        name: String::from("ts_query_ls"),
+                        version: Some(String::from("1.4.2")),
+                    }),
+                }
+            ))
         );
-        assert_eq!(backend.document_map.len(), documents.len());
-        assert_eq!(backend.cst_map.len(), documents.len());
-        assert_eq!(backend.symbols_vec_map.len(), documents.len());
-        assert_eq!(backend.symbols_set_map.len(), documents.len());
-        assert_eq!(backend.fields_vec_map.len(), documents.len());
-        assert_eq!(backend.fields_set_map.len(), documents.len());
-        for (uri, doc, symbols, fields) in documents {
-            assert_eq!(
-                backend.document_map.get(uri).unwrap().to_string(),
-                (*doc).to_string()
-            );
-            assert_eq!(
-                backend
-                    .cst_map
-                    .get(uri)
-                    .unwrap()
-                    .root_node()
-                    .utf8_text((*doc).to_string().as_bytes())
-                    .unwrap(),
-                (*doc).to_string()
-            );
-            assert!(backend
-                .symbols_vec_map
-                .get(uri)
-                .is_some_and(|v| v.len() == symbols.len()));
-            assert!(backend
-                .symbols_set_map
-                .get(uri)
-                .is_some_and(|v| v.len() == symbols.len()));
-            for symbol in symbols {
-                assert!(backend.symbols_vec_map.get(uri).unwrap().contains(symbol));
-                assert!(backend.symbols_set_map.get(uri).unwrap().contains(symbol));
-            }
-            assert!(backend
-                .fields_vec_map
-                .get(uri)
-                .is_some_and(|v| v.len() == fields.len()));
-            assert!(backend
-                .fields_set_map
-                .get(uri)
-                .is_some_and(|v| v.len() == fields.len()));
-            for field in fields {
-                assert!(backend
-                    .fields_vec_map
-                    .get(uri)
-                    .unwrap()
-                    .contains(&field.to_string()));
-                assert!(backend
-                    .fields_set_map
-                    .get(uri)
-                    .unwrap()
-                    .contains(&field.to_string()));
-            }
-        }
+        let backend = service.inner();
+        let actual_options = backend.options.read().unwrap();
+        let expected_options = serde_json::from_str::<Options>(options).unwrap();
+        assert_eq!(
+            actual_options.parser_aliases,
+            expected_options.parser_aliases
+        );
+        assert_eq!(
+            actual_options.parser_install_directories,
+            expected_options.parser_install_directories
+        );
+        assert_eq!(
+            actual_options.language_retrieval_patterns,
+            expected_options.language_retrieval_patterns
+        );
     }
 }
