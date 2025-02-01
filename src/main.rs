@@ -1,7 +1,7 @@
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::{Arc, RwLock},
 };
 
@@ -61,6 +61,7 @@ struct Backend {
     symbols_vec_map: DashMap<Url, Vec<SymbolInfo>>,
     fields_set_map: DashMap<Url, HashSet<String>>,
     fields_vec_map: DashMap<Url, Vec<String>>,
+    supertype_map_map: DashMap<Url, HashMap<SymbolInfo, u16>>,
     options: Arc<RwLock<Options>>,
 }
 
@@ -147,6 +148,7 @@ async fn main() {
         symbols_vec_map: DashMap::new(),
         fields_set_map: DashMap::new(),
         fields_vec_map: DashMap::new(),
+        supertype_map_map: DashMap::new(),
         options,
     })
     .finish();

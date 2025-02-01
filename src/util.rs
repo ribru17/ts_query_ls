@@ -157,7 +157,7 @@ pub fn lsp_textdocchange_to_ts_inputedit(
     change: &TextDocumentContentChangeEvent,
 ) -> Result<InputEdit, Box<dyn std::error::Error>> {
     let text = change.text.as_str();
-    let text_end_byte_count = text.as_bytes().len();
+    let text_end_byte_count = text.len();
 
     let range = if let Some(range) = change.range {
         range

@@ -57,6 +57,7 @@ mod test {
             symbols_vec_map: Default::default(),
             fields_set_map: Default::default(),
             fields_vec_map: Default::default(),
+            supertype_map_map: Default::default(),
             options: Default::default(),
         })
         .finish();
@@ -101,7 +102,7 @@ mod test {
                     capabilities: SERVER_CAPABILITIES.clone(),
                     server_info: Some(ServerInfo {
                         name: String::from("ts_query_ls"),
-                        version: Some(String::from("1.4.2")),
+                        version: Some(String::from("1.5.0")),
                     }),
                 }
             ))

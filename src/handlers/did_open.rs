@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use log::info;
 use regex::Regex;
@@ -67,6 +67,7 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     let mut symbols_set: HashSet<SymbolInfo> = HashSet::new();
     let mut fields_vec: Vec<String> = vec![];
     let mut fields_set: HashSet<String> = HashSet::new();
+    let mut supertype_map: HashMap<SymbolInfo, u16> = HashMap::new();
     if let Some(lang) = lang {
         let error_symbol = SymbolInfo {
             label: "ERROR".to_owned(),
@@ -75,7 +76,8 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
         symbols_set.insert(error_symbol.clone());
         symbols_vec.push(error_symbol);
         for i in 0..lang.node_kind_count() as u16 {
-            let named = lang.node_kind_is_named(i);
+            let supertype = lang.node_kind_is_supertype(i);
+            let named = lang.node_kind_is_named(i) || supertype;
             let label = if named {
                 lang.node_kind_for_id(i).unwrap().to_owned()
             } else {
@@ -86,7 +88,12 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
                     .replace('\n', r"\n")
             };
             let symbol_info = SymbolInfo { label, named };
-            if symbols_set.contains(&symbol_info) || !lang.node_kind_is_visible(i) {
+            if supertype {
+                supertype_map.insert(symbol_info.clone(), i);
+            }
+            if symbols_set.contains(&symbol_info)
+                || !(lang.node_kind_is_visible(i) || lang.node_kind_is_supertype(i))
+            {
                 continue;
             }
             symbols_set.insert(symbol_info.clone());
@@ -105,6 +112,9 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     backend.symbols_set_map.insert(uri.to_owned(), symbols_set);
     backend.fields_vec_map.insert(uri.to_owned(), fields_vec);
     backend.fields_set_map.insert(uri.to_owned(), fields_set);
+    backend
+        .supertype_map_map
+        .insert(uri.to_owned(), supertype_map);
 
     // Publish diagnostics
     if let (Some(tree), Some(symbols), Some(fields)) = (

@@ -4,7 +4,10 @@ pub mod helpers {
     use serde_json::to_value;
 
     use lazy_static::lazy_static;
-    use std::{collections::HashSet, sync::Arc};
+    use std::{
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    };
     use tower::{Service, ServiceExt};
     use tree_sitter::Parser;
 
@@ -108,6 +111,11 @@ pub mod helpers {
                         fields.clone().iter().map(ToString::to_string).collect(),
                     )
                 })),
+                supertype_map_map: DashMap::from_iter(
+                    documents
+                        .iter()
+                        .map(|(uri, _, _, _)| (uri.clone(), HashMap::new())),
+                ),
                 options,
             })
             .finish();
@@ -302,6 +310,7 @@ mod test {
                     .unwrap()
                     .contains(&field.to_string()));
             }
+            assert!(backend.supertype_map_map.get(uri).is_some())
         }
     }
 }

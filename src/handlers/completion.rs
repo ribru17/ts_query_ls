@@ -56,13 +56,20 @@ pub async fn completion(
         cursor_after_at_sign || node_is_or_has_ancestor(tree.root_node(), current_node, "capture");
     if !in_capture && !node_is_or_has_ancestor(tree.root_node(), current_node, "predicate") {
         let in_anon = node_is_or_has_ancestor(tree.root_node(), current_node, "anonymous_node");
-        if let Some(symbols) = backend.symbols_vec_map.get(uri) {
+        if let (Some(symbols), Some(supertypes)) = (
+            backend.symbols_vec_map.get(uri),
+            backend.supertype_map_map.get(uri),
+        ) {
             for symbol in symbols.iter() {
                 if (in_anon && !symbol.named) || (!in_anon && symbol.named) {
                     completion_items.push(CompletionItem {
                         label: symbol.label.clone(),
                         kind: if symbol.named {
-                            Some(CompletionItemKind::CLASS)
+                            if !supertypes.contains_key(symbol) {
+                                Some(CompletionItemKind::CLASS)
+                            } else {
+                                Some(CompletionItemKind::INTERFACE)
+                            }
                         } else {
                             Some(CompletionItemKind::CONSTANT)
                         },
