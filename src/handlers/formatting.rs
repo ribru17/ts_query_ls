@@ -118,6 +118,7 @@ lazy_static! {
     (grouping)
     (named_node)
     (anonymous_node)
+    (missing_node)
     (field_definition)
   ] @format.prepend-newline)
 
@@ -129,6 +130,7 @@ lazy_static! {
     (grouping)
     (named_node)
     (anonymous_node)
+    (missing_node)
     (field_definition)
     (comment)
   ] @format.cancel-prepend
@@ -181,6 +183,7 @@ lazy_static! {
     (named_node)        ; (foo (bar))
     (predicate)         ; (named_node (#set!))
     (anonymous_node)
+    (missing_node)
     "."
   ])
 ;; Honoring comment's position within a node
@@ -213,6 +216,7 @@ lazy_static! {
     (named_node)
     (predicate)
     (anonymous_node)
+    (missing_node)
     "."
   ] @format.append-newline)
 
@@ -238,6 +242,7 @@ lazy_static! {
     (named_node)                  ; ((foo))
     (list)                        ; ([foo] (...))
     (anonymous_node)              ; ("foo")
+    (missing_node)
     (grouping . (_))
   ] @format.indent.begin
   .
@@ -252,6 +257,7 @@ lazy_static! {
   [
     (anonymous_node)
     (named_node)
+    (missing_node)
     (list)
     (predicate)
     (grouping . (_))
@@ -265,6 +271,8 @@ lazy_static! {
   (#not-kind-eq? @format.cancel-append "comment"))
 (grouping
   (capture) @format.prepend-space)
+(missing_node
+  name: (_) @format.prepend-space)
 ;; Remove unnecessary parens
 (grouping
   "(" @format.remove
@@ -279,6 +287,8 @@ lazy_static! {
     (grouping)
     (anonymous_node
       name: (string) .)
+    (missing_node
+      name: (_) .)
     (named_node
       [
         "_"
@@ -322,6 +332,7 @@ lazy_static! {
     (grouping)
     (named_node)
     (anonymous_node)
+    (missing_node)
     (negated_field)
   ] @format.cancel-append
   .
@@ -368,6 +379,13 @@ mod test {
   (   .lua-match?   @type"^[A-Z]"))"#,
         r#"((identifier) @type
   (#lua-match? @type "^[A-Z]"))"#
+    )]
+    #[case(
+        r#" ( MISSING    "somenode" )    @missing
+ (cap) @node"#,
+        r#"(MISSING "somenode") @missing
+
+(cap) @node"#
     )]
     #[tokio::test(flavor = "current_thread")]
     async fn server_formatting(#[case] before: &str, #[case] after: &str) {
