@@ -65,16 +65,17 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
     if let Some(tree) = result {
         *backend.cst_map.get_mut(uri).unwrap() = tree.clone();
         // Update diagnostics
-        if let (Some(symbols), Some(fields)) = (
+        if let (Some(symbols), Some(fields), Some(supertypes)) = (
             backend.symbols_set_map.get(uri),
             backend.fields_set_map.get(uri),
+            backend.supertype_map_map.get(uri),
         ) {
             let provider = TextProviderRope(&rope);
             backend
                 .client
                 .publish_diagnostics(
                     uri.clone(),
-                    get_diagnostics(&tree, &rope, &provider, &symbols, &fields),
+                    get_diagnostics(&tree, &rope, &provider, &symbols, &fields, &supertypes),
                     None,
                 )
                 .await;

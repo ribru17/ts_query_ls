@@ -37,7 +37,7 @@ lazy_static! {
         definition_provider: Some(OneOf::Left(true)),
         document_formatting_provider: Some(OneOf::Left(true)),
         completion_provider: Some(CompletionOptions {
-            trigger_characters: Some(["@", "\"", "\\", "("].map(ToOwned::to_owned).into()),
+            trigger_characters: Some(["@", "\"", "\\", "(", "/"].map(ToOwned::to_owned).into()),
             ..CompletionOptions::default()
         }),
         document_highlight_provider: Some(OneOf::Left(true)),
@@ -61,7 +61,7 @@ struct Backend {
     symbols_vec_map: DashMap<Url, Vec<SymbolInfo>>,
     fields_set_map: DashMap<Url, HashSet<String>>,
     fields_vec_map: DashMap<Url, Vec<String>>,
-    supertype_map_map: DashMap<Url, HashMap<SymbolInfo, u16>>,
+    supertype_map_map: DashMap<Url, HashMap<SymbolInfo, HashSet<SymbolInfo>>>,
     options: Arc<RwLock<Options>>,
 }
 

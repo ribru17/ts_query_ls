@@ -250,7 +250,8 @@ pub fn get_node_text(node: &Node, rope: &Rope) -> String {
 const DIAGNOSTICS_QUERY: &str = r#"
 (ERROR) @e
 (anonymous_node (string (string_content) @a))
-(named_node name: (identifier) @n)
+(named_node . name: (identifier) @n)
+(named_node . supertype: (identifier) @supertype)
 (field_definition name: (identifier) @f)
 (parameters (capture) @c)
 (_ "(" ")" @p)
@@ -285,6 +286,7 @@ pub fn get_diagnostics(
     provider: &TextProviderRope,
     symbols: &HashSet<SymbolInfo>,
     fields: &HashSet<String>,
+    supertypes: &HashMap<SymbolInfo, HashSet<SymbolInfo>>,
 ) -> Vec<Diagnostic> {
     let mut cursor = QueryCursor::new();
     let query = Query::new(&QUERY_LANGUAGE, DIAGNOSTICS_QUERY).unwrap();
@@ -308,6 +310,49 @@ pub fn get_diagnostics(
                     if !symbols.contains(&sym) {
                         diagnostics.push(Diagnostic {
                             message: "Invalid node type!".to_owned(),
+                            severity,
+                            range,
+                            ..Default::default()
+                        });
+                    }
+                }
+                "supertype" => {
+                    if !has_language_info {
+                        continue;
+                    }
+                    let supertype_text = get_node_text(&capture.node, rope);
+                    let sym = SymbolInfo {
+                        label: supertype_text.clone(),
+                        named: true,
+                    };
+                    if let Some(subtypes) = supertypes.get(&sym) {
+                        let subtype = capture.node.next_named_sibling().unwrap();
+                        let subtype_sym = SymbolInfo {
+                            label: get_node_text(&subtype, rope),
+                            named: true,
+                        };
+                        let range = ts_node_to_lsp_range(&subtype, rope);
+                        // Only run this check when subtypes is not empty, to account for parsers
+                        // generated with ABI < 15
+                        if !subtypes.is_empty() && !subtypes.contains(&subtype_sym) {
+                            diagnostics.push(Diagnostic {
+                                message: format!("Not a subtype of \"{supertype_text}\"!")
+                                    .to_owned(),
+                                severity,
+                                range,
+                                ..Default::default()
+                            });
+                        } else if subtypes.is_empty() && !symbols.contains(&subtype_sym) {
+                            diagnostics.push(Diagnostic {
+                                message: "Invalid node type!".to_owned(),
+                                severity,
+                                range,
+                                ..Default::default()
+                            });
+                        }
+                    } else {
+                        diagnostics.push(Diagnostic {
+                            message: "Not a supertype!".to_owned(),
                             severity,
                             range,
                             ..Default::default()

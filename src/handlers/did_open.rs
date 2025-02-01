@@ -67,7 +67,7 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     let mut symbols_set: HashSet<SymbolInfo> = HashSet::new();
     let mut fields_vec: Vec<String> = vec![];
     let mut fields_set: HashSet<String> = HashSet::new();
-    let mut supertype_map: HashMap<SymbolInfo, u16> = HashMap::new();
+    let mut supertype_map: HashMap<SymbolInfo, HashSet<SymbolInfo>> = HashMap::new();
     if let Some(lang) = lang {
         let error_symbol = SymbolInfo {
             label: "ERROR".to_owned(),
@@ -89,7 +89,16 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
             };
             let symbol_info = SymbolInfo { label, named };
             if supertype {
-                supertype_map.insert(symbol_info.clone(), i);
+                supertype_map.insert(
+                    symbol_info.clone(),
+                    lang.subtypes_for_supertype(i)
+                        .iter()
+                        .map(|s| SymbolInfo {
+                            label: lang.node_kind_for_id(*s).unwrap().to_string(),
+                            named: lang.node_kind_is_named(*s),
+                        })
+                        .collect(),
+                );
             }
             if symbols_set.contains(&symbol_info)
                 || !(lang.node_kind_is_visible(i) || lang.node_kind_is_supertype(i))
@@ -117,17 +126,18 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
         .insert(uri.to_owned(), supertype_map);
 
     // Publish diagnostics
-    if let (Some(tree), Some(symbols), Some(fields)) = (
+    if let (Some(tree), Some(symbols), Some(fields), Some(supertypes)) = (
         backend.cst_map.get(uri),
         backend.symbols_set_map.get(uri),
         backend.fields_set_map.get(uri),
+        backend.supertype_map_map.get(uri),
     ) {
         let provider = TextProviderRope(&rope);
         backend
             .client
             .publish_diagnostics(
                 uri.clone(),
-                get_diagnostics(&tree, &rope, &provider, &symbols, &fields),
+                get_diagnostics(&tree, &rope, &provider, &symbols, &fields, &supertypes),
                 None,
             )
             .await;
