@@ -72,7 +72,7 @@ vim.api.nvim_create_autocmd('FileType', {
 - [x] Fix utility functions, making them robust when it comes to UTF-16 code
       points
 - [x] Go to definition for captures
-- [ ] Recognition/completion of supertypes (requires `tree-sitter 0.25`)
+- [x] Recognition/completion of supertypes (requires `tree-sitter 0.25`)
 - [ ] Completions and diagnostics for a supertype's subtypes
   - Requires <https://github.com/tree-sitter/tree-sitter/pull/3938>
 - [x] Completions field names
