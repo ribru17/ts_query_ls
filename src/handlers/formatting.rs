@@ -43,6 +43,7 @@ pub async fn formatting(
         ("format.cancel-append", HashMap::new()),
         ("format.cancel-prepend", HashMap::new()),
         ("format.comment-fix", HashMap::new()),
+        ("format.make-pound", HashMap::new()),
         ("format.remove", HashMap::new()),
     ]);
 
@@ -140,6 +141,7 @@ lazy_static! {
   ":"
   "."
 ] @format.append-space
+(predicate "." @format.cancel-append @format.make-pound)
 (
   "." @format.prepend-space @format.cancel-append
   .
@@ -337,6 +339,7 @@ lazy_static! {
 #[cfg(test)]
 mod test {
     use pretty_assertions::assert_eq;
+    use rstest::rstest;
     use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
         notification::DidChangeTextDocument, request::Formatting, DidChangeTextDocumentParams,
@@ -349,18 +352,28 @@ mod test {
         lsp_request_to_jsonrpc_request, TEST_URI,
     };
 
-    #[tokio::test(flavor = "current_thread")]
-    async fn server_formatting() {
-        // Arrange
-        let mut service = initialize_server(&[(
-            TEST_URI.clone(),
-            r"(    node   
+    #[rstest]
+    #[case(
+        r"(    node   
             )         @cap                 
 ;;;; comment     ",
-            Vec::new(),
-            Vec::new(),
-        )])
-        .await;
+        r"(node) @cap
+
+; comment"
+    )]
+    #[case(
+        r#"   (
+        (   identifier  )
+        @type
+  (   .lua-match?   @type"^[A-Z]"))"#,
+        r#"((identifier) @type
+  (#lua-match? @type "^[A-Z]"))"#
+    )]
+    #[tokio::test(flavor = "current_thread")]
+    async fn server_formatting(#[case] before: &str, #[case] after: &str) {
+        // Arrange
+        let mut service =
+            initialize_server(&[(TEST_URI.clone(), before, Vec::new(), Vec::new())]).await;
 
         // Act
         let delta = service
@@ -411,13 +424,6 @@ mod test {
 
         // Assert
         let doc = service.inner().document_map.get(&TEST_URI).unwrap();
-        assert_eq!(
-            doc.to_string(),
-            String::from(
-                r"(node) @cap
-
-; comment"
-            )
-        );
+        assert_eq!(doc.to_string(), String::from(after));
     }
 }
