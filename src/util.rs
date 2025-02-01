@@ -249,12 +249,12 @@ pub fn get_node_text(node: &Node, rope: &Rope) -> String {
 
 const DIAGNOSTICS_QUERY: &str = r#"
 (ERROR) @e
+(MISSING) @m
 (anonymous_node (string (string_content) @a))
 (named_node . name: (identifier) @n)
 (named_node . supertype: (identifier) @supertype)
 (field_definition name: (identifier) @f)
 (parameters (capture) @c)
-(_ "(" ")" @p)
 (predicate
   name: (identifier) @_name
   (parameters
@@ -359,20 +359,6 @@ pub fn get_diagnostics(
                         });
                     }
                 }
-                "p" => {
-                    // Workaround to detect syntax errors where there is a missing closing
-                    // parenthesis. The parser will produce a valid tree here.
-                    if capture.node.is_missing() {
-                        let open_paren = capture.node.parent().and_then(|p| p.child(0)).unwrap();
-                        let range = ts_node_to_lsp_range(&open_paren, rope);
-                        diagnostics.push(Diagnostic {
-                            message: "Missing \")\"!".to_owned(),
-                            severity,
-                            range,
-                            ..Default::default()
-                        });
-                    }
-                }
                 "f" => {
                     if !has_language_info {
                         continue;
@@ -389,6 +375,12 @@ pub fn get_diagnostics(
                 }
                 "e" => diagnostics.push(Diagnostic {
                     message: "Invalid syntax!".to_owned(),
+                    severity,
+                    range,
+                    ..Default::default()
+                }),
+                "m" => diagnostics.push(Diagnostic {
+                    message: format!("Missing \"{}\"!", capture.node.kind()),
                     severity,
                     range,
                     ..Default::default()
