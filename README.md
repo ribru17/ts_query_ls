@@ -73,7 +73,7 @@ vim.api.nvim_create_autocmd('FileType', {
       points
 - [x] Go to definition for captures
 - [x] Recognition/completion of supertypes (requires `tree-sitter 0.25`)
-- [ ] Completions and diagnostics for a supertype's subtypes
+- [x] Completions and diagnostics for a supertype's subtypes
   - Requires <https://github.com/tree-sitter/tree-sitter/pull/3938>
 - [x] Completions field names
 - [x] Diagnostics for unrecognized nodes
