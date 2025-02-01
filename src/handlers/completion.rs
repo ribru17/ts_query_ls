@@ -12,7 +12,7 @@ use crate::util::{
     get_node_text, lsp_position_to_byte_offset, lsp_position_to_ts_point, node_is_or_has_ancestor,
     TextProviderRope,
 };
-use crate::{Backend, QUERY_LANGUAGE};
+use crate::{Backend, SymbolInfo, QUERY_LANGUAGE};
 
 pub async fn completion(
     backend: &Backend,
@@ -44,6 +44,35 @@ pub async fn completion(
     // Don't offer completions when in a comment
     if current_node.kind() == "comment" {
         return Ok(None);
+    }
+
+    // Subtype completions
+    if params
+        .context
+        .is_some_and(|ctx| ctx.trigger_character == Some("/".to_string()))
+        || current_node
+            .prev_sibling()
+            .is_some_and(|sib| sib.kind() == "/")
+    {
+        let response = || {
+            let supertype = current_node.prev_named_sibling()?;
+            let supertype_map_map = backend.supertype_map_map.get(uri)?;
+            let subtypes = supertype_map_map.get(&SymbolInfo {
+                label: get_node_text(&supertype, &rope),
+                named: true,
+            })?;
+            Some(CompletionResponse::Array(
+                subtypes
+                    .iter()
+                    .map(|sub| CompletionItem {
+                        label: sub.label.clone(),
+                        kind: Some(CompletionItemKind::CLASS),
+                        ..Default::default()
+                    })
+                    .collect(),
+            ))
+        };
+        return Ok(response());
     }
 
     let mut completion_items = vec![];
