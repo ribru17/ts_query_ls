@@ -613,6 +613,8 @@ pub fn format_iter(
                         .unwrap()
                         .push_str([";", mat.get(1).unwrap().as_str()].concat().as_str());
                 }
+            } else if map.get("format.make-pound").unwrap().contains_key(id) {
+                lines.last_mut().unwrap().push('#');
             } else if child.named_child_count() == 0 || child.kind() == "string" {
                 let text = NEWLINES
                     .split(
