@@ -253,6 +253,8 @@ const DIAGNOSTICS_QUERY: &str = r#"
 (anonymous_node (string (string_content) @a))
 (named_node . name: (identifier) @n)
 (named_node . supertype: (identifier) @supertype)
+(missing_node name: (identifier) @n)
+(missing_node name: (string (string_content) @a))
 (field_definition name: (identifier) @f)
 (parameters (capture) @c)
 (predicate
