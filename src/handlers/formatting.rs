@@ -28,6 +28,9 @@ pub async fn formatting(
         Some(val) => val,
     };
     let root = tree.root_node();
+    if root.has_error() {
+        return Ok(None);
+    }
     let mut cursor = QueryCursor::new();
     let provider = TextProviderRope(&rope);
     let mut matches = cursor.matches(&FORMAT_QUERY, root, &provider);
@@ -387,6 +390,12 @@ mod test {
 
 (cap) @node"#
     )]
+    #[case(
+        r#" ( MISSING    "somenode" ))    @missing
+ (cap) @node"#,
+        r#" ( MISSING    "somenode" ))    @missing
+ (cap) @node"#
+    )]
     #[tokio::test(flavor = "current_thread")]
     async fn server_formatting(#[case] before: &str, #[case] after: &str) {
         // Arrange
@@ -409,7 +418,8 @@ mod test {
             ))
             .await
             .unwrap();
-        let mut edits = jsonrpc_response_to_lsp_value::<Formatting>(delta.unwrap()).unwrap();
+        let mut edits =
+            jsonrpc_response_to_lsp_value::<Formatting>(delta.unwrap()).unwrap_or_default();
         edits.sort_by(|a, b| {
             let range_a = a.range;
             let range_b = b.range;
