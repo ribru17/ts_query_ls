@@ -81,33 +81,45 @@ pub async fn completion(
     let cursor_after_at_sign = lsp_position_to_byte_offset(position, &rope)
         .and_then(|b| rope.try_byte_to_char(b))
         .is_ok_and(|c| rope.char(c) == '@');
-    let in_capture =
-        cursor_after_at_sign || node_is_or_has_ancestor(tree.root_node(), current_node, "capture");
-    if !in_capture && !node_is_or_has_ancestor(tree.root_node(), current_node, "predicate") {
-        let in_anon = node_is_or_has_ancestor(tree.root_node(), current_node, "anonymous_node");
-        if let (Some(symbols), Some(supertypes)) = (
-            backend.symbols_vec_map.get(uri),
-            backend.supertype_map_map.get(uri),
-        ) {
-            for symbol in symbols.iter() {
-                if (in_anon && !symbol.named) || (!in_anon && symbol.named) {
-                    completion_items.push(CompletionItem {
-                        label: symbol.label.clone(),
-                        kind: if symbol.named {
-                            if !supertypes.contains_key(symbol) {
-                                Some(CompletionItemKind::CLASS)
+    let root = tree.root_node();
+    let in_capture = cursor_after_at_sign || node_is_or_has_ancestor(root, current_node, "capture");
+    let in_missing = node_is_or_has_ancestor(root, current_node, "missing_node");
+    if !in_capture && !node_is_or_has_ancestor(root, current_node, "predicate") {
+        let in_anon = node_is_or_has_ancestor(root, current_node, "string")
+            && !node_is_or_has_ancestor(root, current_node, "predicate");
+        let top_level = current_node.kind() == "program";
+        if !top_level {
+            if let (Some(symbols), Some(supertypes)) = (
+                backend.symbols_vec_map.get(uri),
+                backend.supertype_map_map.get(uri),
+            ) {
+                for symbol in symbols.iter() {
+                    if (in_anon && !symbol.named) || (!in_anon && symbol.named) {
+                        completion_items.push(CompletionItem {
+                            label: symbol.label.clone(),
+                            kind: if symbol.named {
+                                if !supertypes.contains_key(symbol) {
+                                    Some(CompletionItemKind::CLASS)
+                                } else {
+                                    Some(CompletionItemKind::INTERFACE)
+                                }
                             } else {
-                                Some(CompletionItemKind::INTERFACE)
-                            }
-                        } else {
-                            Some(CompletionItemKind::CONSTANT)
-                        },
-                        ..Default::default()
-                    });
+                                Some(CompletionItemKind::CONSTANT)
+                            },
+                            ..Default::default()
+                        });
+                    }
                 }
             }
         }
-        if !in_anon {
+        if !in_missing && !in_anon {
+            if !top_level {
+                completion_items.push(CompletionItem {
+                    label: String::from("MISSING"),
+                    kind: Some(CompletionItemKind::KEYWORD),
+                    ..Default::default()
+                });
+            }
             if let Some(fields) = backend.fields_vec_map.get(uri) {
                 for field in fields.iter() {
                     completion_items.push(CompletionItem {
@@ -188,7 +200,11 @@ mod test {
         Position { line: 0, character: 6 },
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
-        &[("identifier", CompletionItemKind::CLASS), ("operator: ", CompletionItemKind::FIELD)]
+        &[
+            ("identifier", CompletionItemKind::CLASS),
+            ("MISSING", CompletionItemKind::KEYWORD),
+            ("operator: ", CompletionItemKind::FIELD),
+        ]
     )]
     #[case(
         r"((constant) @constant
