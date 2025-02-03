@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     fs,
     ops::Deref,
     path::Path,
@@ -288,7 +288,7 @@ pub fn get_diagnostics(
     provider: &TextProviderRope,
     symbols: &HashSet<SymbolInfo>,
     fields: &HashSet<String>,
-    supertypes: &HashMap<SymbolInfo, HashSet<SymbolInfo>>,
+    supertypes: &HashMap<SymbolInfo, BTreeSet<SymbolInfo>>,
 ) -> Vec<Diagnostic> {
     let mut cursor = QueryCursor::new();
     let query = Query::new(&QUERY_LANGUAGE, DIAGNOSTICS_QUERY).unwrap();

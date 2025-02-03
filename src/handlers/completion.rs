@@ -192,6 +192,7 @@ mod test {
         Position { line: 1, character: 14 },
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
+        &["supertype"],
         &[("@constant", CompletionItemKind::VARIABLE)]
     )]
     #[case(
@@ -200,6 +201,7 @@ mod test {
         Position { line: 0, character: 6 },
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
+        &["supertype"],
         &[
             ("identifier", CompletionItemKind::CLASS),
             ("MISSING", CompletionItemKind::KEYWORD),
@@ -214,7 +216,19 @@ mod test {
         Position { line: 1, character: 4 },
         &[SymbolInfo { label: String::from("constant"), named: true }],
         &["operator"],
+        &["supertype"],
         &[]
+    )]
+    #[case(
+        r"(supertype/t)",
+        Position { line: 0, character: 12 },
+        &[SymbolInfo { label: String::from("constant"), named: true }],
+        &["operator"],
+        &["supertype"],
+        &[
+            ("test", CompletionItemKind::CLASS),
+            ("test2", CompletionItemKind::CLASS),
+        ]
     )]
     #[tokio::test(flavor = "current_thread")]
     async fn server_completions(
@@ -222,6 +236,7 @@ mod test {
         #[case] position: Position,
         #[case] symbols: &[SymbolInfo],
         #[case] fields: &[&str],
+        #[case] supertypes: &[&str],
         #[case] expected_completions: &[(&str, CompletionItemKind)],
     ) {
         // Arrange
@@ -230,7 +245,7 @@ mod test {
             source,
             symbols.to_vec(),
             fields.to_vec(),
-            Vec::new(),
+            supertypes.to_vec(),
         )])
         .await;
 

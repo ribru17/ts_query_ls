@@ -1,7 +1,7 @@
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     sync::{Arc, RwLock},
 };
 
@@ -60,7 +60,7 @@ lazy_static! {
     static ref QUERY_LANGUAGE: Language = tree_sitter_query::LANGUAGE.into();
 }
 
-#[derive(PartialEq, Eq, Hash, Clone)]
+#[derive(PartialEq, Eq, Hash, Clone, PartialOrd, Ord)]
 struct SymbolInfo {
     label: String,
     named: bool,
@@ -74,7 +74,7 @@ struct Backend {
     symbols_vec_map: DashMap<Url, Vec<SymbolInfo>>,
     fields_set_map: DashMap<Url, HashSet<String>>,
     fields_vec_map: DashMap<Url, Vec<String>>,
-    supertype_map_map: DashMap<Url, HashMap<SymbolInfo, HashSet<SymbolInfo>>>,
+    supertype_map_map: DashMap<Url, HashMap<SymbolInfo, BTreeSet<SymbolInfo>>>,
     options: Arc<RwLock<Options>>,
 }
 

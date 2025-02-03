@@ -5,7 +5,7 @@ pub mod helpers {
 
     use lazy_static::lazy_static;
     use std::{
-        collections::{HashMap, HashSet},
+        collections::{BTreeSet, HashMap, HashSet},
         sync::Arc,
     };
     use tower::{Service, ServiceExt};
@@ -125,7 +125,7 @@ pub mod helpers {
                                     named: true,
                                     label: String::from(*supertype),
                                 },
-                                HashSet::from([
+                                BTreeSet::from([
                                     SymbolInfo {
                                         named: true,
                                         label: String::from("test"),
