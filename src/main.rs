@@ -13,11 +13,12 @@ use tower_lsp::{
         CompletionOptions, CompletionParams, CompletionResponse, DidChangeConfigurationParams,
         DidChangeTextDocumentParams, DidOpenTextDocumentParams, DocumentFormattingParams,
         DocumentHighlight, DocumentHighlightParams, GotoDefinitionParams, GotoDefinitionResponse,
-        InitializeParams, InitializeResult, Location, OneOf, ReferenceParams, RenameParams,
-        SemanticTokenModifier, SemanticTokenType, SemanticTokensFullOptions, SemanticTokensLegend,
-        SemanticTokensOptions, SemanticTokensParams, SemanticTokensResult,
-        SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentSyncCapability,
-        TextDocumentSyncKind, TextEdit, Url, WorkspaceEdit,
+        Hover, HoverParams, HoverProviderCapability, InitializeParams, InitializeResult, Location,
+        OneOf, ReferenceParams, RenameParams, SemanticTokenModifier, SemanticTokenType,
+        SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
+        SemanticTokensParams, SemanticTokensResult, SemanticTokensServerCapabilities,
+        ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
+        WorkspaceEdit,
     },
     Client, LanguageServer, LspService, Server,
 };
@@ -54,6 +55,7 @@ lazy_static! {
                 ..Default::default()
             }
         )),
+        hover_provider: Some(HoverProviderCapability::Simple(true)),
         ..Default::default()
     };
     static ref ENGINE: Engine = Engine::default();
@@ -142,6 +144,10 @@ impl LanguageServer for Backend {
         params: SemanticTokensParams,
     ) -> Result<Option<SemanticTokensResult>> {
         semantic_tokens_full::semantic_tokens_full(self, params).await
+    }
+
+    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        hover::hover(self, params).await
     }
 }
 
