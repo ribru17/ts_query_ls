@@ -20,7 +20,11 @@ pub async fn semantic_tokens_full(
         &backend.document_map.get(uri),
         backend.supertype_map_map.get(uri),
     ) {
-        let query = Query::new(&QUERY_LANGUAGE, "(named_node (identifier) @cap)").unwrap();
+        let query = Query::new(
+            &QUERY_LANGUAGE,
+            "(named_node (identifier) @cap) (missing_node (identifier) @cap)",
+        )
+        .unwrap();
         let mut cursor = QueryCursor::new();
         let provider = TextProviderRope(rope);
         let mut matches = cursor.matches(&query, tree.root_node(), &provider);
@@ -92,6 +96,11 @@ mod test {
         let source = r"(ERROR) @error (supertype) @node (supertype) @node
 
 (supertype) @node
+
+; Weird
+(MISSING ERROR) @missingerror
+
+(MISSING supertype) @missingsupertype
         ";
         let mut service = initialize_server(&[(
             TEST_URI.clone(),
@@ -149,6 +158,20 @@ mod test {
                 SemanticToken {
                     delta_line: 2,
                     delta_start: 1,
+                    length: 9,
+                    token_type: 0,
+                    token_modifiers_bitset: 0,
+                },
+                SemanticToken {
+                    delta_line: 3,
+                    delta_start: 9,
+                    length: 5,
+                    token_type: 1,
+                    token_modifiers_bitset: 1,
+                },
+                SemanticToken {
+                    delta_line: 2,
+                    delta_start: 9,
                     length: 9,
                     token_type: 0,
                     token_modifiers_bitset: 0,
