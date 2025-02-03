@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use log::info;
 use regex::Regex;
@@ -67,7 +67,7 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     let mut symbols_set: HashSet<SymbolInfo> = HashSet::new();
     let mut fields_vec: Vec<String> = vec![];
     let mut fields_set: HashSet<String> = HashSet::new();
-    let mut supertype_map: HashMap<SymbolInfo, HashSet<SymbolInfo>> = HashMap::new();
+    let mut supertype_map: HashMap<SymbolInfo, BTreeSet<SymbolInfo>> = HashMap::new();
     if let Some(lang) = lang {
         let error_symbol = SymbolInfo {
             label: "ERROR".to_owned(),
