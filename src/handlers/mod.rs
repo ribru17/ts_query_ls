@@ -5,6 +5,7 @@ pub mod did_open;
 pub mod document_highlight;
 pub mod formatting;
 pub mod goto_definition;
+pub mod hover;
 pub mod initialize;
 pub mod references;
 pub mod rename;
