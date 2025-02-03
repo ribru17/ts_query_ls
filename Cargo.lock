@@ -1596,7 +1596,7 @@ dependencies = [
 
 [[package]]
 name = "ts_query_ls"
-version = "1.6.1"
+version = "1.7.0"
 dependencies = [
  "cc",
  "dashmap 6.1.0",
