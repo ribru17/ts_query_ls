@@ -8,4 +8,5 @@ pub mod goto_definition;
 pub mod initialize;
 pub mod references;
 pub mod rename;
+pub mod semantic_tokens_full;
 pub mod shutdown;

@@ -400,7 +400,8 @@ mod test {
     async fn server_formatting(#[case] before: &str, #[case] after: &str) {
         // Arrange
         let mut service =
-            initialize_server(&[(TEST_URI.clone(), before, Vec::new(), Vec::new())]).await;
+            initialize_server(&[(TEST_URI.clone(), before, Vec::new(), Vec::new(), Vec::new())])
+                .await;
 
         // Act
         let delta = service

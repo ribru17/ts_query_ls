@@ -190,7 +190,8 @@ expression: (boolean) @boolean",
     ) {
         // Arrange
         let mut service =
-            initialize_server(&[(TEST_URI.clone(), input, Vec::new(), Vec::new())]).await;
+            initialize_server(&[(TEST_URI.clone(), input, Vec::new(), Vec::new(), Vec::new())])
+                .await;
 
         // Act
         let refs = service
