@@ -225,9 +225,14 @@ mod test {
         #[case] expected_completions: &[(&str, CompletionItemKind)],
     ) {
         // Arrange
-        let mut service =
-            initialize_server(&[(TEST_URI.clone(), source, symbols.to_vec(), fields.to_vec())])
-                .await;
+        let mut service = initialize_server(&[(
+            TEST_URI.clone(),
+            source,
+            symbols.to_vec(),
+            fields.to_vec(),
+            Vec::new(),
+        )])
+        .await;
 
         // Act
         let completions = service

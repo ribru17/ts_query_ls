@@ -14,8 +14,10 @@ use tower_lsp::{
         DidChangeTextDocumentParams, DidOpenTextDocumentParams, DocumentFormattingParams,
         DocumentHighlight, DocumentHighlightParams, GotoDefinitionParams, GotoDefinitionResponse,
         InitializeParams, InitializeResult, Location, OneOf, ReferenceParams, RenameParams,
-        ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
-        WorkspaceEdit,
+        SemanticTokenModifier, SemanticTokenType, SemanticTokensFullOptions, SemanticTokensLegend,
+        SemanticTokensOptions, SemanticTokensParams, SemanticTokensResult,
+        SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentSyncCapability,
+        TextDocumentSyncKind, TextEdit, Url, WorkspaceEdit,
     },
     Client, LanguageServer, LspService, Server,
 };
@@ -41,6 +43,17 @@ lazy_static! {
             ..CompletionOptions::default()
         }),
         document_highlight_provider: Some(OneOf::Left(true)),
+        semantic_tokens_provider: Some(SemanticTokensServerCapabilities::SemanticTokensOptions(
+            SemanticTokensOptions {
+                legend: SemanticTokensLegend {
+                    token_types: vec![SemanticTokenType::INTERFACE, SemanticTokenType::VARIABLE],
+                    token_modifiers: vec![SemanticTokenModifier::DEFAULT_LIBRARY]
+                },
+                // TODO: Support range and delta semantic token requests.
+                full: Some(SemanticTokensFullOptions::Bool(true)),
+                ..Default::default()
+            }
+        )),
         ..Default::default()
     };
     static ref ENGINE: Engine = Engine::default();
@@ -122,6 +135,13 @@ impl LanguageServer for Backend {
 
     async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
         formatting::formatting(self, params).await
+    }
+
+    async fn semantic_tokens_full(
+        &self,
+        params: SemanticTokensParams,
+    ) -> Result<Option<SemanticTokensResult>> {
+        semantic_tokens_full::semantic_tokens_full(self, params).await
     }
 }
 

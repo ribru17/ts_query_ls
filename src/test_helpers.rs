@@ -67,10 +67,11 @@ pub mod helpers {
     // Always test with id of 1 for simplicity
     const ID: i64 = 1;
 
+    // A tuple holding the document's URI, source text, symbols, fields, and supertypes
+    pub type Document<'a> = (Url, &'a str, Vec<SymbolInfo>, Vec<&'a str>, Vec<&'a str>);
+
     /// Initialize a test server, populating it with fake documents denoted by (uri, text, symbols, fields) tuples.
-    pub async fn initialize_server(
-        documents: &[(Url, &str, Vec<SymbolInfo>, Vec<&str>)],
-    ) -> LspService<Backend> {
+    pub async fn initialize_server(documents: &[Document<'_>]) -> LspService<Backend> {
         let mut parser = Parser::new();
         parser
             .set_language(&QUERY_LANGUAGE)
@@ -80,45 +81,68 @@ pub mod helpers {
             parser_aliases: None,
             language_retrieval_patterns: None,
         }));
-        let (mut service, _socket) =
-            LspService::build(|client| Backend {
-                client,
-                document_map: DashMap::from_iter(
-                    documents
-                        .iter()
-                        .map(|(uri, source, _, _)| (uri.clone(), Rope::from(*source))),
-                ),
-                cst_map: DashMap::from_iter(documents.iter().map(|(uri, source, _, _)| {
+        let (mut service, _socket) = LspService::build(|client| Backend {
+            client,
+            document_map: DashMap::from_iter(
+                documents
+                    .iter()
+                    .map(|(uri, source, _, _, _)| (uri.clone(), Rope::from(*source))),
+            ),
+            cst_map: DashMap::from_iter(
+                documents.iter().map(|(uri, source, _, _, _)| {
                     (uri.clone(), parser.parse(*source, None).unwrap())
-                })),
-                symbols_set_map: DashMap::from_iter(documents.iter().map(
-                    |(uri, _, symbols, _)| (uri.clone(), HashSet::from_iter(symbols.clone())),
-                )),
-                symbols_vec_map: DashMap::from_iter(
-                    documents
-                        .iter()
-                        .map(|(uri, _, symbols, _)| (uri.clone(), symbols.clone())),
-                ),
-                fields_set_map: DashMap::from_iter(documents.iter().map(|(uri, _, _, fields)| {
+                }),
+            ),
+            symbols_set_map: DashMap::from_iter(
+                documents.iter().map(|(uri, _, symbols, _, _)| {
+                    (uri.clone(), HashSet::from_iter(symbols.clone()))
+                }),
+            ),
+            symbols_vec_map: DashMap::from_iter(
+                documents
+                    .iter()
+                    .map(|(uri, _, symbols, _, _)| (uri.clone(), symbols.clone())),
+            ),
+            fields_set_map: DashMap::from_iter(documents.iter().map(|(uri, _, _, fields, _)| {
+                (
+                    uri.clone(),
+                    HashSet::from_iter(fields.iter().map(ToString::to_string)),
+                )
+            })),
+            fields_vec_map: DashMap::from_iter(documents.iter().map(|(uri, _, _, fields, _)| {
+                (
+                    uri.clone(),
+                    fields.clone().iter().map(ToString::to_string).collect(),
+                )
+            })),
+            supertype_map_map: DashMap::from_iter(documents.iter().map(
+                |(uri, _, _, _, supertypes)| {
                     (
                         uri.clone(),
-                        HashSet::from_iter(fields.iter().map(ToString::to_string)),
+                        HashMap::from_iter(supertypes.iter().map(|supertype| {
+                            (
+                                SymbolInfo {
+                                    named: true,
+                                    label: String::from(*supertype),
+                                },
+                                HashSet::from([
+                                    SymbolInfo {
+                                        named: true,
+                                        label: String::from("test"),
+                                    },
+                                    SymbolInfo {
+                                        named: true,
+                                        label: String::from("test2"),
+                                    },
+                                ]),
+                            )
+                        })),
                     )
-                })),
-                fields_vec_map: DashMap::from_iter(documents.iter().map(|(uri, _, _, fields)| {
-                    (
-                        uri.clone(),
-                        fields.clone().iter().map(ToString::to_string).collect(),
-                    )
-                })),
-                supertype_map_map: DashMap::from_iter(
-                    documents
-                        .iter()
-                        .map(|(uri, _, _, _)| (uri.clone(), HashMap::new())),
-                ),
-                options,
-            })
-            .finish();
+                },
+            )),
+            options,
+        })
+        .finish();
 
         service
             .ready()
@@ -220,7 +244,6 @@ pub mod helpers {
 mod test {
     use pretty_assertions::assert_eq;
     use rstest::rstest;
-    use tower_lsp::lsp_types::Url;
 
     use crate::{
         test_helpers::helpers::{
@@ -229,11 +252,14 @@ mod test {
         SymbolInfo,
     };
 
+    use super::helpers::Document;
+
     #[rstest]
     #[case(&[])]
     #[case(&[(
         TEST_URI.clone(),
         SIMPLE_FILE.clone(),
+        Vec::new(),
         Vec::new(),
         Vec::new(),
     ), (
@@ -247,11 +273,10 @@ mod test {
             "operator",
             "content",
         ],
+        vec!["type"],
     )])]
     #[tokio::test(flavor = "current_thread")]
-    async fn initialize_server_helper(
-        #[case] documents: &[(Url, &str, Vec<SymbolInfo>, Vec<&str>)],
-    ) {
+    async fn initialize_server_helper(#[case] documents: &[Document<'_>]) {
         // Act
         let service = initialize_server(documents).await;
 
@@ -263,7 +288,7 @@ mod test {
         assert_eq!(backend.symbols_set_map.len(), documents.len());
         assert_eq!(backend.fields_vec_map.len(), documents.len());
         assert_eq!(backend.fields_set_map.len(), documents.len());
-        for (uri, doc, symbols, fields) in documents {
+        for (uri, doc, symbols, fields, supertypes) in documents {
             assert_eq!(
                 backend.document_map.get(uri).unwrap().to_string(),
                 (*doc).to_string()
@@ -310,7 +335,17 @@ mod test {
                     .unwrap()
                     .contains(&field.to_string()));
             }
-            assert!(backend.supertype_map_map.get(uri).is_some())
+            assert!(backend.supertype_map_map.get(uri).is_some());
+            for supertype in supertypes {
+                assert!(backend
+                    .supertype_map_map
+                    .get(uri)
+                    .unwrap()
+                    .contains_key(&SymbolInfo {
+                        named: true,
+                        label: String::from(*supertype)
+                    }))
+            }
         }
     }
 }
