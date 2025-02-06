@@ -95,7 +95,7 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
                         .iter()
                         .map(|s| SymbolInfo {
                             label: lang.node_kind_for_id(*s).unwrap().to_string(),
-                            named: lang.node_kind_is_named(*s),
+                            named: lang.node_kind_is_named(*s) || lang.node_kind_is_supertype(*s),
                         })
                         .collect(),
                 );

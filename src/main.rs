@@ -1,3 +1,4 @@
+use core::fmt;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -66,6 +67,13 @@ lazy_static! {
 struct SymbolInfo {
     label: String,
     named: bool,
+}
+
+impl fmt::Display for SymbolInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let delims = if self.named { ('(', ')') } else { ('"', '"') };
+        write!(f, "{}{}{}", delims.0, self.label, delims.1)
+    }
 }
 
 struct Backend {
