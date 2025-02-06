@@ -37,11 +37,10 @@ pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hove
                 .is_some_and(|p| p.kind() == "named_node" || p.kind() == "missing_node")
         {
             if let Some(subtypes) = supertypes.get(&sym).and_then(|subtypes| {
-                subtypes
-                    .iter()
-                    .fold(format!("Subtypes of `({node_text})`:\n"), |acc, subtype| {
-                        format!("{acc}\n- `({})`", subtype.label)
-                    })
+                (subtypes.iter().fold(
+                    format!("Subtypes of `({node_text})`:\n\n```query"),
+                    |acc, subtype| format!("{acc}\n{}", subtype),
+                ) + "\n```")
                     .into()
             }) {
                 return Ok(Some(Hover {
@@ -204,22 +203,28 @@ For example, this pattern would match any node inside a call:
         Position { line: 0, character: 25 } ),
     r"Subtypes of `(supertype)`:
 
-- `(test)`
-- `(test2)`")]
+```query
+(test)
+(test2)
+```")]
     #[case(SOURCE, vec!["supertype"], Position { line: 2, character: 4 }, Range::new(
         Position { line: 2, character: 1 },
         Position { line: 2, character: 10 } ),
     r"Subtypes of `(supertype)`:
 
-- `(test)`
-- `(test2)`")]
+```query
+(test)
+(test2)
+```")]
     #[case(SOURCE, vec!["supertype"], Position { line: 4, character: 10 }, Range::new(
         Position { line: 4, character: 9 },
         Position { line: 4, character: 18 } ),
     r"Subtypes of `(supertype)`:
 
-- `(test)`
-- `(test2)`")]
+```query
+(test)
+(test2)
+```")]
     #[tokio::test(flavor = "current_thread")]
     async fn hover(
         #[case] source: &str,
