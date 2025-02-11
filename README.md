@@ -33,6 +33,9 @@
 Example setup (for Neovim):
 
 ```lua
+-- Disable the (slow) builtin query linter
+vim.g.query_lint_on = {}
+
 vim.api.nvim_create_autocmd('FileType', {
   pattern = 'query',
   callback = function(ev)
@@ -43,7 +46,11 @@ vim.api.nvim_create_autocmd('FileType', {
       name = 'ts_query_ls',
       cmd = { '/path/to/ts_query_ls/target/release/ts_query_ls' },
       root_dir = vim.fs.root(0, { 'queries' }),
-      settings = {
+      -- OPTIONAL: Override the query omnifunc
+      on_attach = function(_, buf)
+        vim.bo[buf].omnifunc = 'v:lua.vim.lsp.omnifunc'
+      end,
+      init_options = {
         parser_install_directories = {
           -- If using nvim-treesitter with lazy.nvim
           vim.fs.joinpath(
@@ -97,8 +104,8 @@ vim.api.nvim_create_autocmd('FileType', {
       ([in progress](https://github.com/Homebrew/homebrew-core/pull/197587),
       requires repo to reach 75 GitHub stars)
 - [x] [`nixpkgs`](https://github.com/NixOS/nixpkgs)
-- [ ] [`mason.nvim`](https://github.com/mason-org/mason-registry)
-      ([in progress](https://github.com/mason-org/mason-registry/pull/7849))
+- [x] [`mason.nvim`](https://github.com/mason-org/mason-registry)
+- [x] [`AUR`](https://aur.archlinux.org/)
 
 And others?
 
