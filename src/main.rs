@@ -13,13 +13,13 @@ use tower_lsp::{
     lsp_types::{
         CompletionOptions, CompletionParams, CompletionResponse, DidChangeConfigurationParams,
         DidChangeTextDocumentParams, DidOpenTextDocumentParams, DocumentFormattingParams,
-        DocumentHighlight, DocumentHighlightParams, GotoDefinitionParams, GotoDefinitionResponse,
-        Hover, HoverParams, HoverProviderCapability, InitializeParams, InitializeResult, Location,
-        OneOf, ReferenceParams, RenameParams, SemanticTokenModifier, SemanticTokenType,
-        SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
-        SemanticTokensParams, SemanticTokensResult, SemanticTokensServerCapabilities,
-        ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
-        WorkspaceEdit,
+        DocumentHighlight, DocumentHighlightParams, DocumentSymbolParams, DocumentSymbolResponse,
+        GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams, HoverProviderCapability,
+        InitializeParams, InitializeResult, Location, OneOf, ReferenceParams, RenameParams,
+        SemanticTokenModifier, SemanticTokenType, SemanticTokensFullOptions, SemanticTokensLegend,
+        SemanticTokensOptions, SemanticTokensParams, SemanticTokensResult,
+        SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentSyncCapability,
+        TextDocumentSyncKind, TextEdit, Url, WorkspaceEdit,
     },
     Client, LanguageServer, LspService, Server,
 };
@@ -57,6 +57,7 @@ lazy_static! {
             }
         )),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
+        document_symbol_provider: Some(OneOf::Left(true)),
         ..Default::default()
     };
     static ref ENGINE: Engine = Engine::default();
@@ -156,6 +157,13 @@ impl LanguageServer for Backend {
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
         hover::hover(self, params).await
+    }
+
+    async fn document_symbol(
+        &self,
+        params: DocumentSymbolParams,
+    ) -> Result<Option<DocumentSymbolResponse>> {
+        document_symbol::document_symbol(self, params).await
     }
 }
 
