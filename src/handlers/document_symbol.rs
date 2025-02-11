@@ -6,7 +6,7 @@ use tower_lsp::{
 use tree_sitter::{Query, QueryCursor, StreamingIterator};
 
 use crate::{
-    util::{get_node_text, ts_node_to_lsp_range, TextProviderRope},
+    util::{NodeUtil, TextProviderRope},
     Backend, QUERY_LANGUAGE,
 };
 
@@ -31,7 +31,7 @@ pub async fn document_symbol(
     while let Some(match_) = matches.next() {
         for capture in match_.captures {
             let capture_node = capture.node;
-            let node_text = get_node_text(&capture_node, rope);
+            let node_text = capture_node.text(rope);
             let Some(parent) = capture_node.parent() else {
                 error!("Error parsing capture {node_text}");
                 continue;
@@ -40,8 +40,8 @@ pub async fn document_symbol(
             document_symbols.push(DocumentSymbol {
                 name: node_text,
                 kind: SymbolKind::VARIABLE,
-                range: ts_node_to_lsp_range(&parent, rope),
-                selection_range: ts_node_to_lsp_range(&capture_node, rope),
+                range: parent.lsp_range(rope),
+                selection_range: capture_node.lsp_range(rope),
                 detail: None,
                 // TODO: Structure this hierarchically
                 children: None,

@@ -9,8 +9,7 @@ use tower_lsp::lsp_types::{
 use tree_sitter::{Query, QueryCursor};
 
 use crate::util::{
-    get_node_text, lsp_position_to_byte_offset, lsp_position_to_ts_point, node_is_or_has_ancestor,
-    TextProviderRope,
+    lsp_position_to_byte_offset, node_is_or_has_ancestor, NodeUtil, TextProviderRope, ToTsPoint,
 };
 use crate::{Backend, SymbolInfo, QUERY_LANGUAGE};
 
@@ -24,7 +23,7 @@ pub async fn completion(
         warn!("No CST built for URI: {uri:?}");
         return Ok(None);
     };
-    let Some(rope) = backend.document_map.get(uri) else {
+    let Some(rope) = &backend.document_map.get(uri) else {
         warn!("No document built for URI: {uri:?}");
         return Ok(None);
     };
@@ -33,7 +32,7 @@ pub async fn completion(
     if position.character > 0 {
         position.character -= 1;
     }
-    let point = lsp_position_to_ts_point(position, &rope);
+    let point = position.to_ts_point(rope);
     let query = Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap();
     let mut cursor = QueryCursor::new();
     let current_node = tree
@@ -58,7 +57,7 @@ pub async fn completion(
             let supertype = current_node.prev_named_sibling()?;
             let supertype_map_map = backend.supertype_map_map.get(uri)?;
             let subtypes = supertype_map_map.get(&SymbolInfo {
-                label: get_node_text(&supertype, &rope),
+                label: supertype.text(rope),
                 named: true,
             })?;
             Some(CompletionResponse::Array(
@@ -78,7 +77,7 @@ pub async fn completion(
     let mut completion_items = vec![];
 
     // Node and field name completions
-    let cursor_after_at_sign = lsp_position_to_byte_offset(position, &rope)
+    let cursor_after_at_sign = lsp_position_to_byte_offset(position, rope)
         .and_then(|b| rope.try_byte_to_char(b))
         .is_ok_and(|c| rope.char(c) == '@');
     let root = tree.root_node();
@@ -142,12 +141,12 @@ pub async fn completion(
         None => return Ok(Some(CompletionResponse::Array(completion_items))),
         Some(value) => value,
     };
-    let provider = TextProviderRope(&rope);
+    let provider = TextProviderRope(rope);
     let mut iter = cursor.matches(&query, node, &provider);
     let mut seen = HashSet::new();
     while let Some(match_) = iter.next() {
         for capture in match_.captures {
-            let node_text = get_node_text(&capture.node, &rope);
+            let node_text = capture.node.text(rope);
             let parent_params = capture
                 .node
                 .parent()

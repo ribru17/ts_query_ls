@@ -6,10 +6,7 @@ use tower_lsp::{
 use tree_sitter::{Parser, Query, QueryCursor};
 
 use crate::{
-    util::{
-        get_current_capture_node, get_references, lsp_position_to_ts_point,
-        ts_node_to_lsp_location, TextProviderRope,
-    },
+    util::{get_current_capture_node, get_references, NodeUtil, TextProviderRope, ToTsPoint},
     Backend, QUERY_LANGUAGE,
 };
 
@@ -23,20 +20,19 @@ pub async fn goto_definition(
         warn!("No CST built for URI: {uri:?}");
         return Ok(None);
     };
-    let Some(rope) = backend.document_map.get(uri) else {
+    let Some(rope) = &backend.document_map.get(uri) else {
         warn!("No document built for URI: {uri:?}");
         return Ok(None);
     };
     let cur_pos = params.text_document_position_params.position;
-    let Some(current_node) =
-        get_current_capture_node(tree.root_node(), lsp_position_to_ts_point(cur_pos, &rope))
+    let Some(current_node) = get_current_capture_node(tree.root_node(), cur_pos.to_ts_point(rope))
     else {
         return Ok(None);
     };
 
     let query = Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap();
     let mut cursor = QueryCursor::new();
-    let provider = TextProviderRope(&rope);
+    let provider = TextProviderRope(rope);
 
     let mut parser = Parser::new();
     parser
@@ -49,10 +45,13 @@ pub async fn goto_definition(
         &query,
         &mut cursor,
         &provider,
-        &rope,
+        rope,
     )
     .filter(|node| node.parent().is_none_or(|p| p.kind() != "parameters"))
-    .map(|node| ts_node_to_lsp_location(uri, &node, &rope))
+    .map(|node| Location {
+        uri: uri.clone(),
+        range: node.lsp_range(rope),
+    })
     .collect::<Vec<Location>>();
 
     Ok(Some(GotoDefinitionResponse::Array(defs)))
