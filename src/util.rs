@@ -12,8 +12,7 @@ use ropey::Rope;
 use serde_json::Value;
 use streaming_iterator::StreamingIterator;
 use tower_lsp::lsp_types::{
-    Diagnostic, DiagnosticSeverity, Location, Position, Range, TextDocumentContentChangeEvent,
-    TextEdit, Url,
+    Diagnostic, DiagnosticSeverity, Position, Range, TextDocumentContentChangeEvent, TextEdit,
 };
 use tree_sitter::{
     wasmtime::Engine, InputEdit, Language, Node, Point, Query, QueryCursor, QueryMatch,
@@ -37,7 +36,7 @@ pub fn lsp_position_to_byte_offset(position: Position, rope: &Rope) -> Result<us
     rope.try_char_to_byte(rope.try_utf16_cu_to_char(line_cu + position.character as usize)?)
 }
 
-pub fn byte_offset_to_lsp_position(offset: usize, rope: &Rope) -> Result<Position, ropey::Error> {
+fn byte_offset_to_lsp_position(offset: usize, rope: &Rope) -> Result<Position, ropey::Error> {
     let line_idx = rope.try_byte_to_line(offset)?;
 
     let line_utf16_cu_idx = {
@@ -56,7 +55,7 @@ pub fn byte_offset_to_lsp_position(offset: usize, rope: &Rope) -> Result<Positio
     Ok(Position { line, character })
 }
 
-pub fn byte_offset_to_ts_point(index: usize, rope: &Rope) -> Result<Point, ropey::Error> {
+fn byte_offset_to_ts_point(index: usize, rope: &Rope) -> Result<Point, ropey::Error> {
     let line = rope.try_byte_to_line(index)?;
     let char = index - rope.try_line_to_byte(line)?;
     Ok(Point {
@@ -65,20 +64,19 @@ pub fn byte_offset_to_ts_point(index: usize, rope: &Rope) -> Result<Point, ropey
     })
 }
 
-pub fn lsp_position_to_ts_point(position: Position, rope: &Rope) -> Point {
-    byte_offset_to_ts_point(lsp_position_to_byte_offset(position, rope).unwrap(), rope).unwrap()
+pub trait ToTsPoint {
+    fn to_ts_point(&self, rope: &Rope) -> Point;
 }
 
-pub fn ts_point_to_lsp_position(point: Point, rope: &Rope) -> Position {
+impl ToTsPoint for Position {
+    fn to_ts_point(&self, rope: &Rope) -> Point {
+        byte_offset_to_ts_point(lsp_position_to_byte_offset(*self, rope).unwrap(), rope).unwrap()
+    }
+}
+
+fn ts_point_to_lsp_position(point: Point, rope: &Rope) -> Position {
     let offset = rope.line_to_byte(point.row) + point.column;
     byte_offset_to_lsp_position(offset, rope).unwrap()
-}
-
-pub fn ts_node_to_lsp_range(node: &Node, rope: &Rope) -> Range {
-    Range {
-        start: ts_point_to_lsp_position(node.start_position(), rope),
-        end: ts_point_to_lsp_position(node.end_position(), rope),
-    }
 }
 
 pub fn get_current_capture_node(root: Node, point: Point) -> Option<Node> {
@@ -90,13 +88,6 @@ pub fn get_current_capture_node(root: Node, point: Point) -> Option<Node> {
                 node.parent().filter(|parent| parent.kind() == "capture")
             }
         })
-}
-
-pub fn ts_node_to_lsp_location(uri: &Url, node: &Node, rope: &Rope) -> Location {
-    Location {
-        uri: uri.to_owned(),
-        range: ts_node_to_lsp_range(node, rope),
-    }
 }
 
 pub struct TextProviderRope<'a>(pub &'a Rope);
@@ -129,9 +120,7 @@ pub fn get_references<'a>(
         .matches(query, root.child_with_descendant(*node).unwrap(), provider)
         .map_deref(|match_| {
             match_.captures.iter().filter_map(|cap| {
-                if cap.node.kind() == node.kind()
-                    && get_node_text(&cap.node, rope) == get_node_text(node, rope)
-                {
+                if cap.node.kind() == node.kind() && cap.node.text(rope) == node.text(rope) {
                     Some(cap.node)
                 } else {
                     None
@@ -153,7 +142,7 @@ pub fn node_is_or_has_ancestor(root: Node, node: Node, kind: &str) -> bool {
 }
 
 pub fn lsp_textdocchange_to_ts_inputedit(
-    source: &Rope,
+    rope: &Rope,
     change: &TextDocumentContentChangeEvent,
 ) -> Result<InputEdit, Box<dyn std::error::Error>> {
     let text = change.text.as_str();
@@ -162,27 +151,27 @@ pub fn lsp_textdocchange_to_ts_inputedit(
     let range = if let Some(range) = change.range {
         range
     } else {
-        let start = byte_offset_to_lsp_position(0, source)?;
-        let end = byte_offset_to_lsp_position(text_end_byte_count, source)?;
+        let start = byte_offset_to_lsp_position(0, rope)?;
+        let end = byte_offset_to_lsp_position(text_end_byte_count, rope)?;
         Range { start, end }
     };
 
-    let start_position = lsp_position_to_ts_point(range.start, source);
-    let start_byte = lsp_position_to_byte_offset(range.start, source)?;
-    let old_end_position = lsp_position_to_ts_point(range.end, source);
-    let old_end_byte = lsp_position_to_byte_offset(range.end, source)?;
+    let start_position = range.start.to_ts_point(rope);
+    let start_byte = lsp_position_to_byte_offset(range.start, rope)?;
+    let old_end_position = range.end.to_ts_point(rope);
+    let old_end_byte = lsp_position_to_byte_offset(range.end, rope)?;
 
     let new_end_byte = start_byte as usize + text_end_byte_count;
 
     let new_end_position = {
-        if new_end_byte >= source.len_bytes() {
+        if new_end_byte >= rope.len_bytes() {
             let line_idx = text.lines().count();
             let line_byte_idx = ropey::str_utils::line_to_byte_idx(text, line_idx);
-            let row = source.len_lines() + line_idx;
+            let row = rope.len_lines() + line_idx;
             let column = text_end_byte_count - line_byte_idx;
             Ok(Point { row, column })
         } else {
-            byte_offset_to_ts_point(new_end_byte, source)
+            byte_offset_to_ts_point(new_end_byte, rope)
         }
     }?;
 
@@ -243,8 +232,24 @@ fn get_language_wasm(name: &str, directory: &String, engine: &Engine) -> Option<
     None
 }
 
-pub fn get_node_text(node: &Node, rope: &Rope) -> String {
-    rope.byte_slice(node.byte_range()).to_string()
+pub trait NodeUtil {
+    /// Get the document text of this node.
+    fn text(&self, rope: &Rope) -> String;
+    /// Get the LSP range spanning the node's range.
+    fn lsp_range(&self, rope: &Rope) -> Range;
+}
+
+impl NodeUtil for Node<'_> {
+    fn text(&self, rope: &Rope) -> String {
+        rope.byte_slice(self.byte_range()).to_string()
+    }
+
+    fn lsp_range(&self, rope: &Rope) -> Range {
+        Range {
+            start: ts_point_to_lsp_position(self.start_position(), rope),
+            end: ts_point_to_lsp_position(self.end_position(), rope),
+        }
+    }
 }
 
 const DIAGNOSTICS_QUERY: &str = r#"
@@ -299,14 +304,14 @@ pub fn get_diagnostics(
         for capture in match_.captures {
             let capture_name = query.capture_names()[capture.index as usize];
             let severity = Some(DiagnosticSeverity::ERROR);
-            let range = ts_node_to_lsp_range(&capture.node, rope);
+            let range = capture.node.lsp_range(rope);
             match capture_name {
                 "a" | "n" => {
                     if !has_language_info {
                         continue;
                     }
                     let sym = SymbolInfo {
-                        label: get_node_text(&capture.node, rope),
+                        label: capture.node.text(rope),
                         named: capture_name == "n",
                     };
                     if !symbols.contains(&sym) {
@@ -322,7 +327,7 @@ pub fn get_diagnostics(
                     if !has_language_info {
                         continue;
                     }
-                    let supertype_text = get_node_text(&capture.node, rope);
+                    let supertype_text = capture.node.text(rope);
                     let sym = SymbolInfo {
                         label: supertype_text.clone(),
                         named: true,
@@ -330,10 +335,10 @@ pub fn get_diagnostics(
                     if let Some(subtypes) = supertypes.get(&sym) {
                         let subtype = capture.node.next_named_sibling().unwrap();
                         let subtype_sym = SymbolInfo {
-                            label: get_node_text(&subtype, rope),
+                            label: subtype.text(rope),
                             named: true,
                         };
-                        let range = ts_node_to_lsp_range(&subtype, rope);
+                        let range = subtype.lsp_range(rope);
                         // Only run this check when subtypes is not empty, to account for parsers
                         // generated with ABI < 15
                         if !subtypes.is_empty() && !subtypes.contains(&subtype_sym) {
@@ -365,7 +370,7 @@ pub fn get_diagnostics(
                     if !has_language_info {
                         continue;
                     }
-                    let field = get_node_text(&capture.node, rope);
+                    let field = capture.node.text(rope);
                     if !fields.contains(&field) {
                         diagnostics.push(Diagnostic {
                             message: "Invalid field type!".to_owned(),
@@ -403,8 +408,7 @@ pub fn get_diagnostics(
                         for cap in m.captures {
                             if let Some(parent) = cap.node.parent() {
                                 if parent.kind() != "parameters"
-                                    && get_node_text(&cap.node, rope)
-                                        == get_node_text(&capture.node, rope)
+                                    && cap.node.text(rope) == capture.node.text(rope)
                                 {
                                     valid = true;
                                     break 'outer;
@@ -582,7 +586,7 @@ pub fn format_iter(
         }
         if map.get("format.ignore").unwrap().contains_key(id) {
             let text = CRLF
-                .replace_all(get_node_text(&child, rope).as_str(), "\n")
+                .replace_all(child.text(rope).as_str(), "\n")
                 .trim_matches('\n')
                 .split('\n')
                 .map(ToOwned::to_owned)
@@ -608,7 +612,7 @@ pub fn format_iter(
                 }
             }
             if map.get("format.comment-fix").unwrap().contains_key(id) {
-                let text = get_node_text(&child, rope);
+                let text = child.text(rope);
                 if let Some(mat) = COMMENT_PAT.captures(text.as_str()) {
                     lines
                         .last_mut()
@@ -620,7 +624,7 @@ pub fn format_iter(
             } else if child.named_child_count() == 0 || child.kind() == "string" {
                 let text = NEWLINES
                     .split(
-                        CRLF.replace_all(get_node_text(&child, rope).as_str(), "\n")
+                        CRLF.replace_all(child.text(rope).as_str(), "\n")
                             .trim_matches('\n'),
                     )
                     .map(ToOwned::to_owned)

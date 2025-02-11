@@ -3,11 +3,9 @@ use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{Location, ReferenceParams};
 use tree_sitter::{Parser, Query, QueryCursor};
 
+use crate::util::{NodeUtil, ToTsPoint};
 use crate::{
-    util::{
-        get_current_capture_node, get_references, lsp_position_to_ts_point,
-        ts_node_to_lsp_location, TextProviderRope,
-    },
+    util::{get_current_capture_node, get_references, TextProviderRope},
     Backend, QUERY_LANGUAGE,
 };
 
@@ -21,11 +19,11 @@ pub async fn references(
         warn!("No CST built for URI: {uri:?}");
         return Ok(None);
     };
-    let Some(rope) = backend.document_map.get(uri) else {
+    let Some(rope) = &backend.document_map.get(uri) else {
         warn!("No document built for URI: {uri:?}");
         return Ok(None);
     };
-    let cur_pos = lsp_position_to_ts_point(params.text_document_position.position, &rope);
+    let cur_pos = params.text_document_position.position.to_ts_point(rope);
     let current_node = match get_current_capture_node(tree.root_node(), cur_pos) {
         None => return Ok(None),
         Some(value) => value,
@@ -34,7 +32,7 @@ pub async fn references(
     let include_def = params.context.include_declaration;
     let query = Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap();
     let mut cursor = QueryCursor::new();
-    let provider = TextProviderRope(&rope);
+    let provider = TextProviderRope(rope);
 
     let mut parser = Parser::new();
     parser
@@ -48,11 +46,14 @@ pub async fn references(
             &query,
             &mut cursor,
             &provider,
-            &rope,
+            rope,
         )
         .filter_map(|node| {
             if include_def || node.parent().is_some_and(|p| p.kind() == "parameters") {
-                Some(ts_node_to_lsp_location(uri, &node, &rope))
+                Some(Location {
+                    uri: uri.clone(),
+                    range: node.lsp_range(rope),
+                })
             } else {
                 None
             }

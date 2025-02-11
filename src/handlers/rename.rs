@@ -3,33 +3,30 @@ use regex::Regex;
 use tower_lsp::{
     jsonrpc::{self, Result},
     lsp_types::{
-        DocumentChanges, OneOf, OptionalVersionedTextDocumentIdentifier, RenameParams,
+        DocumentChanges, Location, OneOf, OptionalVersionedTextDocumentIdentifier, RenameParams,
         TextDocumentEdit, TextEdit, WorkspaceEdit,
     },
 };
 use tree_sitter::{Query, QueryCursor};
 
 use crate::{
-    util::{
-        get_current_capture_node, get_references, lsp_position_to_ts_point,
-        ts_node_to_lsp_location, TextProviderRope,
-    },
+    util::{get_current_capture_node, get_references, NodeUtil, TextProviderRope, ToTsPoint},
     Backend, QUERY_LANGUAGE,
 };
 
 pub async fn rename(backend: &Backend, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
-    let uri = params.text_document_position.text_document.uri;
-    let Some(tree) = backend.cst_map.get(&uri) else {
+    let uri = &params.text_document_position.text_document.uri;
+    let Some(tree) = backend.cst_map.get(uri) else {
         warn!("No CST built for URI: {uri:?}");
         return Ok(None);
     };
-    let Some(rope) = backend.document_map.get(&uri) else {
+    let Some(rope) = &backend.document_map.get(uri) else {
         warn!("No document built for URI: {uri:?}");
         return Ok(None);
     };
     let current_node = match get_current_capture_node(
         tree.root_node(),
-        lsp_position_to_ts_point(params.text_document_position.position, &rope),
+        params.text_document_position.position.to_ts_point(rope),
     ) {
         None => return Ok(None),
         Some(value) => value,
@@ -48,16 +45,19 @@ pub async fn rename(backend: &Backend, params: RenameParams) -> Result<Option<Wo
         ));
     }
     let mut text_document_edits = vec![];
-    let provider = TextProviderRope(&rope);
+    let provider = TextProviderRope(rope);
     get_references(
         &tree.root_node(),
         &current_node,
         &query,
         &mut cursor,
         &provider,
-        &rope,
+        rope,
     )
-    .map(|node| ts_node_to_lsp_location(&uri, &node, &rope))
+    .map(|node| Location {
+        uri: uri.clone(),
+        range: node.lsp_range(rope),
+    })
     .for_each(|mut elem| {
         // Don't include the preceding `@`
         elem.range.start.character += 1;

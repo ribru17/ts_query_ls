@@ -4,9 +4,7 @@ use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams};
 use tree_sitter::{Parser, Query, QueryCursor};
 
-use crate::util::{
-    get_node_text, get_references, lsp_position_to_ts_point, ts_node_to_lsp_range, TextProviderRope,
-};
+use crate::util::{get_references, NodeUtil, TextProviderRope, ToTsPoint};
 use crate::{Backend, QUERY_LANGUAGE};
 
 pub async fn document_highlight(
@@ -19,11 +17,14 @@ pub async fn document_highlight(
         warn!("No CST built for URI: {uri:?}");
         return Ok(None);
     };
-    let Some(rope) = backend.document_map.get(uri) else {
+    let Some(rope) = &backend.document_map.get(uri) else {
         warn!("No document built for URI: {uri:?}");
         return Ok(None);
     };
-    let cur_pos = lsp_position_to_ts_point(params.text_document_position_params.position, &rope);
+    let cur_pos = params
+        .text_document_position_params
+        .position
+        .to_ts_point(rope);
 
     // Get the current node: if we are in a capture's identifier, move the current node to the
     // entire capture
@@ -40,7 +41,7 @@ pub async fn document_highlight(
     let capture_query = Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap();
     let ident_query = Query::new(&QUERY_LANGUAGE, "(identifier) @name").unwrap();
     let mut cursor = QueryCursor::new();
-    let provider = TextProviderRope(&rope);
+    let provider = TextProviderRope(rope);
 
     let mut parser = Parser::new();
     parser
@@ -55,7 +56,7 @@ pub async fn document_highlight(
                 &capture_query,
                 &mut cursor,
                 &provider,
-                &rope,
+                rope,
             )
             .map(|node| DocumentHighlight {
                 kind: if node.parent().is_none_or(|p| p.kind() != "parameters") {
@@ -63,7 +64,7 @@ pub async fn document_highlight(
                 } else {
                     Some(DocumentHighlightKind::READ)
                 },
-                range: ts_node_to_lsp_range(&node, &rope),
+                range: node.lsp_range(rope),
             })
             .collect(),
         ))
@@ -74,8 +75,7 @@ pub async fn document_highlight(
                 .map_deref(|match_| {
                     match_.captures.iter().filter_map(|cap| {
                         if cap.node.parent()?.kind() == current_node.parent()?.kind()
-                            && get_node_text(&cap.node, &rope)
-                                == get_node_text(&current_node, &rope)
+                            && cap.node.text(rope) == current_node.text(rope)
                         {
                             return Some(cap.node);
                         }
@@ -85,7 +85,7 @@ pub async fn document_highlight(
                 .flatten()
                 .map(|node| DocumentHighlight {
                     kind: Some(DocumentHighlightKind::TEXT),
-                    range: ts_node_to_lsp_range(&node, &rope),
+                    range: node.lsp_range(rope),
                 })
                 .collect(),
         ))

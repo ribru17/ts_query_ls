@@ -4,7 +4,7 @@ use tower_lsp::{
 };
 
 use crate::{
-    util::{get_node_text, lsp_position_to_ts_point, ts_node_to_lsp_range},
+    util::{NodeUtil, ToTsPoint},
     Backend, SymbolInfo,
 };
 
@@ -17,14 +17,14 @@ pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hove
         &backend.document_map.get(uri),
         backend.supertype_map_map.get(uri),
     ) {
-        let Some(node) = tree.root_node().descendant_for_point_range(
-            lsp_position_to_ts_point(position, rope),
-            lsp_position_to_ts_point(position, rope),
-        ) else {
+        let Some(node) = tree
+            .root_node()
+            .descendant_for_point_range(position.to_ts_point(rope), position.to_ts_point(rope))
+        else {
             return Ok(None);
         };
-        let node_text = get_node_text(&node, rope);
-        let node_range = ts_node_to_lsp_range(&node, rope);
+        let node_text = node.text(rope);
+        let node_range = node.lsp_range(rope);
         let sym = SymbolInfo {
             label: node_text.clone(),
             named: true,

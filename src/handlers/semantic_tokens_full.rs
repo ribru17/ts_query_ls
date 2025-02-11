@@ -5,7 +5,7 @@ use tower_lsp::{
 use tree_sitter::{Query, QueryCursor, StreamingIterator};
 
 use crate::{
-    util::{get_node_text, TextProviderRope},
+    util::{NodeUtil, TextProviderRope},
     Backend, SymbolInfo, QUERY_LANGUAGE,
 };
 
@@ -33,7 +33,7 @@ pub async fn semantic_tokens_full(
         while let Some(match_) = matches.next() {
             for cap in match_.captures.iter() {
                 let node = &cap.node;
-                let node_text = get_node_text(node, rope);
+                let node_text = node.text(rope);
                 let start_row = node.start_position().row as u32;
                 let start_col = node.start_position().column as u32;
                 let delta_line = start_row - prev_line;
