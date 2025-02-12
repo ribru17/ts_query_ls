@@ -16,7 +16,7 @@ use tower_lsp::lsp_types::{
 };
 use tree_sitter::{
     wasmtime::Engine, InputEdit, Language, Node, Point, Query, QueryCursor, QueryMatch,
-    QueryPredicateArg, TextProvider, Tree, WasmStore,
+    QueryPredicateArg, TextProvider, Tree, TreeCursor, WasmStore,
 };
 
 use crate::{Backend, Options, SymbolInfo, QUERY_LANGUAGE};
@@ -569,16 +569,22 @@ fn append_lines(lines: &mut Vec<String>, lines_to_append: &[String]) {
     }
 }
 
-pub fn format_iter(
+pub fn format_iter<'a>(
     rope: &Rope,
-    node: &Node,
+    node: &Node<'a>,
     lines: &mut Vec<String>,
     map: &HashMap<&str, HashMap<usize, HashSet<&str>>>,
     mut level: usize,
+    cursor: &mut TreeCursor<'a>,
 ) {
+    if !cursor.goto_first_child() {
+        return;
+    }
+
     // Sometimes 2 queries apply append twice. This is to prevent the case from happening
     let mut apply_newline = false;
-    for child in node.children(&mut node.walk()) {
+    loop {
+        let child = cursor.node();
         let id = &child.id();
         if apply_newline {
             apply_newline = false;
@@ -631,7 +637,7 @@ pub fn format_iter(
                     .collect::<Vec<String>>();
                 append_lines(lines, &text);
             } else {
-                format_iter(rope, &child, lines, map, level);
+                format_iter(rope, &child, lines, map, level, cursor);
             }
             if map.get("format.indent.begin").unwrap().contains_key(id) {
                 level += 1;
@@ -647,7 +653,13 @@ pub fn format_iter(
         } else if map.get("format.append-space").unwrap().contains_key(id) {
             lines.last_mut().unwrap().push(' ');
         }
+
+        if !cursor.goto_next_sibling() {
+            break;
+        }
     }
+
+    cursor.goto_parent();
 }
 
 pub fn set_configuration_options(backend: &Backend, options: Value) {
