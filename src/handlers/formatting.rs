@@ -75,7 +75,14 @@ pub async fn formatting(
 
     let mut edits = vec![String::new()];
 
-    format_iter(&rope, &tree.root_node(), &mut edits, &map, 0);
+    format_iter(
+        &rope,
+        &tree.root_node(),
+        &mut edits,
+        &map,
+        0,
+        &mut tree.walk(),
+    );
 
     Ok(Some(util::diff(
         rope.to_string().as_str(),
