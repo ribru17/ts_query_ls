@@ -303,6 +303,7 @@ pub fn get_diagnostics(
     while let Some(match_) = matches.next() {
         for capture in match_.captures {
             let capture_name = query.capture_names()[capture.index as usize];
+            let capture_text = capture.node.text(rope);
             let severity = Some(DiagnosticSeverity::ERROR);
             let range = capture.node.lsp_range(rope);
             match capture_name {
@@ -311,12 +312,12 @@ pub fn get_diagnostics(
                         continue;
                     }
                     let sym = SymbolInfo {
-                        label: capture.node.text(rope),
+                        label: capture_text.clone(),
                         named: capture_name == "n",
                     };
                     if !symbols.contains(&sym) {
                         diagnostics.push(Diagnostic {
-                            message: "Invalid node type!".to_owned(),
+                            message: format!("Invalid node type: \"{capture_text}\""),
                             severity,
                             range,
                             ..Default::default()
@@ -327,15 +328,16 @@ pub fn get_diagnostics(
                     if !has_language_info {
                         continue;
                     }
-                    let supertype_text = capture.node.text(rope);
+                    let supertype_text = capture_text;
                     let sym = SymbolInfo {
                         label: supertype_text.clone(),
                         named: true,
                     };
                     if let Some(subtypes) = supertypes.get(&sym) {
                         let subtype = capture.node.next_named_sibling().unwrap();
+                        let subtype_text = subtype.text(rope);
                         let subtype_sym = SymbolInfo {
-                            label: subtype.text(rope),
+                            label: subtype_text.clone(),
                             named: true,
                         };
                         let range = subtype.lsp_range(rope);
@@ -343,15 +345,14 @@ pub fn get_diagnostics(
                         // generated with ABI < 15
                         if !subtypes.is_empty() && !subtypes.contains(&subtype_sym) {
                             diagnostics.push(Diagnostic {
-                                message: format!("Not a subtype of \"{supertype_text}\"!")
-                                    .to_owned(),
+                                message: format!("Node \"{subtype_text}\" is not a subtype of \"{supertype_text}\""),
                                 severity,
                                 range,
                                 ..Default::default()
                             });
                         } else if subtypes.is_empty() && !symbols.contains(&subtype_sym) {
                             diagnostics.push(Diagnostic {
-                                message: "Invalid node type!".to_owned(),
+                                message: format!("Invalid node type: \"{subtype_text}\""),
                                 severity,
                                 range,
                                 ..Default::default()
@@ -359,7 +360,7 @@ pub fn get_diagnostics(
                         }
                     } else {
                         diagnostics.push(Diagnostic {
-                            message: "Not a supertype!".to_owned(),
+                            message: format!("Node \"{supertype_text}\" is not a supertype"),
                             severity,
                             range,
                             ..Default::default()
@@ -370,10 +371,10 @@ pub fn get_diagnostics(
                     if !has_language_info {
                         continue;
                     }
-                    let field = capture.node.text(rope);
+                    let field = capture_text;
                     if !fields.contains(&field) {
                         diagnostics.push(Diagnostic {
-                            message: "Invalid field type!".to_owned(),
+                            message: format!("Invalid field name: \"{field}\""),
                             severity,
                             range,
                             ..Default::default()
@@ -381,13 +382,13 @@ pub fn get_diagnostics(
                     }
                 }
                 "e" => diagnostics.push(Diagnostic {
-                    message: "Invalid syntax!".to_owned(),
+                    message: "Invalid syntax".to_owned(),
                     severity,
                     range,
                     ..Default::default()
                 }),
                 "m" => diagnostics.push(Diagnostic {
-                    message: format!("Missing \"{}\"!", capture.node.kind()),
+                    message: format!("Missing \"{}\"", capture.node.kind()),
                     severity,
                     range,
                     ..Default::default()
@@ -408,7 +409,7 @@ pub fn get_diagnostics(
                         for cap in m.captures {
                             if let Some(parent) = cap.node.parent() {
                                 if parent.kind() != "parameters"
-                                    && cap.node.text(rope) == capture.node.text(rope)
+                                    && cap.node.text(rope) == capture_text
                                 {
                                     valid = true;
                                     break 'outer;
@@ -418,7 +419,7 @@ pub fn get_diagnostics(
                     }
                     if !valid {
                         diagnostics.push(Diagnostic {
-                            message: "Undeclared capture name!".to_owned(),
+                            message: format!("Undeclared capture: \"{capture_text}\""),
                             severity,
                             range,
                             ..Default::default()
@@ -435,7 +436,7 @@ pub fn get_diagnostics(
                 }
                 "bad_eq" => {
                     diagnostics.push(Diagnostic {
-                        message: r##""#eq?" family predicates cannot accept multiple arguments. Consider using "#any-of?"."##.to_owned(),
+                        message: r##""#eq?" family predicates cannot accept multiple arguments. Consider using "#any-of?""##.to_owned(),
                         range,
                         severity: Some(DiagnosticSeverity::WARNING),
                         ..Default::default()
@@ -444,7 +445,7 @@ pub fn get_diagnostics(
                 "bad_match" => {
                     diagnostics.push(Diagnostic {
                         message:
-                            r##""#match?" family predicates cannot accept multiple arguments."##
+                            r##""#match?" family predicates cannot accept multiple arguments"##
                                 .to_owned(),
                         range,
                         severity: Some(DiagnosticSeverity::WARNING),
