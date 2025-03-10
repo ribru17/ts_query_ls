@@ -1,14 +1,13 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use log::info;
-use regex::Regex;
 use ropey::Rope;
 use tower_lsp::lsp_types::DidOpenTextDocumentParams;
 use tree_sitter::Parser;
 
 use crate::{
     util::{get_diagnostics, get_language, TextProviderRope},
-    Backend, SymbolInfo, ENGINE, QUERY_LANGUAGE,
+    Backend, SymbolInfo, QUERY_LANGUAGE,
 };
 
 pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
@@ -25,50 +24,19 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
         .cst_map
         .insert(uri.clone(), parser.parse(&contents, None).unwrap());
 
-    // Get language, if it exists
-    let mut lang = None;
-    if let Ok(options) = backend.options.read() {
-        let mut language_retrieval_regexes: Vec<Regex> = options
-            .language_retrieval_patterns
-            .clone()
-            .unwrap_or(vec![])
-            .iter()
-            .map(|r| Regex::new(r).unwrap())
-            .collect();
-        language_retrieval_regexes.push(Regex::new(r"queries/([^/]+)/[^/]+\.scm$").unwrap());
-        language_retrieval_regexes
-            .push(Regex::new(r"tree-sitter-([^/]+)/queries/[^/]+\.scm$").unwrap());
-        let mut captures = None;
-        for re in language_retrieval_regexes {
-            if let Some(caps) = re.captures(uri.as_str()) {
-                captures = Some(caps);
-                break;
-            }
-        }
-        lang = captures
-            .and_then(|captures| captures.get(1))
-            .and_then(|cap| {
-                let cap_str = cap.as_str();
-                get_language(
-                    options
-                        .parser_aliases
-                        .as_ref()
-                        .and_then(|map| map.get(cap_str))
-                        .unwrap_or(&cap_str.to_owned())
-                        .as_str(),
-                    &options.parser_install_directories,
-                    &ENGINE,
-                )
-            });
-    }
-
     // Initialize language info
     let mut symbols_vec: Vec<SymbolInfo> = vec![];
     let mut symbols_set: HashSet<SymbolInfo> = HashSet::new();
     let mut fields_vec: Vec<String> = vec![];
     let mut fields_set: HashSet<String> = HashSet::new();
     let mut supertype_map: HashMap<SymbolInfo, BTreeSet<SymbolInfo>> = HashMap::new();
-    if let Some(lang) = lang {
+    if let Some(lang) = &backend
+        .options
+        .read()
+        .ok()
+        .as_ref()
+        .and_then(|options| get_language(uri, options))
+    {
         let error_symbol = SymbolInfo {
             label: "ERROR".to_owned(),
             named: true,
