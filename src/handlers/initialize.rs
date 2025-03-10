@@ -102,7 +102,7 @@ mod test {
                     capabilities: SERVER_CAPABILITIES.clone(),
                     server_info: Some(ServerInfo {
                         name: String::from("ts_query_ls"),
-                        version: Some(String::from("1.8.0")),
+                        version: Some(String::from("1.9.0")),
                     }),
                 }
             ))
