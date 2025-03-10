@@ -29,6 +29,272 @@ lazy_static! {
     static ref CRLF: Regex = Regex::new(r"\r\n?").unwrap();
 }
 
+lazy_static! {
+    static ref FORMAT_QUERY: Query = Query::new(
+        &QUERY_LANGUAGE,
+        r#"
+;;query
+;; Ignore next node with `; format-ignore`
+(
+  (comment) @_pattern
+  .
+  (_) @format.ignore
+  (#match? @_pattern "^;+\\s*format\\-ignore"))
+
+;; Add newlines to top level nodes
+;; Preserve inline comments
+(program
+  . (_)
+  (comment) @format.prepend-newline
+  (#is-start-of-line? @format.prepend-newline))
+(program
+  . (_)
+  (comment) @_comment
+  .
+  (comment) @format.prepend-newline
+  (#not-is-start-of-line? @_comment)
+  (#is-start-of-line? @format.prepend-newline))
+;; Making sure all top-level patterns are separated
+(program
+  (_) @format.append-newline)
+(program
+  (_) @format.cancel-append .)
+(program
+  . (_)
+  [
+    (list)
+    (grouping)
+    (named_node)
+    (anonymous_node)
+    (missing_node)
+    (field_definition)
+  ] @format.prepend-newline)
+
+(program
+  (comment) @_comment
+  .
+  [
+    (list)
+    (grouping)
+    (named_node)
+    (anonymous_node)
+    (missing_node)
+    (field_definition)
+    (comment)
+  ] @format.cancel-prepend
+  (#is-start-of-line? @_comment)
+  (#not-match? @_comment "^;+\\s*inherits:")
+  (#not-match? @_comment "^;+\\s*extends\\s*$"))
+
+;; delims
+[
+  ":"
+  "."
+] @format.append-space
+(predicate "." @format.cancel-append @format.make-pound)
+(
+  "." @format.prepend-space @format.cancel-append
+  .
+  ")")
+
+;; List handler
+;; Only starts indent if 2 or more elements
+(list
+  "[" @format.indent.begin
+  "]" @format.indent.dedent)
+;; Otherwise, remove brackets
+(list
+  "[" @format.remove @format.cancel-append
+  .
+  (_) @format.cancel-append
+  .
+  "]" @format.remove)
+;; [ ... ] @capture1 @capture2
+;; Append newlines for nodes inside the list
+(list
+  (_) @format.append-newline
+  (#not-kind-eq? @format.append-newline "capture" "quantifier"))
+
+;; (_), "_" and _ handler
+;; Start indents if it's one of these patterns
+(named_node
+  [
+    "_"
+    name: (identifier)
+  ] @format.indent.begin
+  .
+  [
+    (list)              ; (foo [...])
+    (grouping)          ; (foo ((foo)))
+    (negated_field)     ; (foo !field)
+    (field_definition)  ; (foo field: (...))
+    (named_node)        ; (foo (bar))
+    (predicate)         ; (named_node (#set!))
+    (anonymous_node)
+    (missing_node)
+    "."
+  ])
+;; Honoring comment's position within a node
+(named_node
+  [
+    "_"
+    name: (identifier)
+  ] @format.indent.begin
+  .
+  (comment) @_comment
+  (#is-start-of-line? @_comment))
+(named_node
+  [
+    "_"
+    name: (identifier)
+  ] @format.indent.begin @format.cancel-append
+  .
+  "."? @format.prepend-newline
+  .
+  (comment) @format.prepend-space
+  (#not-is-start-of-line? @format.prepend-space))
+
+;; Add newlines for other nodes, in case the top node is indented
+(named_node
+  [
+    (list)
+    (grouping)
+    (negated_field)
+    (field_definition)
+    (named_node)
+    (predicate)
+    (anonymous_node)
+    (missing_node)
+    "."
+  ] @format.append-newline)
+
+;; Collapse closing parentheses
+(named_node
+  [
+    "_"
+    name: (identifier)
+    (_)
+  ] @format.cancel-append
+  .
+  ")"
+  (#not-kind-eq? @format.cancel-append "comment"))
+
+;; All captures should be separated with a space
+(capture) @format.prepend-space
+
+; ( (_) ) handler
+(grouping
+  "("
+  .
+  [
+    (named_node)                  ; ((foo))
+    (list)                        ; ([foo] (...))
+    (anonymous_node)              ; ("foo")
+    (missing_node)
+    (grouping . (_))
+  ] @format.indent.begin
+  .
+  (_))
+(grouping
+  "("
+  .
+  (grouping) @format.indent.begin
+  (predicate))
+(grouping
+  "("
+  [
+    (anonymous_node)
+    (named_node)
+    (missing_node)
+    (list)
+    (predicate)
+    (grouping . (_))
+    (field_definition)
+    "."
+  ] @format.append-newline
+  (_) .)
+;; Collapsing closing parens
+(grouping
+  (_) @format.cancel-append . ")"
+  (#not-kind-eq? @format.cancel-append "comment"))
+(grouping
+  (capture) @format.prepend-space)
+(missing_node
+  name: (_) @format.prepend-space)
+;; Remove unnecessary parens
+(grouping
+  "(" @format.remove
+  .
+  (_)
+  .
+  ")" @format.remove .)
+(grouping
+  "(" @format.remove
+  .
+  [
+    (grouping)
+    (anonymous_node
+      name: (string) .)
+    (missing_node
+      name: (_) .)
+    (named_node
+      [
+        "_"
+        name: (identifier)
+      ] .)
+  ]
+  .
+  ")" @format.remove
+  .
+  (capture))
+
+; Separate this query to avoid capture duplication
+(predicate
+  "(" @format.indent.begin @format.cancel-append)
+(predicate
+  (parameters
+    (comment) @format.prepend-newline
+    .
+    (_) @format.cancel-prepend)
+  (#is-start-of-line? @format.prepend-newline))
+(predicate
+  (parameters
+    (_) @format.prepend-space)
+  (#set! conditional-newline))
+(predicate
+  (parameters
+    .
+    (capture)
+    . (_) @format.prepend-space)
+  (#set! lookahead-newline)
+  (#set! conditional-newline))
+
+;; Comment related handlers
+(comment) @format.append-newline @format.comment-fix
+;; Preserve end of line comments
+(
+  [
+    "."
+    ":"
+    (list)
+    (grouping)
+    (named_node)
+    (anonymous_node)
+    (missing_node)
+    (negated_field)
+  ] @format.cancel-append
+  .
+  (quantifier)?
+  .
+  "."? @format.prepend-newline ; Make sure anchor are not eol but start of newline
+  .
+  (comment) @format.prepend-space
+  (#not-is-start-of-line? @format.prepend-space))
+"#,
+    )
+    .unwrap();
+}
+
 /// Returns the starting byte of the character if the position is in the middle of a character.
 pub fn lsp_position_to_byte_offset(position: Position, rope: &Rope) -> Result<usize, ropey::Error> {
     let line_char = rope.try_line_to_char(position.line as usize)?;
@@ -570,7 +836,68 @@ fn append_lines(lines: &mut Vec<String>, lines_to_append: &[String]) {
     }
 }
 
-pub fn format_iter<'a>(
+pub fn format_document(rope: &Rope, tree: &Tree) -> Option<String> {
+    let root = tree.root_node();
+    if root.has_error() {
+        return None;
+    }
+    let mut map: HashMap<&str, HashMap<usize, HashSet<&str>>> = HashMap::from([
+        ("format.ignore", HashMap::new()),
+        ("format.indent.begin", HashMap::new()),
+        ("format.indent.dedent", HashMap::new()),
+        ("format.prepend-space", HashMap::new()),
+        ("format.prepend-newline", HashMap::new()),
+        ("format.append-space", HashMap::new()),
+        ("format.append-newline", HashMap::new()),
+        ("format.cancel-append", HashMap::new()),
+        ("format.cancel-prepend", HashMap::new()),
+        ("format.comment-fix", HashMap::new()),
+        ("format.make-pound", HashMap::new()),
+        ("format.remove", HashMap::new()),
+    ]);
+
+    let mut cursor = QueryCursor::new();
+    let provider = TextProviderRope(rope);
+    let mut matches = cursor.matches(&FORMAT_QUERY, root, &provider);
+
+    'matches: while let Some(match_) = matches.next() {
+        for predicate in FORMAT_QUERY.general_predicates(match_.pattern_index) {
+            let keep = handle_predicate(match_, &predicate.operator, &predicate.args, rope);
+            if !keep {
+                continue 'matches;
+            }
+        }
+        for capture in match_.captures {
+            let name = FORMAT_QUERY.capture_names()[capture.index as usize];
+            if name.starts_with('_') {
+                continue;
+            }
+            let settings = map
+                .get_mut(name)
+                .unwrap()
+                .entry(capture.node.id())
+                .or_default();
+            for prop in FORMAT_QUERY.property_settings(match_.pattern_index) {
+                settings.insert(prop.key.deref());
+            }
+        }
+    }
+
+    let mut lines = vec![String::new()];
+
+    format_iter(
+        rope,
+        &tree.root_node(),
+        &mut lines,
+        &map,
+        0,
+        &mut tree.walk(),
+    );
+
+    Some(lines.join("\n"))
+}
+
+fn format_iter<'a>(
     rope: &Rope,
     node: &Node<'a>,
     lines: &mut Vec<String>,
