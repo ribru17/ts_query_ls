@@ -72,11 +72,37 @@ vim.api.nvim_create_autocmd('FileType', {
 
 ## Standalone Tool
 
+### Formatter
+
 The language server can be used as a standalone formatter by passing the
 `format` argument, e.g. `ts_query_ls format ./queries --mode write`. The command
 can accept multiple directories to format, and must be passed a "mode" of either
 `write` or `check`. The mode determines whether the files will be overwritten or
 just checked for proper formatting.
+
+```sh
+# use this command for the full documentation
+ts_query_ls format --help
+```
+
+### Linter
+
+The formatter can also be used as standalone linter by passing the `check`
+argument, e.g:
+
+```sh
+ts_query_ls check ./queries --config \
+'{"parser_install_directories": ["/home/jdoe/Documents/parsers/"]}'
+```
+
+The command expects a list of directories to search for queries, as well as a
+flag to pass JSON configuration to the server (needed to detect parser
+locations).
+
+```sh
+# use this command for the full documentation
+ts_query_ls check --help
+```
 
 ## Checklist
 

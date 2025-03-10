@@ -28,7 +28,7 @@ use tower_lsp::{
     },
     Client, LanguageServer, LspService, Server,
 };
-use tree_sitter::{wasmtime::Engine, Language, Tree};
+use tree_sitter::{wasmtime::Engine, Language, Query, QueryErrorKind, Tree};
 
 use handlers::*;
 
@@ -180,7 +180,7 @@ impl LanguageServer for Backend {
 )]
 struct Arguments {
     #[command(subcommand)]
-    format: Option<Commands>,
+    commands: Option<Commands>,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]
@@ -199,6 +199,15 @@ enum Commands {
         /// Operation to perform on files
         #[arg(long, short)]
         mode: Mode,
+    },
+    /// Check the query files in the given directories for errors
+    Check {
+        /// List of directories to check
+        directories: Vec<PathBuf>,
+
+        /// String representing server's JSON configuration
+        #[arg(long, short)]
+        config: String,
     },
 }
 
@@ -253,7 +262,45 @@ fn format_directories(directories: &[PathBuf], mode: Mode) -> i32 {
             }
         } else {
             eprintln!("Failed to read {:?}", path.canonicalize().unwrap());
+            exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
         }
+    });
+    exit_code.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn check_directories(directories: &[PathBuf], config: String) -> i32 {
+    let Ok(options) = serde_json::from_str::<Options>(&config) else {
+        eprintln!("Could not parse the provided configuration");
+        return 1;
+    };
+    let exit_code = AtomicI32::new(0);
+    let scm_files = get_scm_files(directories);
+    scm_files.par_iter().for_each(|path| {
+        let uri = Url::from_file_path(path.canonicalize().unwrap()).unwrap();
+        if let Some(lang) = util::get_language(&uri, &options) {
+            if let Ok(source) = fs::read_to_string(path) {
+                if let Err(err) = Query::new(&lang, source.as_str()) {
+                    match err.kind {
+                        QueryErrorKind::Predicate => {
+                            // Ignore predicate errors, which depend on the implementation.
+                        }
+                        _ => {
+                            eprintln!("In {:?}:\n{}\n", path.canonicalize().unwrap(), err);
+                            exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                    }
+                }
+            } else {
+                eprintln!("Failed to read {:?}", path.canonicalize().unwrap());
+                exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        } else {
+            exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
+            eprintln!(
+                "Could not retrieve language for {:?}",
+                path.canonicalize().unwrap()
+            )
+        };
     });
     exit_code.load(std::sync::atomic::Ordering::Relaxed)
 }
@@ -266,8 +313,15 @@ async fn main() {
         .init();
 
     let args = Arguments::parse();
-    if let Some(Commands::Format { directories, mode }) = args.format {
-        std::process::exit(format_directories(&directories, mode));
+    match args.commands {
+        Some(Commands::Format { directories, mode }) => {
+            std::process::exit(format_directories(&directories, mode));
+        }
+        Some(Commands::Check {
+            directories,
+            config,
+        }) => std::process::exit(check_directories(&directories, config)),
+        _ => {}
     }
 
     let stdin = tokio::io::stdin();

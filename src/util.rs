@@ -12,14 +12,14 @@ use ropey::Rope;
 use serde_json::Value;
 use streaming_iterator::StreamingIterator;
 use tower_lsp::lsp_types::{
-    Diagnostic, DiagnosticSeverity, Position, Range, TextDocumentContentChangeEvent, TextEdit,
+    Diagnostic, DiagnosticSeverity, Position, Range, TextDocumentContentChangeEvent, TextEdit, Url,
 };
 use tree_sitter::{
     wasmtime::Engine, InputEdit, Language, Node, Point, Query, QueryCursor, QueryMatch,
     QueryPredicateArg, TextProvider, Tree, TreeCursor, WasmStore,
 };
 
-use crate::{Backend, Options, SymbolInfo, QUERY_LANGUAGE};
+use crate::{Backend, Options, SymbolInfo, ENGINE, QUERY_LANGUAGE};
 
 lazy_static! {
     static ref LINE_START: Regex = Regex::new(r"^([^\S\r\n]*)").unwrap();
@@ -453,7 +453,43 @@ pub fn lsp_textdocchange_to_ts_inputedit(
 
 const DYLIB_EXTENSIONS: [&str; 3] = [".so", ".dll", ".dylib"];
 
-pub fn get_language(
+pub fn get_language(uri: &Url, options: &Options) -> Option<Language> {
+    let mut language_retrieval_regexes: Vec<Regex> = options
+        .language_retrieval_patterns
+        .clone()
+        .unwrap_or_default()
+        .iter()
+        .map(|r| Regex::new(r).unwrap())
+        .collect();
+    language_retrieval_regexes.push(Regex::new(r"queries/([^/]+)/[^/]+\.scm$").unwrap());
+    language_retrieval_regexes
+        .push(Regex::new(r"tree-sitter-([^/]+)/queries/[^/]+\.scm$").unwrap());
+    let mut captures = None;
+    for re in language_retrieval_regexes {
+        if let Some(caps) = re.captures(uri.as_str()) {
+            captures = Some(caps);
+            break;
+        }
+    }
+    let lang = captures
+        .and_then(|captures| captures.get(1))
+        .and_then(|cap| {
+            let cap_str = cap.as_str();
+            get_language_object(
+                options
+                    .parser_aliases
+                    .as_ref()
+                    .and_then(|map| map.get(cap_str))
+                    .unwrap_or(&cap_str.to_owned())
+                    .as_str(),
+                &options.parser_install_directories,
+                &ENGINE,
+            )
+        });
+    lang
+}
+
+pub fn get_language_object(
     name: &str,
     directories: &Option<Vec<String>>,
     engine: &Engine,
@@ -478,7 +514,7 @@ pub fn get_language(
                     return Some(language);
                 }
             }
-            if let Some(lang) = get_language_wasm(name.as_str(), directory, engine) {
+            if let Some(lang) = get_language_object_wasm(name.as_str(), directory, engine) {
                 return Some(lang);
             }
         }
@@ -486,7 +522,7 @@ pub fn get_language(
     None
 }
 
-fn get_language_wasm(name: &str, directory: &String, engine: &Engine) -> Option<Language> {
+fn get_language_object_wasm(name: &str, directory: &String, engine: &Engine) -> Option<Language> {
     let object_name = format!("tree-sitter-{name}.wasm");
     // NOTE: If WasmStore could be passed around threads safely, we could just create one global
     // store and put all of the WASM modules in there.
