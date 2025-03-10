@@ -70,6 +70,14 @@ vim.api.nvim_create_autocmd('FileType', {
 })
 ```
 
+## Standalone Tool
+
+The language server can be used as a standalone formatter by passing the
+`format` argument, e.g. `ts_query_ls format ./queries --mode write`. The command
+can accept multiple directories to format, and must be passed a "mode" of either
+`write` or `check`. The mode determines whether the files will be overwritten or
+just checked for proper formatting.
+
 ## Checklist
 
 - [x] References for captures

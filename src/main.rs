@@ -1,10 +1,15 @@
+use clap::{Parser, Subcommand};
 use core::fmt;
 use lazy_static::lazy_static;
+use rayon::iter::{IntoParallelRefIterator as _, ParallelIterator as _};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
-    sync::{Arc, RwLock},
+    fs,
+    path::PathBuf,
+    sync::{atomic::AtomicI32, Arc, RwLock},
 };
+use walkdir::WalkDir;
 
 use dashmap::DashMap;
 use ropey::Rope;
@@ -167,12 +172,103 @@ impl LanguageServer for Backend {
     }
 }
 
+#[derive(Parser)]
+#[command(
+    name = "ts_query_ls",
+    version = env!("CARGO_PKG_VERSION"),
+    about = "LSP implementation for Tree-sitter's query files"
+)]
+struct Arguments {
+    #[command(subcommand)]
+    format: Option<Commands>,
+}
+
+#[derive(clap::ValueEnum, Clone, Debug)]
+enum Mode {
+    Check,
+    Write,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Format the query files in the given directories
+    Format {
+        /// List of directories to format
+        directories: Vec<PathBuf>,
+
+        /// Operation to perform on files
+        #[arg(long, short)]
+        mode: Mode,
+    },
+}
+
+fn get_scm_files(directories: &[PathBuf]) -> Vec<PathBuf> {
+    directories
+        .iter()
+        .flat_map(|directory| {
+            WalkDir::new(directory)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.file_type().is_file() && e.path().extension().is_some_and(|ext| ext == "scm")
+                })
+                .map(|e| e.path().to_owned())
+        })
+        .collect()
+}
+
+fn format_directories(directories: &[PathBuf], mode: Mode) -> i32 {
+    let scm_files = get_scm_files(directories);
+
+    let exit_code = AtomicI32::new(0);
+    scm_files.par_iter().for_each(|path| {
+        if let Ok(contents) = fs::read_to_string(path) {
+            let mut parser = tree_sitter::Parser::new();
+            parser
+                .set_language(&QUERY_LANGUAGE)
+                .expect("Error loading Query grammar");
+            let tree = parser.parse(contents.as_str(), None).unwrap();
+            let rope = Rope::from(contents.as_str());
+            if let Some(formatted) = util::format_document(&rope, &tree) {
+                // Add newline at EOF
+                let formatted = formatted + "\n";
+                match mode {
+                    Mode::Check => {
+                        let edits = util::diff(&contents, &formatted, &rope);
+                        if !edits.is_empty() {
+                            exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
+                            eprintln!(
+                                "Improper formatting detected for {:?}",
+                                path.canonicalize().unwrap()
+                            );
+                        }
+                    }
+                    Mode::Write => {
+                        if fs::write(path, formatted).is_err() {
+                            exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
+                            eprint!("Failed to write to {:?}", path.canonicalize().unwrap())
+                        };
+                    }
+                }
+            }
+        } else {
+            eprintln!("Failed to read {:?}", path.canonicalize().unwrap());
+        }
+    });
+    exit_code.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_ansi(false)
         .init();
+
+    let args = Arguments::parse();
+    if let Some(Commands::Format { directories, mode }) = args.format {
+        std::process::exit(format_directories(&directories, mode));
+    }
 
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
