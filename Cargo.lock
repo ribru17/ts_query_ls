@@ -1731,7 +1731,7 @@ dependencies = [
 
 [[package]]
 name = "ts_query_ls"
-version = "1.10.0"
+version = "1.11.0"
 dependencies = [
  "cc",
  "clap",
