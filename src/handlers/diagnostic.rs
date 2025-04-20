@@ -247,3 +247,139 @@ pub fn get_diagnostics(
     }
     diagnostics
 }
+
+// TODO: Handle many more cases
+#[cfg(test)]
+mod test {
+    use std::collections::HashSet;
+
+    use pretty_assertions::assert_eq;
+    use rstest::rstest;
+    use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
+    use ts_query_ls::SerializableCapture;
+
+    use crate::util::TextProviderRope;
+    use crate::{
+        SymbolInfo,
+        handlers::diagnostic::get_diagnostics,
+        test_helpers::helpers::{TEST_URI, initialize_server},
+    };
+
+    #[rstest]
+    #[case(
+        r#"((identifier) @constant
+(#match? @cons "^[A-Z][A-Z\\d_]*$"))"#,
+        &[SymbolInfo { label: String::from("identifier"), named: true }],
+        &["operator"],
+        &["supertype"],
+        &["variable", "variable.parameter"],
+        &[Diagnostic {
+            range: Range {
+                start: Position {
+                    line: 0,
+                    character: 14,
+                },
+                end: Position {
+                    line: 0,
+                    character: 23,
+                },
+            },
+            severity: Some(DiagnosticSeverity::WARNING),
+            message: String::from("Unsupported capture name \"@constant\", consider prefixing with '_'"),
+            ..Default::default()
+        }, Diagnostic {
+            range: Range {
+                start: Position {
+                    line: 1,
+                    character: 9,
+                },
+                end: Position {
+                    line: 1,
+                    character: 14,
+                },
+            },
+            severity: Some(DiagnosticSeverity::ERROR),
+            message: String::from("Undeclared capture: \"@cons\""),
+            ..Default::default()
+        }],
+    )]
+    #[case(
+        r#"((identifierr) @_constant
+(#match? @_constant "^[A-Z][A-Z\\d_]*$"))
+
+(identifier) @variable"#,
+        &[SymbolInfo { label: String::from("identifier"), named: true }],
+        &["operator"],
+        &["supertype"],
+        &["variable", "variable.parameter"],
+        &[Diagnostic {
+            range: Range {
+                start: Position {
+                    line: 0,
+                    character: 2,
+                },
+                end: Position {
+                    line: 0,
+                    character: 13,
+                },
+            },
+            severity: Some(DiagnosticSeverity::ERROR),
+            message: String::from("Invalid node type: \"identifierr\""),
+            ..Default::default()
+        }],
+    )]
+    #[case(
+        r#"((identifier) @variable
+(#match? @variable "^[A-Z][A-Z\\d_]*$"))"#,
+        &[SymbolInfo { label: String::from("identifier"), named: true }],
+        &["operator"],
+        &["supertype"],
+        &["variable", "variable.parameter"],
+        &[],
+    )]
+    #[tokio::test(flavor = "current_thread")]
+    async fn server_diagnostics(
+        #[case] source: &str,
+        #[case] symbols: &[SymbolInfo],
+        #[case] fields: &[&str],
+        #[case] supertypes: &[&str],
+        #[case] allowable_captures: &[&str],
+        #[case] expected_diagnostics: &[Diagnostic],
+    ) {
+        // Arrange
+        let service = initialize_server(&[(
+            TEST_URI.clone(),
+            source,
+            symbols.to_vec(),
+            fields.to_vec(),
+            supertypes.to_vec(),
+        )])
+        .await;
+        let rope = &service.inner().document_map.get(&TEST_URI).unwrap();
+        let provider = &TextProviderRope(rope);
+        let binding = allowable_captures
+            .iter()
+            .map(|s| SerializableCapture {
+                name: s.to_string(),
+                ..Default::default()
+            })
+            .collect();
+        let allowable_captures = Some(&binding);
+        let symbols = &HashSet::from_iter(symbols.iter().cloned());
+        let fields = &HashSet::from_iter(fields.iter().map(|s| s.to_string()));
+
+        // Act
+        let diagnostics = get_diagnostics(
+            &service.inner().cst_map.get(&TEST_URI).unwrap(),
+            rope,
+            provider,
+            symbols,
+            fields,
+            &Default::default(),
+            allowable_captures,
+        );
+
+        // Assert
+        assert_eq!(diagnostics, expected_diagnostics)
+    }
+}
