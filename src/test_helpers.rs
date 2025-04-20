@@ -13,15 +13,15 @@ pub mod helpers {
     use dashmap::DashMap;
     use std::sync::RwLock;
     use tower_lsp::{
+        LspService,
         jsonrpc::{Request, Response},
         lsp_types::{
-            request::Initialize, ClientCapabilities, InitializeParams, Position, Range,
-            TextDocumentContentChangeEvent, TextEdit, Url,
+            ClientCapabilities, InitializeParams, Position, Range, TextDocumentContentChangeEvent,
+            TextEdit, Url, request::Initialize,
         },
-        LspService,
     };
 
-    use crate::{Backend, Options, SymbolInfo, QUERY_LANGUAGE};
+    use crate::{Backend, Options, QUERY_LANGUAGE, SymbolInfo};
 
     pub static TEST_URI: LazyLock<Url> =
         LazyLock::new(|| Url::parse("file:///tmp/test.scm").unwrap());
@@ -250,10 +250,10 @@ mod test {
     use rstest::rstest;
 
     use crate::{
-        test_helpers::helpers::{
-            initialize_server, COMPLEX_FILE, SIMPLE_FILE, TEST_URI, TEST_URI_2,
-        },
         SymbolInfo,
+        test_helpers::helpers::{
+            COMPLEX_FILE, SIMPLE_FILE, TEST_URI, TEST_URI_2, initialize_server,
+        },
     };
 
     use super::helpers::Document;
@@ -307,48 +307,62 @@ mod test {
                     .unwrap(),
                 (*doc).to_string()
             );
-            assert!(backend
-                .symbols_vec_map
-                .get(uri)
-                .is_some_and(|v| v.len() == symbols.len()));
-            assert!(backend
-                .symbols_set_map
-                .get(uri)
-                .is_some_and(|v| v.len() == symbols.len()));
+            assert!(
+                backend
+                    .symbols_vec_map
+                    .get(uri)
+                    .is_some_and(|v| v.len() == symbols.len())
+            );
+            assert!(
+                backend
+                    .symbols_set_map
+                    .get(uri)
+                    .is_some_and(|v| v.len() == symbols.len())
+            );
             for symbol in symbols {
                 assert!(backend.symbols_vec_map.get(uri).unwrap().contains(symbol));
                 assert!(backend.symbols_set_map.get(uri).unwrap().contains(symbol));
             }
-            assert!(backend
-                .fields_vec_map
-                .get(uri)
-                .is_some_and(|v| v.len() == fields.len()));
-            assert!(backend
-                .fields_set_map
-                .get(uri)
-                .is_some_and(|v| v.len() == fields.len()));
-            for field in fields {
-                assert!(backend
+            assert!(
+                backend
                     .fields_vec_map
                     .get(uri)
-                    .unwrap()
-                    .contains(&field.to_string()));
-                assert!(backend
+                    .is_some_and(|v| v.len() == fields.len())
+            );
+            assert!(
+                backend
                     .fields_set_map
                     .get(uri)
-                    .unwrap()
-                    .contains(&field.to_string()));
+                    .is_some_and(|v| v.len() == fields.len())
+            );
+            for field in fields {
+                assert!(
+                    backend
+                        .fields_vec_map
+                        .get(uri)
+                        .unwrap()
+                        .contains(&field.to_string())
+                );
+                assert!(
+                    backend
+                        .fields_set_map
+                        .get(uri)
+                        .unwrap()
+                        .contains(&field.to_string())
+                );
             }
             assert!(backend.supertype_map_map.get(uri).is_some());
             for supertype in supertypes {
-                assert!(backend
-                    .supertype_map_map
-                    .get(uri)
-                    .unwrap()
-                    .contains_key(&SymbolInfo {
-                        named: true,
-                        label: String::from(*supertype)
-                    }))
+                assert!(
+                    backend
+                        .supertype_map_map
+                        .get(uri)
+                        .unwrap()
+                        .contains_key(&SymbolInfo {
+                            named: true,
+                            label: String::from(*supertype)
+                        })
+                )
             }
         }
     }

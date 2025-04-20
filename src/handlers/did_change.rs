@@ -2,8 +2,8 @@ use tower_lsp::lsp_types::{DidChangeTextDocumentParams, Position, Range};
 use tree_sitter::Parser;
 
 use crate::{
-    util::{get_diagnostics, lsp_textdocchange_to_ts_inputedit, TextProviderRope},
     Backend, QUERY_LANGUAGE,
+    util::{TextProviderRope, get_diagnostics, lsp_textdocchange_to_ts_inputedit},
 };
 
 pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) {
@@ -89,12 +89,12 @@ mod test {
     use rstest::rstest;
     use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
-        notification::DidChangeTextDocument, DidChangeTextDocumentParams,
-        TextDocumentContentChangeEvent, VersionedTextDocumentIdentifier,
+        DidChangeTextDocumentParams, TextDocumentContentChangeEvent,
+        VersionedTextDocumentIdentifier, notification::DidChangeTextDocument,
     };
 
     use crate::test_helpers::helpers::{
-        initialize_server, lsp_notification_to_jsonrpc_request, TestEdit, TEST_URI,
+        TEST_URI, TestEdit, initialize_server, lsp_notification_to_jsonrpc_request,
     };
 
     #[rstest]

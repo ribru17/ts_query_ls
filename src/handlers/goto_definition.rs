@@ -6,11 +6,11 @@ use tracing::{info, warn};
 use tree_sitter::{Parser, QueryCursor};
 
 use crate::{
-    util::{
-        get_current_capture_node, get_references, NodeUtil, TextProviderRope, ToTsPoint,
-        CAPTURES_QUERY,
-    },
     Backend, QUERY_LANGUAGE,
+    util::{
+        CAPTURES_QUERY, NodeUtil, TextProviderRope, ToTsPoint, get_current_capture_node,
+        get_references,
+    },
 };
 
 pub async fn goto_definition(
@@ -66,14 +66,14 @@ mod test {
     use rstest::rstest;
     use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
-        request::GotoDefinition, GotoDefinitionParams, GotoDefinitionResponse, Location,
-        PartialResultParams, Position, Range, TextDocumentIdentifier, TextDocumentPositionParams,
-        WorkDoneProgressParams,
+        GotoDefinitionParams, GotoDefinitionResponse, Location, PartialResultParams, Position,
+        Range, TextDocumentIdentifier, TextDocumentPositionParams, WorkDoneProgressParams,
+        request::GotoDefinition,
     };
 
     use crate::test_helpers::helpers::{
-        initialize_server, lsp_request_to_jsonrpc_request, lsp_response_to_jsonrpc_response,
-        COMPLEX_FILE, SIMPLE_FILE, TEST_URI,
+        COMPLEX_FILE, SIMPLE_FILE, TEST_URI, initialize_server, lsp_request_to_jsonrpc_request,
+        lsp_response_to_jsonrpc_response,
     };
 
     type Coordinate = ((u32, u32), (u32, u32));
@@ -138,12 +138,12 @@ mod test {
                         uri: TEST_URI.clone(),
                         range: Range {
                             start: Position {
-                                line: r.0 .0,
-                                character: r.0 .1,
+                                line: r.0.0,
+                                character: r.0.1,
                             },
                             end: Position {
-                                line: r.1 .0,
-                                character: r.1 .1,
+                                line: r.1.0,
+                                character: r.1.1,
                             },
                         },
                     })

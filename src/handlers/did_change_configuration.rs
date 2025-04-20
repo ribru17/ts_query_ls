@@ -1,6 +1,6 @@
 use tower_lsp::lsp_types::DidChangeConfigurationParams;
 
-use crate::{util::set_configuration_options, Backend};
+use crate::{Backend, util::set_configuration_options};
 
 pub async fn did_change_configuration(backend: &Backend, params: DidChangeConfigurationParams) {
     set_configuration_options(
@@ -20,12 +20,12 @@ mod test {
     use std::collections::BTreeMap;
     use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
-        notification::DidChangeConfiguration, DidChangeConfigurationParams,
+        DidChangeConfigurationParams, notification::DidChangeConfiguration,
     };
 
     use crate::{
-        test_helpers::helpers::{initialize_server, lsp_notification_to_jsonrpc_request},
         Options,
+        test_helpers::helpers::{initialize_server, lsp_notification_to_jsonrpc_request},
     };
 
     #[tokio::test(flavor = "current_thread")]

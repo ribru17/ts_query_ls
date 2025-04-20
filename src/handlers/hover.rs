@@ -4,8 +4,8 @@ use tower_lsp::{
 };
 
 use crate::{
-    util::{NodeUtil, ToTsPoint},
     Backend, SymbolInfo,
+    util::{NodeUtil, ToTsPoint},
 };
 
 pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hover>> {
@@ -122,14 +122,14 @@ mod test {
     use rstest::rstest;
     use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
-        request::HoverRequest, Hover, HoverContents, HoverParams, MarkupContent, MarkupKind,
-        Position, Range, TextDocumentIdentifier, TextDocumentPositionParams,
-        WorkDoneProgressParams,
+        Hover, HoverContents, HoverParams, MarkupContent, MarkupKind, Position, Range,
+        TextDocumentIdentifier, TextDocumentPositionParams, WorkDoneProgressParams,
+        request::HoverRequest,
     };
 
     use crate::test_helpers::helpers::{
-        initialize_server, lsp_request_to_jsonrpc_request, lsp_response_to_jsonrpc_response,
-        TEST_URI,
+        TEST_URI, initialize_server, lsp_request_to_jsonrpc_request,
+        lsp_response_to_jsonrpc_response,
     };
 
     const SOURCE: &str = r"(ERROR) @error (supertype) @node

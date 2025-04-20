@@ -6,7 +6,7 @@ use tower_lsp::lsp_types::{DocumentHighlight, DocumentHighlightKind, DocumentHig
 use tracing::warn;
 use tree_sitter::{Parser, Query, QueryCursor};
 
-use crate::util::{get_references, NodeUtil, TextProviderRope, ToTsPoint, CAPTURES_QUERY};
+use crate::util::{CAPTURES_QUERY, NodeUtil, TextProviderRope, ToTsPoint, get_references};
 use crate::{Backend, QUERY_LANGUAGE};
 
 static IDENT_QUERY: LazyLock<Query> =
@@ -105,14 +105,14 @@ mod test {
     use rstest::rstest;
     use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
-        request::DocumentHighlightRequest, DocumentHighlight, DocumentHighlightKind,
-        DocumentHighlightParams, PartialResultParams, Position, Range, TextDocumentIdentifier,
-        TextDocumentPositionParams, WorkDoneProgressParams,
+        DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams, PartialResultParams,
+        Position, Range, TextDocumentIdentifier, TextDocumentPositionParams,
+        WorkDoneProgressParams, request::DocumentHighlightRequest,
     };
 
     use crate::test_helpers::helpers::{
-        initialize_server, lsp_request_to_jsonrpc_request, lsp_response_to_jsonrpc_response,
-        COMPLEX_FILE, TEST_URI,
+        COMPLEX_FILE, TEST_URI, initialize_server, lsp_request_to_jsonrpc_request,
+        lsp_response_to_jsonrpc_response,
     };
 
     type Highlight = (DocumentHighlightKind, (u32, u32), (u32, u32));

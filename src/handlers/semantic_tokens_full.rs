@@ -7,8 +7,8 @@ use tower_lsp::{
 use tree_sitter::{Query, QueryCursor, StreamingIterator};
 
 use crate::{
+    Backend, QUERY_LANGUAGE, SymbolInfo,
     util::{NodeUtil, TextProviderRope},
-    Backend, SymbolInfo, QUERY_LANGUAGE,
 };
 
 static SEM_TOK_QUERY: LazyLock<Query> = LazyLock::new(|| {
@@ -87,13 +87,14 @@ mod test {
     use pretty_assertions::assert_eq;
     use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
-        request::SemanticTokensFullRequest, PartialResultParams, SemanticToken, SemanticTokens,
-        SemanticTokensParams, SemanticTokensResult, TextDocumentIdentifier, WorkDoneProgressParams,
+        PartialResultParams, SemanticToken, SemanticTokens, SemanticTokensParams,
+        SemanticTokensResult, TextDocumentIdentifier, WorkDoneProgressParams,
+        request::SemanticTokensFullRequest,
     };
 
     use crate::test_helpers::helpers::{
-        initialize_server, lsp_request_to_jsonrpc_request, lsp_response_to_jsonrpc_response,
-        TEST_URI,
+        TEST_URI, initialize_server, lsp_request_to_jsonrpc_request,
+        lsp_response_to_jsonrpc_response,
     };
 
     #[tokio::test(flavor = "current_thread")]

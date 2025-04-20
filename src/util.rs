@@ -15,11 +15,11 @@ use tower_lsp::lsp_types::{
 };
 use tracing::warn;
 use tree_sitter::{
-    wasmtime::Engine, InputEdit, Language, Node, Point, Query, QueryCursor, QueryMatch,
-    QueryPredicateArg, TextProvider, Tree, TreeCursor, WasmStore,
+    InputEdit, Language, Node, Point, Query, QueryCursor, QueryMatch, QueryPredicateArg,
+    TextProvider, Tree, TreeCursor, WasmStore, wasmtime::Engine,
 };
 
-use crate::{Backend, Options, SymbolInfo, ENGINE, QUERY_LANGUAGE};
+use crate::{Backend, ENGINE, Options, QUERY_LANGUAGE, SymbolInfo};
 
 static LINE_START: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([^\S\r\n]*)").unwrap());
 static NEWLINES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\n+").unwrap());

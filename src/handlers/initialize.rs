@@ -47,16 +47,16 @@ mod test {
     use pretty_assertions::assert_eq;
     use tower::{Service, ServiceExt};
     use tower_lsp::{
-        lsp_types::{
-            request::Initialize, ClientCapabilities, InitializeParams, InitializeResult,
-            ServerInfo, Url,
-        },
         LspService,
+        lsp_types::{
+            ClientCapabilities, InitializeParams, InitializeResult, ServerInfo, Url,
+            request::Initialize,
+        },
     };
 
     use crate::{
-        test_helpers::helpers::{lsp_request_to_jsonrpc_request, lsp_response_to_jsonrpc_response},
         Backend, Options, SERVER_CAPABILITIES,
+        test_helpers::helpers::{lsp_request_to_jsonrpc_request, lsp_response_to_jsonrpc_response},
     };
 
     #[tokio::test(flavor = "current_thread")]

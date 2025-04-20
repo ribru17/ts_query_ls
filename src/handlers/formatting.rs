@@ -2,8 +2,8 @@ use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{DocumentFormattingParams, TextEdit};
 
 use crate::{
-    util::{diff, format_document},
     Backend,
+    util::{diff, format_document},
 };
 
 pub async fn formatting(
@@ -33,14 +33,14 @@ mod test {
     use rstest::rstest;
     use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
-        notification::DidChangeTextDocument, request::Formatting, DidChangeTextDocumentParams,
-        DocumentFormattingParams, FormattingOptions, TextDocumentContentChangeEvent,
-        TextDocumentIdentifier, VersionedTextDocumentIdentifier, WorkDoneProgressParams,
+        DidChangeTextDocumentParams, DocumentFormattingParams, FormattingOptions,
+        TextDocumentContentChangeEvent, TextDocumentIdentifier, VersionedTextDocumentIdentifier,
+        WorkDoneProgressParams, notification::DidChangeTextDocument, request::Formatting,
     };
 
     use crate::test_helpers::helpers::{
-        initialize_server, jsonrpc_response_to_lsp_value, lsp_notification_to_jsonrpc_request,
-        lsp_request_to_jsonrpc_request, TEST_URI,
+        TEST_URI, initialize_server, jsonrpc_response_to_lsp_value,
+        lsp_notification_to_jsonrpc_request, lsp_request_to_jsonrpc_request,
     };
 
     #[rstest]

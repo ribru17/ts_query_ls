@@ -6,8 +6,8 @@ use tracing::info;
 use tree_sitter::Parser;
 
 use crate::{
-    util::{get_diagnostics, get_language, TextProviderRope},
-    Backend, SymbolInfo, QUERY_LANGUAGE,
+    Backend, QUERY_LANGUAGE, SymbolInfo,
+    util::{TextProviderRope, get_diagnostics, get_language},
 };
 
 pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
@@ -117,11 +117,11 @@ mod test {
     use pretty_assertions::assert_eq;
     use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
-        notification::DidOpenTextDocument, DidOpenTextDocumentParams, TextDocumentItem,
+        DidOpenTextDocumentParams, TextDocumentItem, notification::DidOpenTextDocument,
     };
 
     use crate::test_helpers::helpers::{
-        initialize_server, lsp_notification_to_jsonrpc_request, TEST_URI,
+        TEST_URI, initialize_server, lsp_notification_to_jsonrpc_request,
     };
 
     #[tokio::test(flavor = "current_thread")]

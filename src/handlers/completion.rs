@@ -9,8 +9,8 @@ use tracing::warn;
 use tree_sitter::QueryCursor;
 
 use crate::util::{
-    lsp_position_to_byte_offset, node_is_or_has_ancestor, NodeUtil, TextProviderRope, ToTsPoint,
-    CAPTURES_QUERY,
+    CAPTURES_QUERY, NodeUtil, TextProviderRope, ToTsPoint, lsp_position_to_byte_offset,
+    node_is_or_has_ancestor,
 };
 use crate::{Backend, SymbolInfo};
 
@@ -172,17 +172,17 @@ mod test {
     use rstest::rstest;
     use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
-        request::Completion, CompletionItem, CompletionItemKind, CompletionParams,
-        CompletionResponse, PartialResultParams, Position, TextDocumentIdentifier,
-        TextDocumentPositionParams, WorkDoneProgressParams,
+        CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse,
+        PartialResultParams, Position, TextDocumentIdentifier, TextDocumentPositionParams,
+        WorkDoneProgressParams, request::Completion,
     };
 
     use crate::{
-        test_helpers::helpers::{
-            initialize_server, lsp_request_to_jsonrpc_request, lsp_response_to_jsonrpc_response,
-            TEST_URI,
-        },
         SymbolInfo,
+        test_helpers::helpers::{
+            TEST_URI, initialize_server, lsp_request_to_jsonrpc_request,
+            lsp_response_to_jsonrpc_response,
+        },
     };
 
     #[rstest]
