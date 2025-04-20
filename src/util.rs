@@ -3,9 +3,9 @@ use std::{
     fs,
     ops::Deref,
     path::Path,
+    sync::LazyLock,
 };
 
-use lazy_static::lazy_static;
 use log::warn;
 use regex::Regex;
 use ropey::Rope;
@@ -21,16 +21,12 @@ use tree_sitter::{
 
 use crate::{Backend, Options, SymbolInfo, ENGINE, QUERY_LANGUAGE};
 
-lazy_static! {
-    static ref LINE_START: Regex = Regex::new(r"^([^\S\r\n]*)").unwrap();
-    static ref LINE_START_RELAXED: Regex = Regex::new(r"^\s*").unwrap();
-    static ref NEWLINES: Regex = Regex::new(r"\n+").unwrap();
-    static ref COMMENT_PAT: Regex = Regex::new(r"^;+(\s*.*?)\s*$").unwrap();
-    static ref CRLF: Regex = Regex::new(r"\r\n?").unwrap();
-}
-
-lazy_static! {
-    static ref FORMAT_QUERY: Query = Query::new(
+static LINE_START: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([^\S\r\n]*)").unwrap());
+static NEWLINES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\n+").unwrap());
+static COMMENT_PAT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^;+(\s*.*?)\s*$").unwrap());
+static CRLF: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\r\n?").unwrap());
+static FORMAT_QUERY: LazyLock<Query> = LazyLock::new(|| {
+    Query::new(
         &QUERY_LANGUAGE,
         r#"
 ;;query
@@ -292,8 +288,8 @@ lazy_static! {
   (#not-is-start-of-line? @format.prepend-space))
 "#,
     )
-    .unwrap();
-}
+    .unwrap()
+});
 
 /// Returns the starting byte of the character if the position is in the middle of a character.
 pub fn lsp_position_to_byte_offset(position: Position, rope: &Rope) -> Result<usize, ropey::Error> {
@@ -554,7 +550,10 @@ impl NodeUtil for Node<'_> {
     }
 }
 
-const DIAGNOSTICS_QUERY: &str = r#"
+static DIAGNOSTICS_QUERY: LazyLock<Query> = LazyLock::new(|| {
+    Query::new(
+        &QUERY_LANGUAGE,
+        r#"
 (ERROR) @e
 (MISSING) @m
 (anonymous_node (string (string_content) @a))
@@ -587,7 +586,10 @@ const DIAGNOSTICS_QUERY: &str = r#"
     (capture)
     _
     _+ @bad_match))
-"#;
+"#,
+    )
+    .unwrap()
+});
 
 pub fn get_diagnostics(
     tree: &Tree,
@@ -598,13 +600,12 @@ pub fn get_diagnostics(
     supertypes: &HashMap<SymbolInfo, BTreeSet<SymbolInfo>>,
 ) -> Vec<Diagnostic> {
     let mut cursor = QueryCursor::new();
-    let query = Query::new(&QUERY_LANGUAGE, DIAGNOSTICS_QUERY).unwrap();
-    let mut matches = cursor.matches(&query, tree.root_node(), provider);
+    let mut matches = cursor.matches(&DIAGNOSTICS_QUERY, tree.root_node(), provider);
     let mut diagnostics = vec![];
     let has_language_info = !symbols.is_empty();
     while let Some(match_) = matches.next() {
         for capture in match_.captures {
-            let capture_name = query.capture_names()[capture.index as usize];
+            let capture_name = DIAGNOSTICS_QUERY.capture_names()[capture.index as usize];
             let capture_text = capture.node.text(rope);
             let severity = Some(DiagnosticSeverity::ERROR);
             let range = capture.node.lsp_range(rope);

@@ -1697,7 +1697,6 @@ dependencies = [
  "dashmap 6.1.0",
  "dissimilar",
  "env_logger",
- "lazy_static",
  "libloading",
  "log",
  "pretty_assertions",

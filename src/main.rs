@@ -1,13 +1,12 @@
 use clap::{Parser, Subcommand};
 use core::fmt;
-use lazy_static::lazy_static;
 use rayon::iter::{IntoParallelRefIterator as _, ParallelIterator as _};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fs,
     path::PathBuf,
-    sync::{atomic::AtomicI32, Arc, RwLock},
+    sync::{atomic::AtomicI32, Arc, LazyLock, RwLock},
 };
 use walkdir::WalkDir;
 
@@ -36,8 +35,8 @@ mod handlers;
 mod test_helpers;
 mod util;
 
-lazy_static! {
-    static ref SERVER_CAPABILITIES: ServerCapabilities = ServerCapabilities {
+static SERVER_CAPABILITIES: LazyLock<ServerCapabilities> = LazyLock::new(|| {
+    ServerCapabilities {
         text_document_sync: Some(TextDocumentSyncCapability::Kind(
             TextDocumentSyncKind::INCREMENTAL,
         )),
@@ -54,20 +53,20 @@ lazy_static! {
             SemanticTokensOptions {
                 legend: SemanticTokensLegend {
                     token_types: vec![SemanticTokenType::INTERFACE, SemanticTokenType::VARIABLE],
-                    token_modifiers: vec![SemanticTokenModifier::DEFAULT_LIBRARY]
+                    token_modifiers: vec![SemanticTokenModifier::DEFAULT_LIBRARY],
                 },
                 // TODO: Support range and delta semantic token requests.
                 full: Some(SemanticTokensFullOptions::Bool(true)),
                 ..Default::default()
-            }
+            },
         )),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         document_symbol_provider: Some(OneOf::Left(true)),
         ..Default::default()
-    };
-    static ref ENGINE: Engine = Engine::default();
-    static ref QUERY_LANGUAGE: Language = tree_sitter_query::LANGUAGE.into();
-}
+    }
+});
+static ENGINE: LazyLock<Engine> = LazyLock::new(Engine::default);
+static QUERY_LANGUAGE: LazyLock<Language> = LazyLock::new(|| tree_sitter_query::LANGUAGE.into());
 
 #[derive(PartialEq, Eq, Hash, Clone, PartialOrd, Ord)]
 struct SymbolInfo {
