@@ -1,6 +1,6 @@
-use log::warn;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{Location, ReferenceParams};
+use tracing::warn;
 use tree_sitter::{Parser, QueryCursor};
 
 use crate::util::{NodeUtil, ToTsPoint, CAPTURES_QUERY};

@@ -1,8 +1,8 @@
-use log::{error, warn};
 use tower_lsp::{
     jsonrpc::Result,
     lsp_types::{DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse, SymbolKind},
 };
+use tracing::{error, warn};
 use tree_sitter::{QueryCursor, StreamingIterator};
 
 use crate::{

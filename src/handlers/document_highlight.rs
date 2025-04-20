@@ -1,9 +1,9 @@
 use std::sync::LazyLock;
 
-use log::warn;
 use streaming_iterator::StreamingIterator;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams};
+use tracing::warn;
 use tree_sitter::{Parser, Query, QueryCursor};
 
 use crate::util::{get_references, NodeUtil, TextProviderRope, ToTsPoint, CAPTURES_QUERY};

@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 
-use log::warn;
 use streaming_iterator::StreamingIterator;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
     CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse,
 };
+use tracing::warn;
 use tree_sitter::QueryCursor;
 
 use crate::util::{
