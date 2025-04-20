@@ -91,6 +91,7 @@ struct Backend {
     fields_vec_map: DashMap<Url, Vec<String>>,
     supertype_map_map: DashMap<Url, HashMap<SymbolInfo, BTreeSet<SymbolInfo>>>,
     options: Arc<RwLock<Options>>,
+    workspace_uris: Arc<RwLock<Vec<Url>>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default)]
@@ -333,13 +334,14 @@ async fn main() {
     }));
     let (service, socket) = LspService::build(|client| Backend {
         client,
-        document_map: DashMap::new(),
-        cst_map: DashMap::new(),
-        symbols_set_map: DashMap::new(),
-        symbols_vec_map: DashMap::new(),
-        fields_set_map: DashMap::new(),
-        fields_vec_map: DashMap::new(),
-        supertype_map_map: DashMap::new(),
+        document_map: Default::default(),
+        cst_map: Default::default(),
+        symbols_set_map: Default::default(),
+        symbols_vec_map: Default::default(),
+        fields_set_map: Default::default(),
+        fields_vec_map: Default::default(),
+        supertype_map_map: Default::default(),
+        workspace_uris: Default::default(),
         options,
     })
     .finish();

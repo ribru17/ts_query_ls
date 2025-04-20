@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
-    fs,
+    fs::{self},
     ops::Deref,
     path::Path,
     sync::LazyLock,
@@ -1032,13 +1032,38 @@ fn format_iter<'a>(
     cursor.goto_parent();
 }
 
-pub fn set_configuration_options(backend: &Backend, options: Value) {
+fn get_first_valid_file_config(workspace_uris: Vec<Url>) -> Option<Options> {
+    for folder_url in workspace_uris {
+        if let Ok(path) = folder_url.to_file_path() {
+            let config_path = path.join("tsqueryrc.json");
+            if config_path.is_file() {
+                let data = fs::read_to_string(config_path).ok()?;
+                if let Ok(options) = serde_json::from_str(&data) {
+                    return options;
+                }
+            }
+        }
+    }
+    None
+}
+
+pub fn set_configuration_options(backend: &Backend, options: Value, workspace_uris: Vec<Url>) {
     let Ok(parsed_options) = serde_json::from_value::<Options>(options) else {
         warn!("Unable to parse configuration settings!",);
         return;
     };
-    let mut options = backend.options.write().unwrap();
-    options.parser_install_directories = parsed_options.parser_install_directories;
-    options.parser_aliases = parsed_options.parser_aliases;
-    options.language_retrieval_patterns = parsed_options.language_retrieval_patterns;
+    if let Ok(mut options) = backend.options.write() {
+        options.parser_install_directories = parsed_options.parser_install_directories;
+        options.parser_aliases = parsed_options.parser_aliases;
+        options.language_retrieval_patterns = parsed_options.language_retrieval_patterns;
+
+        if let Some(file_options) = get_first_valid_file_config(workspace_uris) {
+            // Don't merge parser_install_directories, since these are dependent on the local
+            // user's installation paths
+            options.parser_aliases = file_options.parser_aliases;
+            options.language_retrieval_patterns = file_options.language_retrieval_patterns;
+        }
+    } else {
+        warn!("Failed to update configuration options; lock could not be acquired");
+    }
 }

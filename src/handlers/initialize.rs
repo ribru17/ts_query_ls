@@ -1,23 +1,36 @@
-use std::{env::set_current_dir, path::PathBuf};
+use std::str::FromStr;
 
 use tower_lsp::jsonrpc::Result;
-use tower_lsp::lsp_types::{InitializeParams, InitializeResult, ServerInfo};
-use tracing::{error, info};
+use tower_lsp::lsp_types::{InitializeParams, InitializeResult, ServerInfo, Url};
+use tracing::info;
 
 use crate::util::set_configuration_options;
 use crate::{Backend, SERVER_CAPABILITIES};
 
 pub async fn initialize(backend: &Backend, params: InitializeParams) -> Result<InitializeResult> {
     info!("ts_query_ls initialized");
-    if let Some(root_uri) = params.root_uri {
-        let root = PathBuf::from(root_uri.path());
-        if set_current_dir(&root).is_err() {
-            error!("Failed to set root directory to {:?}", root);
-        };
+    if let Ok(mut ws_uris) = backend.workspace_uris.write() {
+        #[allow(deprecated)]
+        if let Some(root_uri) = params.root_uri.or(params
+            .root_path
+            .and_then(|p| Url::from_str(p.as_str()).ok()))
+        {
+            ws_uris.push(root_uri);
+        } else if let Some(ws_folders) = params.workspace_folders {
+            ws_uris.extend(ws_folders.iter().map(|folder| folder.uri.clone()));
+        }
     }
 
     if let Some(init_options) = params.initialization_options {
-        set_configuration_options(backend, init_options);
+        set_configuration_options(
+            backend,
+            init_options,
+            backend
+                .workspace_uris
+                .read()
+                .map(|r| r.to_vec())
+                .unwrap_or_default(),
+        );
     }
 
     Ok(InitializeResult {
@@ -58,6 +71,7 @@ mod test {
             fields_set_map: Default::default(),
             fields_vec_map: Default::default(),
             supertype_map_map: Default::default(),
+            workspace_uris: Default::default(),
             options: Default::default(),
         })
         .finish();
