@@ -90,7 +90,7 @@ struct Backend {
     fields_set_map: DashMap<Url, HashSet<String>>,
     fields_vec_map: DashMap<Url, Vec<String>>,
     supertype_map_map: DashMap<Url, HashMap<SymbolInfo, BTreeSet<SymbolInfo>>>,
-    options: Arc<RwLock<Options>>,
+    options: Arc<tokio::sync::RwLock<Options>>,
     workspace_uris: Arc<RwLock<Vec<Url>>>,
 }
 
@@ -337,10 +337,11 @@ async fn main() {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
-    let options = Arc::new(RwLock::new(Options {
+    let options = Arc::new(tokio::sync::RwLock::new(Options {
         parser_install_directories: None,
         parser_aliases: None,
         language_retrieval_patterns: None,
+        allowable_captures: HashMap::default(),
     }));
     let (service, socket) = LspService::build(|client| Backend {
         client,

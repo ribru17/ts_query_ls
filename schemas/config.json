@@ -3,6 +3,18 @@
   "title": "Options",
   "type": "object",
   "properties": {
+    "allowable_captures": {
+      "description": "A map from query file names to allowable captures. Captures are represented as an object containing their name and an optional description. Note that captures prefixed with an underscore are always permissible.",
+      "default": {},
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/SerializableCapture"
+        },
+        "uniqueItems": true
+      }
+    },
     "language_retrieval_patterns": {
       "description": "A list of patterns to aid the LSP in finding a language, given a file path. Patterns must have one capture group which represents the language name. Ordered from highest to lowest precedence.",
       "type": [
@@ -31,6 +43,25 @@
       ],
       "items": {
         "type": "string"
+      }
+    }
+  },
+  "definitions": {
+    "SerializableCapture": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        }
       }
     }
   }

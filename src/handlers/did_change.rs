@@ -3,7 +3,7 @@ use tree_sitter::Parser;
 
 use crate::{
     Backend, QUERY_LANGUAGE,
-    util::{TextProviderRope, get_diagnostics, lsp_textdocchange_to_ts_inputedit},
+    util::{TextProviderRope, get_diagnostics, lsp_textdocchange_to_ts_inputedit, uri_to_basename},
 };
 
 pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) {
@@ -65,17 +65,28 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
     if let Some(tree) = result {
         *backend.cst_map.get_mut(uri).unwrap() = tree.clone();
         // Update diagnostics
-        if let (Some(symbols), Some(fields), Some(supertypes)) = (
+        if let (Some(symbols), Some(fields), Some(supertypes), options) = (
             backend.symbols_set_map.get(uri),
             backend.fields_set_map.get(uri),
             backend.supertype_map_map.get(uri),
+            backend.options.read().await,
         ) {
             let provider = TextProviderRope(&rope);
             backend
                 .client
                 .publish_diagnostics(
                     uri.clone(),
-                    get_diagnostics(&tree, &rope, &provider, &symbols, &fields, &supertypes),
+                    get_diagnostics(
+                        &tree,
+                        &rope,
+                        &provider,
+                        &symbols,
+                        &fields,
+                        &supertypes,
+                        options
+                            .allowable_captures
+                            .get(&uri_to_basename(uri).unwrap_or_default()),
+                    ),
                     None,
                 )
                 .await;

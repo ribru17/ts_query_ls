@@ -7,7 +7,7 @@ use tree_sitter::Parser;
 
 use crate::{
     Backend, QUERY_LANGUAGE, SymbolInfo,
-    util::{TextProviderRope, get_diagnostics, get_language},
+    util::{TextProviderRope, get_diagnostics, get_language, uri_to_basename},
 };
 
 pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
@@ -30,13 +30,7 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     let mut fields_vec: Vec<String> = vec![];
     let mut fields_set: HashSet<String> = HashSet::new();
     let mut supertype_map: HashMap<SymbolInfo, BTreeSet<SymbolInfo>> = HashMap::new();
-    if let Some(lang) = &backend
-        .options
-        .read()
-        .ok()
-        .as_ref()
-        .and_then(|options| get_language(uri, options))
-    {
+    if let Some(lang) = get_language(uri, &*backend.options.read().await) {
         let error_symbol = SymbolInfo {
             label: "ERROR".to_owned(),
             named: true,
@@ -94,18 +88,29 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
         .insert(uri.to_owned(), supertype_map);
 
     // Publish diagnostics
-    if let (Some(tree), Some(symbols), Some(fields), Some(supertypes)) = (
+    if let (Some(tree), Some(symbols), Some(fields), Some(supertypes), options) = (
         backend.cst_map.get(uri),
         backend.symbols_set_map.get(uri),
         backend.fields_set_map.get(uri),
         backend.supertype_map_map.get(uri),
+        backend.options.read().await,
     ) {
         let provider = TextProviderRope(&rope);
         backend
             .client
             .publish_diagnostics(
                 uri.clone(),
-                get_diagnostics(&tree, &rope, &provider, &symbols, &fields, &supertypes),
+                get_diagnostics(
+                    &tree,
+                    &rope,
+                    &provider,
+                    &symbols,
+                    &fields,
+                    &supertypes,
+                    options
+                        .allowable_captures
+                        .get(&uri_to_basename(uri).unwrap_or_default()),
+                ),
                 None,
             )
             .await;

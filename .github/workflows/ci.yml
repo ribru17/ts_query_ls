@@ -54,7 +54,7 @@ jobs:
         run: |
           # Generate schema
           cargo xtask schema
-          # Check for uncommitted changes (excluding schemas/workflow.ts)
+          # Check for uncommitted changes
           if [[ -n "$(git status --porcelain)" ]]; then
             echo '❌ Uncommitted changes detected after running `cargo xtask schema`:'
             git --no-pager diff

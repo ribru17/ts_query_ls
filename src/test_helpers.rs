@@ -11,7 +11,6 @@ pub mod helpers {
     use tree_sitter::Parser;
 
     use dashmap::DashMap;
-    use std::sync::RwLock;
     use tower_lsp::{
         LspService,
         jsonrpc::{Request, Response},
@@ -79,10 +78,11 @@ pub mod helpers {
         parser
             .set_language(&QUERY_LANGUAGE)
             .expect("Error loading Query grammar");
-        let options = Arc::new(RwLock::new(Options {
+        let options = Arc::new(tokio::sync::RwLock::new(Options {
             parser_install_directories: None,
             parser_aliases: None,
             language_retrieval_patterns: None,
+            allowable_captures: HashMap::new(),
         }));
         let (mut service, _socket) = LspService::build(|client| Backend {
             client,

@@ -16,7 +16,19 @@ example file:
   },
   "language_retrieval_patterns": [
     "languages/src/([^/]+)/[^/]+\\.scm$"
-  ]
+  ],
+  "allowable_captures": {
+    "highlights": [
+      {
+        "name": "variable",
+        "description": "Simple identifiers"
+      },
+      {
+        "name": "variable.parameter",
+        "description": "Parameters of a function"
+      }
+    ]
+  }
 }
 ```
 
@@ -58,6 +70,29 @@ from highest to lowest precedence. E.g., for `zed` support:
 
 - `tree-sitter-([^/]+)/queries/[^/]+\.scm$`
 - `queries/([^/]+)/[^/]+\.scm$`
+
+#### `allowable_captures`
+
+A map from query file names to allowable captures. Captures are represented as
+an object containing their name (sans `@`) and an optional description. Note
+that captures prefixed with an underscore are always permissible. Example:
+
+```json
+{
+  "allowable_captures": {
+    "highlights": [
+      {
+        "name": "variable",
+        "description": "Simple identifiers"
+      },
+      {
+        "name": "variable.parameter",
+        "description": "Parameters of a function"
+      }
+    ]
+  }
+}
+```
 
 ### Example setup (for Neovim):
 

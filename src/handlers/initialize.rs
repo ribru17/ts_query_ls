@@ -30,7 +30,8 @@ pub async fn initialize(backend: &Backend, params: InitializeParams) -> Result<I
                 .read()
                 .map(|r| r.to_vec())
                 .unwrap_or_default(),
-        );
+        )
+        .await;
     }
 
     Ok(InitializeResult {
@@ -122,7 +123,7 @@ mod test {
             ))
         );
         let backend = service.inner();
-        let actual_options = backend.options.read().unwrap();
+        let actual_options = backend.options.read().await;
         let expected_options = serde_json::from_str::<Options>(options).unwrap();
         assert_eq!(
             actual_options.parser_aliases,
