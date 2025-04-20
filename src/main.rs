@@ -1,13 +1,13 @@
 use clap::{Parser, Subcommand};
 use core::fmt;
 use rayon::iter::{IntoParallelRefIterator as _, ParallelIterator as _};
-use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     fs,
     path::PathBuf,
     sync::{atomic::AtomicI32, Arc, LazyLock, RwLock},
 };
+use ts_query_ls::Options;
 use walkdir::WalkDir;
 
 use dashmap::DashMap;
@@ -92,13 +92,6 @@ struct Backend {
     supertype_map_map: DashMap<Url, HashMap<SymbolInfo, BTreeSet<SymbolInfo>>>,
     options: Arc<RwLock<Options>>,
     workspace_uris: Arc<RwLock<Vec<Url>>>,
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default)]
-struct Options {
-    parser_install_directories: Option<Vec<String>>,
-    parser_aliases: Option<BTreeMap<String, String>>,
-    language_retrieval_patterns: Option<Vec<String>>,
 }
 
 #[tower_lsp::async_trait]
