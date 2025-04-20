@@ -1058,8 +1058,17 @@ pub fn set_configuration_options(backend: &Backend, options: Value, workspace_ur
         options.language_retrieval_patterns = parsed_options.language_retrieval_patterns;
 
         if let Some(file_options) = get_first_valid_file_config(workspace_uris) {
-            // Don't merge parser_install_directories, since these are dependent on the local
-            // user's installation paths
+            // Merge parser_install_directories, since these are dependent on the local user's
+            // installation paths
+            if let Some(mut config_file_dirs) = file_options.parser_install_directories {
+                config_file_dirs.extend(
+                    options
+                        .parser_install_directories
+                        .clone()
+                        .unwrap_or_default(),
+                );
+                options.parser_install_directories = Some(config_file_dirs);
+            }
             options.parser_aliases = file_options.parser_aliases;
             options.language_retrieval_patterns = file_options.language_retrieval_patterns;
         }
