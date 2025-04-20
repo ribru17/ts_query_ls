@@ -3,10 +3,9 @@ pub mod helpers {
     use ropey::Rope;
     use serde_json::to_value;
 
-    use lazy_static::lazy_static;
     use std::{
         collections::{BTreeSet, HashMap, HashSet},
-        sync::Arc,
+        sync::{Arc, LazyLock},
     };
     use tower::{Service, ServiceExt};
     use tree_sitter::Parser;
@@ -24,13 +23,17 @@ pub mod helpers {
 
     use crate::{Backend, Options, SymbolInfo, QUERY_LANGUAGE};
 
-    lazy_static! {
-        pub static ref TEST_URI: Url = Url::parse("file:///tmp/test.scm").unwrap();
-        pub static ref TEST_URI_2: Url = Url::parse("file:///tmp/injections.scm").unwrap();
-        pub static ref SIMPLE_FILE: &'static str = r"((identifier) @constant
+    pub static TEST_URI: LazyLock<Url> =
+        LazyLock::new(|| Url::parse("file:///tmp/test.scm").unwrap());
+    pub static TEST_URI_2: LazyLock<Url> =
+        LazyLock::new(|| Url::parse("file:///tmp/injections.scm").unwrap());
+    pub static SIMPLE_FILE: LazyLock<&str> = LazyLock::new(|| {
+        r"((identifier) @constant
  (#match? @constant @constant))
- ; @constant here";
-        pub static ref COMPLEX_FILE: &'static str = r#"((comment) @injection.content
+ ; @constant here"
+    });
+    pub static COMPLEX_FILE: LazyLock<&str> = LazyLock::new(|| {
+        r#"((comment) @injection.content
   (#set! injection.language "comment"))
 
 ; html(`...`), html`...`, sql(`...`), etc.
@@ -61,8 +64,8 @@ pub mod helpers {
   ]
   (#offset! @injection.content 0 1 0 -1)
   (#set! injection.include-children)
-  (#set! injection.language "html"))"#;
-    }
+  (#set! injection.language "html"))"#
+    });
 
     // Always test with id of 1 for simplicity
     const ID: i64 = 1;
