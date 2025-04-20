@@ -6,12 +6,13 @@ use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
     CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse,
 };
-use tree_sitter::{Query, QueryCursor};
+use tree_sitter::QueryCursor;
 
 use crate::util::{
     lsp_position_to_byte_offset, node_is_or_has_ancestor, NodeUtil, TextProviderRope, ToTsPoint,
+    CAPTURES_QUERY,
 };
-use crate::{Backend, SymbolInfo, QUERY_LANGUAGE};
+use crate::{Backend, SymbolInfo};
 
 pub async fn completion(
     backend: &Backend,
@@ -33,7 +34,7 @@ pub async fn completion(
         position.character -= 1;
     }
     let point = position.to_ts_point(rope);
-    let query = Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap();
+    let query = &CAPTURES_QUERY;
     let mut cursor = QueryCursor::new();
     let current_node = tree
         .root_node()
@@ -142,7 +143,7 @@ pub async fn completion(
         Some(value) => value,
     };
     let provider = TextProviderRope(rope);
-    let mut iter = cursor.matches(&query, node, &provider);
+    let mut iter = cursor.matches(query, node, &provider);
     let mut seen = HashSet::new();
     while let Some(match_) = iter.next() {
         for capture in match_.captures {

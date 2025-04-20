@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use tower_lsp::{
     jsonrpc::Result,
     lsp_types::{SemanticToken, SemanticTokens, SemanticTokensParams, SemanticTokensResult},
@@ -8,6 +10,14 @@ use crate::{
     util::{NodeUtil, TextProviderRope},
     Backend, SymbolInfo, QUERY_LANGUAGE,
 };
+
+static SEM_TOK_QUERY: LazyLock<Query> = LazyLock::new(|| {
+    Query::new(
+        &QUERY_LANGUAGE,
+        "(named_node (identifier) @cap) (missing_node (identifier) @cap)",
+    )
+    .unwrap()
+});
 
 pub async fn semantic_tokens_full(
     backend: &Backend,
@@ -20,14 +30,10 @@ pub async fn semantic_tokens_full(
         &backend.document_map.get(uri),
         backend.supertype_map_map.get(uri),
     ) {
-        let query = Query::new(
-            &QUERY_LANGUAGE,
-            "(named_node (identifier) @cap) (missing_node (identifier) @cap)",
-        )
-        .unwrap();
+        let query = &SEM_TOK_QUERY;
         let mut cursor = QueryCursor::new();
         let provider = TextProviderRope(rope);
-        let mut matches = cursor.matches(&query, tree.root_node(), &provider);
+        let mut matches = cursor.matches(query, tree.root_node(), &provider);
         let mut prev_line = 0;
         let mut prev_col = 0;
         while let Some(match_) = matches.next() {

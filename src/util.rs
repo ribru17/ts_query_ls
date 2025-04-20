@@ -25,6 +25,12 @@ static LINE_START: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([^\S\r\n]*)
 static NEWLINES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\n+").unwrap());
 static COMMENT_PAT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^;+(\s*.*?)\s*$").unwrap());
 static CRLF: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\r\n?").unwrap());
+static LANGUAGE_REGEX_1: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"queries/([^/]+)/[^/]+\.scm$").unwrap());
+static LANGUAGE_REGEX_2: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"tree-sitter-([^/]+)/queries/[^/]+\.scm$").unwrap());
+pub static CAPTURES_QUERY: LazyLock<Query> =
+    LazyLock::new(|| Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap());
 static FORMAT_QUERY: LazyLock<Query> = LazyLock::new(|| {
     Query::new(
         &QUERY_LANGUAGE,
@@ -457,9 +463,8 @@ pub fn get_language(uri: &Url, options: &Options) -> Option<Language> {
         .iter()
         .map(|r| Regex::new(r).unwrap())
         .collect();
-    language_retrieval_regexes.push(Regex::new(r"queries/([^/]+)/[^/]+\.scm$").unwrap());
-    language_retrieval_regexes
-        .push(Regex::new(r"tree-sitter-([^/]+)/queries/[^/]+\.scm$").unwrap());
+    language_retrieval_regexes.push(LANGUAGE_REGEX_1.clone());
+    language_retrieval_regexes.push(LANGUAGE_REGEX_2.clone());
     let mut captures = None;
     for re in language_retrieval_regexes {
         if let Some(caps) = re.captures(uri.as_str()) {
@@ -698,9 +703,9 @@ pub fn get_diagnostics(
                 }),
                 "c" => {
                     let mut cursor = QueryCursor::new();
-                    let query = Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap();
+                    let query = &CAPTURES_QUERY;
                     let mut matches = cursor.matches(
-                        &query,
+                        query,
                         tree.root_node()
                             .child_with_descendant(capture.node)
                             .unwrap(),
