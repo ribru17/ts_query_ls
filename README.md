@@ -4,33 +4,62 @@
 
 ## Configuration
 
-```jsonc
+Configuration can be done via server initialization or via a configuration file
+named `tsqueryrc.json` located at the project workspace root. Below is an
+example file:
+
+```json
 {
-  "settings": {
-    // Where to look for parsers, of the form <lang>.(so|dll|dylib)
-    // or tree-sitter-<lang>.wasm
-    "parser_install_directories": ["a/list/of", "parser/installation/paths"],
-    // A list of parser aliases (e.g. point queries/ecma/*.scm files to the
-    // javascript parser)
-    "parser_aliases": {
-      "ecma": "javascript"
-    },
-    // A list of patterns to aid the LSP in finding a language, given a file
-    // path. Patterns must have one capture group which represents the language
-    // name. Ordered from highest to lowest precedence.
-    "language_retrieval_patterns": [
-      // E.g. zed support
-      "languages/src/([^/]+)/[^/]+\\.scm$"
-      // The following fallbacks are *always* provided:
-      //
-      // tree-sitter-([^/]+)/queries/[^/]+\.scm$
-      // queries/([^/]+)/[^/]+\.scm$
-    ]
+  "parser_install_directories": ["a/list/of", "parser/installation/paths"],
+  "parser_aliases": {
+    "ecma": "javascript"
+  },
+  "language_retrieval_patterns": [
+    "languages/src/([^/]+)/[^/]+\\.scm$"
+  ]
+}
+```
+
+### Configuration options
+
+#### `parser_install_directories`
+
+A list of strings representing directories to search for parsers, of the form
+`<lang>.(so|dll|dylib)` or `tree-sitter-<lang>.wasm`.
+
+#### `parser_aliases`
+
+A map of parser aliases. E.g., to point `queries/ecma/*.scm` files to the
+`javascript` parser:
+
+```json
+{
+  "parser_aliases": {
+    "ecma": "javascript"
   }
 }
 ```
 
-Example setup (for Neovim):
+#### `language_retrieval_patterns`
+
+A list of patterns to aid the LSP in finding a language, given a file path.
+Patterns must have one capture group which represents the language name. Ordered
+from highest to lowest precedence. E.g., for `zed` support:
+
+```json
+{
+  "language_retrieval_patterns": [
+    "languages/src/([^/]+)/[^/]+\\.scm$"
+  ]
+}
+```
+
+**NOTE:** The following fallbacks are _always_ provided:
+
+- `tree-sitter-([^/]+)/queries/[^/]+\.scm$`
+- `queries/([^/]+)/[^/]+\.scm$`
+
+### Example setup (for Neovim):
 
 ```lua
 -- Disable the (slow) builtin query linter
@@ -45,7 +74,7 @@ vim.api.nvim_create_autocmd('FileType', {
     vim.lsp.start {
       name = 'ts_query_ls',
       cmd = { '/path/to/ts_query_ls/target/release/ts_query_ls' },
-      root_dir = vim.fs.root(0, { 'queries' }),
+      root_dir = vim.fs.root(0, { 'tsqueryrc.json', 'queries' }),
       -- OPTIONAL: Override the query omnifunc
       on_attach = function(_, buf)
         vim.bo[buf].omnifunc = 'v:lua.vim.lsp.omnifunc'
@@ -70,7 +99,7 @@ vim.api.nvim_create_autocmd('FileType', {
 })
 ```
 
-## Standalone Tool
+## Standalone tool
 
 ### Formatter
 
@@ -135,8 +164,7 @@ ts_query_ls check --help
 ### Packaging
 
 - [ ] [`homebrew`](https://github.com/Homebrew/homebrew-core)
-      ([in progress](https://github.com/Homebrew/homebrew-core/pull/197587),
-      requires repo to reach 75 GitHub stars)
+      ([it's complicated](https://github.com/Homebrew/homebrew-core/pull/197587))
 - [x] [`nixpkgs`](https://github.com/NixOS/nixpkgs)
 - [x] [`mason.nvim`](https://github.com/mason-org/mason-registry)
 - [x] [`AUR`](https://aur.archlinux.org/)

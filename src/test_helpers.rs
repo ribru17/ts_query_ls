@@ -143,6 +143,7 @@ pub mod helpers {
                     )
                 },
             )),
+            workspace_uris: Default::default(),
             options,
         })
         .finish();

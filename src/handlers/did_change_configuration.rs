@@ -3,7 +3,15 @@ use tower_lsp::lsp_types::DidChangeConfigurationParams;
 use crate::{util::set_configuration_options, Backend};
 
 pub async fn did_change_configuration(backend: &Backend, params: DidChangeConfigurationParams) {
-    set_configuration_options(backend, params.settings);
+    set_configuration_options(
+        backend,
+        params.settings,
+        backend
+            .workspace_uris
+            .read()
+            .map(|uris| uris.to_vec())
+            .unwrap_or_default(),
+    );
 }
 
 #[cfg(test)]
