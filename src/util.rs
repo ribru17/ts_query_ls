@@ -18,6 +18,7 @@ use tree_sitter::{
     InputEdit, Language, Node, Point, Query, QueryCursor, QueryMatch, QueryPredicateArg,
     TextProvider, Tree, TreeCursor, WasmStore, wasmtime::Engine,
 };
+use ts_query_ls::SerializableCapture;
 
 use crate::{Backend, ENGINE, Options, QUERY_LANGUAGE, SymbolInfo};
 
@@ -567,7 +568,7 @@ static DIAGNOSTICS_QUERY: LazyLock<Query> = LazyLock::new(|| {
 (missing_node name: (identifier) @n)
 (missing_node name: (string (string_content) @a))
 (field_definition name: (identifier) @f)
-(parameters (capture) @c)
+(capture) @c
 (predicate
   name: (identifier) @_name
   (parameters
@@ -603,6 +604,7 @@ pub fn get_diagnostics(
     symbols: &HashSet<SymbolInfo>,
     fields: &HashSet<String>,
     supertypes: &HashMap<SymbolInfo, BTreeSet<SymbolInfo>>,
+    allowable_captures: Option<&BTreeSet<SerializableCapture>>,
 ) -> Vec<Diagnostic> {
     let mut cursor = QueryCursor::new();
     let mut matches = cursor.matches(&DIAGNOSTICS_QUERY, tree.root_node(), provider);
@@ -702,36 +704,58 @@ pub fn get_diagnostics(
                     ..Default::default()
                 }),
                 "c" => {
-                    let mut cursor = QueryCursor::new();
-                    let query = &CAPTURES_QUERY;
-                    let mut matches = cursor.matches(
-                        query,
-                        tree.root_node()
-                            .child_with_descendant(capture.node)
-                            .unwrap(),
-                        provider,
-                    );
-                    let mut valid = false;
-                    // NOTE: Find a simpler way to do this?
-                    'outer: while let Some(m) = matches.next() {
-                        for cap in m.captures {
-                            if let Some(parent) = cap.node.parent() {
-                                if parent.kind() != "parameters"
-                                    && cap.node.text(rope) == capture_text
-                                {
-                                    valid = true;
-                                    break 'outer;
+                    if capture
+                        .node
+                        .parent()
+                        .is_some_and(|p| p.kind() == "parameters")
+                    {
+                        let mut cursor = QueryCursor::new();
+                        let query = &CAPTURES_QUERY;
+                        let mut matches = cursor.matches(
+                            query,
+                            tree.root_node()
+                                .child_with_descendant(capture.node)
+                                .unwrap(),
+                            provider,
+                        );
+                        let mut valid = false;
+                        // NOTE: Find a simpler way to do this?
+                        'outer: while let Some(m) = matches.next() {
+                            for cap in m.captures {
+                                if let Some(parent) = cap.node.parent() {
+                                    if parent.kind() != "parameters"
+                                        && cap.node.text(rope) == capture_text
+                                    {
+                                        valid = true;
+                                        break 'outer;
+                                    }
                                 }
                             }
                         }
-                    }
-                    if !valid {
-                        diagnostics.push(Diagnostic {
-                            message: format!("Undeclared capture: \"{capture_text}\""),
-                            severity,
-                            range,
-                            ..Default::default()
-                        });
+                        if !valid {
+                            diagnostics.push(Diagnostic {
+                                message: format!("Undeclared capture: \"{capture_text}\""),
+                                severity,
+                                range,
+                                ..Default::default()
+                            });
+                        }
+                    } else if let Some(suffix) = capture_text.strip_prefix("@") {
+                        if !suffix.starts_with('_')
+                            && allowable_captures.is_some_and(|c| {
+                                !c.contains(&SerializableCapture {
+                                    name: String::from(suffix),
+                                    ..Default::default()
+                                })
+                            })
+                        {
+                            diagnostics.push(Diagnostic {
+                                message: format!("Unsupported capture name \"{capture_text}\", consider prefixing with '_'"),
+                                severity: Some(DiagnosticSeverity::WARNING),
+                                range,
+                                ..Default::default()
+                            });
+                        }
                     }
                 }
                 "arg" => {
@@ -1047,32 +1071,43 @@ fn get_first_valid_file_config(workspace_uris: Vec<Url>) -> Option<Options> {
     None
 }
 
-pub fn set_configuration_options(backend: &Backend, options: Value, workspace_uris: Vec<Url>) {
+pub async fn set_configuration_options(
+    backend: &Backend,
+    options: Value,
+    workspace_uris: Vec<Url>,
+) {
     let Ok(parsed_options) = serde_json::from_value::<Options>(options) else {
         warn!("Unable to parse configuration settings!",);
         return;
     };
-    if let Ok(mut options) = backend.options.write() {
-        options.parser_install_directories = parsed_options.parser_install_directories;
-        options.parser_aliases = parsed_options.parser_aliases;
-        options.language_retrieval_patterns = parsed_options.language_retrieval_patterns;
 
-        if let Some(file_options) = get_first_valid_file_config(workspace_uris) {
-            // Merge parser_install_directories, since these are dependent on the local user's
-            // installation paths
-            if let Some(mut config_file_dirs) = file_options.parser_install_directories {
-                config_file_dirs.extend(
-                    options
-                        .parser_install_directories
-                        .clone()
-                        .unwrap_or_default(),
-                );
-                options.parser_install_directories = Some(config_file_dirs);
-            }
-            options.parser_aliases = file_options.parser_aliases;
-            options.language_retrieval_patterns = file_options.language_retrieval_patterns;
+    let mut options = backend.options.write().await;
+    options.parser_install_directories = parsed_options.parser_install_directories;
+    options.parser_aliases = parsed_options.parser_aliases;
+    options.language_retrieval_patterns = parsed_options.language_retrieval_patterns;
+    options.allowable_captures = parsed_options.allowable_captures;
+
+    if let Some(file_options) = get_first_valid_file_config(workspace_uris) {
+        // Merge parser_install_directories, since these are dependent on the local user's
+        // installation paths
+        if let Some(mut config_file_dirs) = file_options.parser_install_directories {
+            config_file_dirs.extend(
+                options
+                    .parser_install_directories
+                    .clone()
+                    .unwrap_or_default(),
+            );
+            options.parser_install_directories = Some(config_file_dirs);
         }
-    } else {
-        warn!("Failed to update configuration options; lock could not be acquired");
+        options.parser_aliases = file_options.parser_aliases;
+        options.language_retrieval_patterns = file_options.language_retrieval_patterns;
+        options.allowable_captures = file_options.allowable_captures;
     }
+}
+
+pub fn uri_to_basename(uri: &Url) -> Option<String> {
+    uri.to_file_path().ok().and_then(|path| {
+        path.file_stem()
+            .map(|os_str| os_str.to_string_lossy().into_owned())
+    })
 }

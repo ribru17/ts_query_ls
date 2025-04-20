@@ -11,7 +11,8 @@ pub async fn did_change_configuration(backend: &Backend, params: DidChangeConfig
             .read()
             .map(|uris| uris.to_vec())
             .unwrap_or_default(),
-    );
+    )
+    .await;
 }
 
 #[cfg(test)]
@@ -67,9 +68,7 @@ mod test {
             .unwrap();
 
         // Assert
-        let options = service.inner().options.read();
-        assert!(options.is_ok());
-        let options = options.unwrap();
+        let options = service.inner().options.read().await;
         assert_eq!(
             *options,
             Options {
@@ -84,7 +83,8 @@ mod test {
                 ]),
                 language_retrieval_patterns: Some(vec![String::from(
                     r"\.ts\-([^/]+)\-parser\.wasm"
-                )])
+                )]),
+                allowable_captures: Default::default()
             }
         );
     }
