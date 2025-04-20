@@ -1,9 +1,9 @@
 use log::warn;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{Location, ReferenceParams};
-use tree_sitter::{Parser, Query, QueryCursor};
+use tree_sitter::{Parser, QueryCursor};
 
-use crate::util::{NodeUtil, ToTsPoint};
+use crate::util::{NodeUtil, ToTsPoint, CAPTURES_QUERY};
 use crate::{
     util::{get_current_capture_node, get_references, TextProviderRope},
     Backend, QUERY_LANGUAGE,
@@ -30,7 +30,7 @@ pub async fn references(
     };
 
     let include_def = params.context.include_declaration;
-    let query = Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap();
+    let query = &CAPTURES_QUERY;
     let mut cursor = QueryCursor::new();
     let provider = TextProviderRope(rope);
 
@@ -43,7 +43,7 @@ pub async fn references(
         get_references(
             &tree.root_node(),
             &current_node,
-            &query,
+            query,
             &mut cursor,
             &provider,
             rope,

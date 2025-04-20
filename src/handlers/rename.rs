@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use log::warn;
 use regex::Regex;
 use tower_lsp::{
@@ -7,12 +9,18 @@ use tower_lsp::{
         TextDocumentEdit, TextEdit, WorkspaceEdit,
     },
 };
-use tree_sitter::{Query, QueryCursor};
+use tree_sitter::QueryCursor;
 
 use crate::{
-    util::{get_current_capture_node, get_references, NodeUtil, TextProviderRope, ToTsPoint},
-    Backend, QUERY_LANGUAGE,
+    util::{
+        get_current_capture_node, get_references, NodeUtil, TextProviderRope, ToTsPoint,
+        CAPTURES_QUERY,
+    },
+    Backend,
 };
+
+static IDENTIFIER_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9.\-_\$]+$").unwrap());
 
 pub async fn rename(backend: &Backend, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
     let uri = &params.text_document_position.text_document.uri;
@@ -31,15 +39,14 @@ pub async fn rename(backend: &Backend, params: RenameParams) -> Result<Option<Wo
         None => return Ok(None),
         Some(value) => value,
     };
-    let query = Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap();
+    let query = &CAPTURES_QUERY;
     let mut cursor = QueryCursor::new();
     // Allow the new name to begin with "@"
     let new_name = params
         .new_name
         .strip_prefix('@')
         .unwrap_or(params.new_name.as_str());
-    let identifier_pattern = Regex::new(r"^[a-zA-Z0-9.\-_\$]+$").unwrap();
-    if !identifier_pattern.is_match(new_name) {
+    if !IDENTIFIER_PATTERN.is_match(new_name) {
         return Err(jsonrpc::Error::invalid_params(
             "New name is not a valid identifier",
         ));
@@ -49,7 +56,7 @@ pub async fn rename(backend: &Backend, params: RenameParams) -> Result<Option<Wo
     get_references(
         &tree.root_node(),
         &current_node,
-        &query,
+        query,
         &mut cursor,
         &provider,
         rope,

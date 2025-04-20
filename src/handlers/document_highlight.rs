@@ -1,11 +1,16 @@
+use std::sync::LazyLock;
+
 use log::warn;
 use streaming_iterator::StreamingIterator;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams};
 use tree_sitter::{Parser, Query, QueryCursor};
 
-use crate::util::{get_references, NodeUtil, TextProviderRope, ToTsPoint};
+use crate::util::{get_references, NodeUtil, TextProviderRope, ToTsPoint, CAPTURES_QUERY};
 use crate::{Backend, QUERY_LANGUAGE};
+
+static IDENT_QUERY: LazyLock<Query> =
+    LazyLock::new(|| Query::new(&QUERY_LANGUAGE, "(identifier) @name").unwrap());
 
 pub async fn document_highlight(
     backend: &Backend,
@@ -38,8 +43,8 @@ pub async fn document_highlight(
         })
         .unwrap();
 
-    let capture_query = Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap();
-    let ident_query = Query::new(&QUERY_LANGUAGE, "(identifier) @name").unwrap();
+    let capture_query = &CAPTURES_QUERY;
+    let ident_query = &IDENT_QUERY;
     let mut cursor = QueryCursor::new();
     let provider = TextProviderRope(rope);
 
@@ -53,7 +58,7 @@ pub async fn document_highlight(
             get_references(
                 &tree.root_node(),
                 &current_node,
-                &capture_query,
+                capture_query,
                 &mut cursor,
                 &provider,
                 rope,
@@ -71,7 +76,7 @@ pub async fn document_highlight(
     } else if current_node.kind() == "identifier" {
         Ok(Some(
             cursor
-                .matches(&ident_query, tree.root_node(), &provider)
+                .matches(ident_query, tree.root_node(), &provider)
                 .map_deref(|match_| {
                     match_.captures.iter().filter_map(|cap| {
                         if cap.node.parent()?.kind() == current_node.parent()?.kind()

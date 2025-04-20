@@ -3,11 +3,11 @@ use tower_lsp::{
     jsonrpc::Result,
     lsp_types::{DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse, SymbolKind},
 };
-use tree_sitter::{Query, QueryCursor, StreamingIterator};
+use tree_sitter::{QueryCursor, StreamingIterator};
 
 use crate::{
-    util::{NodeUtil, TextProviderRope},
-    Backend, QUERY_LANGUAGE,
+    util::{NodeUtil, TextProviderRope, CAPTURES_QUERY},
+    Backend,
 };
 
 pub async fn document_symbol(
@@ -25,8 +25,8 @@ pub async fn document_symbol(
 
     let provider = &TextProviderRope(rope);
     let mut cursor = QueryCursor::new();
-    let query = Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap();
-    let mut matches = cursor.matches(&query, tree.root_node(), provider);
+    let query = &CAPTURES_QUERY;
+    let mut matches = cursor.matches(query, tree.root_node(), provider);
 
     while let Some(match_) = matches.next() {
         for capture in match_.captures {

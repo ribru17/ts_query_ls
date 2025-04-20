@@ -3,10 +3,13 @@ use tower_lsp::{
     jsonrpc::Result,
     lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, Location},
 };
-use tree_sitter::{Parser, Query, QueryCursor};
+use tree_sitter::{Parser, QueryCursor};
 
 use crate::{
-    util::{get_current_capture_node, get_references, NodeUtil, TextProviderRope, ToTsPoint},
+    util::{
+        get_current_capture_node, get_references, NodeUtil, TextProviderRope, ToTsPoint,
+        CAPTURES_QUERY,
+    },
     Backend, QUERY_LANGUAGE,
 };
 
@@ -30,7 +33,7 @@ pub async fn goto_definition(
         return Ok(None);
     };
 
-    let query = Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap();
+    let query = &CAPTURES_QUERY;
     let mut cursor = QueryCursor::new();
     let provider = TextProviderRope(rope);
 
@@ -42,7 +45,7 @@ pub async fn goto_definition(
     let defs = get_references(
         &tree.root_node(),
         &current_node,
-        &query,
+        query,
         &mut cursor,
         &provider,
         rope,
