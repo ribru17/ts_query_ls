@@ -6,8 +6,8 @@ use tracing::{error, warn};
 use tree_sitter::{QueryCursor, StreamingIterator};
 
 use crate::{
-    util::{NodeUtil, TextProviderRope, CAPTURES_QUERY},
     Backend,
+    util::{CAPTURES_QUERY, NodeUtil, TextProviderRope},
 };
 
 pub async fn document_symbol(
@@ -60,14 +60,14 @@ mod test {
     use rstest::rstest;
     use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
-        request::DocumentSymbolRequest, DocumentSymbol, DocumentSymbolParams,
-        DocumentSymbolResponse, PartialResultParams, Position, Range, SymbolKind,
-        TextDocumentIdentifier, WorkDoneProgressParams,
+        DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse, PartialResultParams,
+        Position, Range, SymbolKind, TextDocumentIdentifier, WorkDoneProgressParams,
+        request::DocumentSymbolRequest,
     };
 
     use crate::test_helpers::helpers::{
-        initialize_server, lsp_request_to_jsonrpc_request, lsp_response_to_jsonrpc_response,
-        SIMPLE_FILE, TEST_URI,
+        SIMPLE_FILE, TEST_URI, initialize_server, lsp_request_to_jsonrpc_request,
+        lsp_response_to_jsonrpc_response,
     };
 
     type DocSymbol = (String, Range, Range);

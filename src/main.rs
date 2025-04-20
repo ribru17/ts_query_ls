@@ -5,7 +5,7 @@ use std::{
     collections::{BTreeSet, HashMap, HashSet},
     fs,
     path::PathBuf,
-    sync::{atomic::AtomicI32, Arc, LazyLock, RwLock},
+    sync::{Arc, LazyLock, RwLock, atomic::AtomicI32},
 };
 use ts_query_ls::Options;
 use walkdir::WalkDir;
@@ -13,6 +13,7 @@ use walkdir::WalkDir;
 use dashmap::DashMap;
 use ropey::Rope;
 use tower_lsp::{
+    Client, LanguageServer, LspService, Server,
     jsonrpc::Result,
     lsp_types::{
         CompletionOptions, CompletionParams, CompletionResponse, DidChangeConfigurationParams,
@@ -25,9 +26,8 @@ use tower_lsp::{
         SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentSyncCapability,
         TextDocumentSyncKind, TextEdit, Url, WorkspaceEdit,
     },
-    Client, LanguageServer, LspService, Server,
 };
-use tree_sitter::{wasmtime::Engine, Language, Query, QueryErrorKind, Tree};
+use tree_sitter::{Language, Query, QueryErrorKind, Tree, wasmtime::Engine};
 
 use handlers::*;
 

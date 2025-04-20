@@ -12,11 +12,11 @@ use tracing::warn;
 use tree_sitter::QueryCursor;
 
 use crate::{
-    util::{
-        get_current_capture_node, get_references, NodeUtil, TextProviderRope, ToTsPoint,
-        CAPTURES_QUERY,
-    },
     Backend,
+    util::{
+        CAPTURES_QUERY, NodeUtil, TextProviderRope, ToTsPoint, get_current_capture_node,
+        get_references,
+    },
 };
 
 static IDENTIFIER_PATTERN: LazyLock<Regex> =
@@ -94,14 +94,14 @@ mod test {
     use rstest::rstest;
     use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
-        request::Rename, DocumentChanges, OneOf, OptionalVersionedTextDocumentIdentifier, Position,
-        RenameParams, TextDocumentEdit, TextDocumentIdentifier, TextDocumentPositionParams,
-        WorkDoneProgressParams, WorkspaceEdit,
+        DocumentChanges, OneOf, OptionalVersionedTextDocumentIdentifier, Position, RenameParams,
+        TextDocumentEdit, TextDocumentIdentifier, TextDocumentPositionParams,
+        WorkDoneProgressParams, WorkspaceEdit, request::Rename,
     };
 
     use crate::test_helpers::helpers::{
-        initialize_server, lsp_request_to_jsonrpc_request, lsp_response_to_jsonrpc_response,
-        TestEdit, COMPLEX_FILE, SIMPLE_FILE, TEST_URI,
+        COMPLEX_FILE, SIMPLE_FILE, TEST_URI, TestEdit, initialize_server,
+        lsp_request_to_jsonrpc_request, lsp_response_to_jsonrpc_response,
     };
 
     #[rstest]
