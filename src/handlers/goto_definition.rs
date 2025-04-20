@@ -1,8 +1,8 @@
-use log::{info, warn};
 use tower_lsp::{
     jsonrpc::Result,
     lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, Location},
 };
+use tracing::{info, warn};
 use tree_sitter::{Parser, QueryCursor};
 
 use crate::{

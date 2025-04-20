@@ -1,6 +1,5 @@
 use std::sync::LazyLock;
 
-use log::warn;
 use regex::Regex;
 use tower_lsp::{
     jsonrpc::{self, Result},
@@ -9,6 +8,7 @@ use tower_lsp::{
         TextDocumentEdit, TextEdit, WorkspaceEdit,
     },
 };
+use tracing::warn;
 use tree_sitter::QueryCursor;
 
 use crate::{

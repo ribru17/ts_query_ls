@@ -1,14 +1,14 @@
 use std::{env::set_current_dir, path::PathBuf};
 
-use log::{error, info};
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{InitializeParams, InitializeResult, ServerInfo};
+use tracing::{error, info};
 
 use crate::util::set_configuration_options;
 use crate::{Backend, SERVER_CAPABILITIES};
 
 pub async fn initialize(backend: &Backend, params: InitializeParams) -> Result<InitializeResult> {
-    info!("ts_query_ls initialize: {params:?}");
+    info!("ts_query_ls initialized");
     if let Some(root_uri) = params.root_uri {
         let root = PathBuf::from(root_uri.path());
         if set_current_dir(&root).is_err() {

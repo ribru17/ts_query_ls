@@ -1,8 +1,8 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use log::info;
 use ropey::Rope;
 use tower_lsp::lsp_types::DidOpenTextDocumentParams;
+use tracing::info;
 use tree_sitter::Parser;
 
 use crate::{
@@ -12,7 +12,7 @@ use crate::{
 
 pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     let uri = &params.text_document.uri;
-    info!("ts_query_ls did_ops: {params:?}");
+    info!("ts_query_ls did_ops: {uri}");
     let contents = params.text_document.text;
     let rope = Rope::from_str(&contents);
     let mut parser = Parser::new();

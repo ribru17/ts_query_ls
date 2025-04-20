@@ -6,7 +6,6 @@ use std::{
     sync::LazyLock,
 };
 
-use log::warn;
 use regex::Regex;
 use ropey::Rope;
 use serde_json::Value;
@@ -14,6 +13,7 @@ use streaming_iterator::StreamingIterator;
 use tower_lsp::lsp_types::{
     Diagnostic, DiagnosticSeverity, Position, Range, TextDocumentContentChangeEvent, TextEdit, Url,
 };
+use tracing::warn;
 use tree_sitter::{
     wasmtime::Engine, InputEdit, Language, Node, Point, Query, QueryCursor, QueryMatch,
     QueryPredicateArg, TextProvider, Tree, TreeCursor, WasmStore,
