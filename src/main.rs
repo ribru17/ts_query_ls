@@ -3,8 +3,8 @@ use core::fmt;
 use rayon::iter::{IntoParallelRefIterator as _, ParallelIterator as _};
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
-    fs,
-    path::PathBuf,
+    env, fs,
+    path::{Path, PathBuf},
     sync::{Arc, LazyLock, RwLock, atomic::AtomicI32},
 };
 use ts_query_ls::Options;
@@ -200,7 +200,7 @@ enum Commands {
 
         /// String representing server's JSON configuration
         #[arg(long, short)]
-        config: String,
+        config: Option<String>,
     },
 }
 
@@ -267,7 +267,12 @@ fn check_directories(directories: &[PathBuf], config: String) -> i32 {
         return 1;
     };
     let exit_code = AtomicI32::new(0);
-    let scm_files = get_scm_files(directories);
+    // If directories are not specified, check all files in the current directory
+    let scm_files = if directories.is_empty() {
+        get_scm_files(&[env::current_dir().expect("Failed to get current directory")])
+    } else {
+        get_scm_files(directories)
+    };
     scm_files.par_iter().for_each(|path| {
         let uri = Url::from_file_path(path.canonicalize().unwrap()).unwrap();
         if let Some(lang) = util::get_language(&uri, &options) {
@@ -313,7 +318,19 @@ async fn main() {
         Some(Commands::Check {
             directories,
             config,
-        }) => std::process::exit(check_directories(&directories, config)),
+        }) => {
+            let config_str = match config {
+                Some(config_str) => config_str,
+                None => {
+                    let config_file_path = Path::new("tsqueryrc.json");
+                    fs::read_to_string(config_file_path).unwrap_or_else(|_| {
+                        eprintln!("No config parameter given, and no tsqueryrc.json found");
+                        std::process::exit(1);
+                    })
+                }
+            };
+            std::process::exit(check_directories(&directories, config_str));
+        }
         _ => {}
     }
 

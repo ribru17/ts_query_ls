@@ -124,9 +124,12 @@ ts_query_ls check ./queries --config \
 '{"parser_install_directories": ["/home/jdoe/Documents/parsers/"]}'
 ```
 
-The command expects a list of directories to search for queries, as well as a
+The command can accept a list of directories to search for queries, as well as a
 flag to pass JSON configuration to the server (needed to detect parser
-locations).
+locations). If no configuration flag is passed, the command will attempt to read
+it from the `tsqueryrc.json` configuration file in the current directory. If no
+directories are specified to be checked, then the command will search for all
+queries in the current directory.
 
 ```sh
 # use this command for the full documentation
