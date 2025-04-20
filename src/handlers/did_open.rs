@@ -7,7 +7,8 @@ use tree_sitter::Parser;
 
 use crate::{
     Backend, QUERY_LANGUAGE, SymbolInfo,
-    util::{TextProviderRope, get_diagnostics, get_language, uri_to_basename},
+    handlers::diagnostic::get_diagnostics,
+    util::{TextProviderRope, get_language, uri_to_basename},
 };
 
 pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {

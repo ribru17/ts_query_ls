@@ -3,8 +3,10 @@ use tree_sitter::Parser;
 
 use crate::{
     Backend, QUERY_LANGUAGE,
-    util::{TextProviderRope, get_diagnostics, lsp_textdocchange_to_ts_inputedit, uri_to_basename},
+    util::{TextProviderRope, lsp_textdocchange_to_ts_inputedit, uri_to_basename},
 };
+
+use super::diagnostic::get_diagnostics;
 
 pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) {
     let uri = &params.text_document.uri;

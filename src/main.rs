@@ -231,12 +231,12 @@ fn format_directories(directories: &[PathBuf], mode: Mode) -> i32 {
                 .expect("Error loading Query grammar");
             let tree = parser.parse(contents.as_str(), None).unwrap();
             let rope = Rope::from(contents.as_str());
-            if let Some(formatted) = util::format_document(&rope, &tree) {
+            if let Some(formatted) = formatting::format_document(&rope, &tree) {
                 // Add newline at EOF
                 let formatted = formatted + "\n";
                 match mode {
                     Mode::Check => {
-                        let edits = util::diff(&contents, &formatted, &rope);
+                        let edits = formatting::diff(&contents, &formatted, &rope);
                         if !edits.is_empty() {
                             exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
                             eprintln!(

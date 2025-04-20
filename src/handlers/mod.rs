@@ -1,4 +1,5 @@
 pub mod completion;
+pub mod diagnostic;
 pub mod did_change;
 pub mod did_change_configuration;
 pub mod did_open;
