@@ -1,0 +1,10 @@
+[package]
+name = "xtask"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.5.37", features = ["derive"] }
+schemars = "0.8.22"
+serde_json = "1.0.140"
+ts_query_ls = { path = ".." }
