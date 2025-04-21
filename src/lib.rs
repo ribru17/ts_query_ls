@@ -23,7 +23,9 @@ pub struct Options {
 
 #[derive(Serialize, Deserialize, Debug, Default, JsonSchema, Clone)]
 pub struct SerializableCapture {
+    /// The name of the capture, sans `@`.
     pub name: String,
+    /// An optional description for this capture.
     pub description: Option<String>,
 }
 
