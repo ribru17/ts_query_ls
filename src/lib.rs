@@ -21,7 +21,7 @@ pub struct Options {
     pub allowable_captures: HashMap<String, BTreeSet<SerializableCapture>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Default, JsonSchema, Clone)]
 pub struct SerializableCapture {
     pub name: String,
     pub description: Option<String>,

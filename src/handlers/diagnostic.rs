@@ -347,13 +347,16 @@ mod test {
         #[case] expected_diagnostics: &[Diagnostic],
     ) {
         // Arrange
-        let service = initialize_server(&[(
-            TEST_URI.clone(),
-            source,
-            symbols.to_vec(),
-            fields.to_vec(),
-            supertypes.to_vec(),
-        )])
+        let service = initialize_server(
+            &[(
+                TEST_URI.clone(),
+                source,
+                symbols.to_vec(),
+                fields.to_vec(),
+                supertypes.to_vec(),
+            )],
+            None,
+        )
         .await;
         let rope = &service.inner().document_map.get(&TEST_URI).unwrap();
         let provider = &TextProviderRope(rope);

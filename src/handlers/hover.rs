@@ -2,10 +2,11 @@ use tower_lsp::{
     jsonrpc::Result,
     lsp_types::{Hover, HoverContents, HoverParams, MarkupContent, MarkupKind},
 };
+use ts_query_ls::SerializableCapture;
 
 use crate::{
     Backend, SymbolInfo,
-    util::{NodeUtil, ToTsPoint},
+    util::{NodeUtil, ToTsPoint, get_current_capture_node, uri_to_basename},
 };
 
 pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hover>> {
@@ -110,6 +111,33 @@ For example, this pattern would match any node inside a call:
                     ),
                 }),
             }));
+        } else if let Some(capture) =
+            get_current_capture_node(tree.root_node(), position.to_ts_point(rope))
+        {
+            let options = backend.options.read().await;
+            if let Some(SerializableCapture {
+                name: _,
+                description,
+            }) = uri_to_basename(uri).and_then(|base| {
+                options.allowable_captures.get(&base).and_then(|c| {
+                    c.get(&SerializableCapture {
+                        name: capture.text(rope)[1..].to_string(),
+                        ..Default::default()
+                    })
+                })
+            }) {
+                let mut value = format!("## `{}`", capture.text(rope));
+                if let Some(desc) = description {
+                    value.push_str(format!("\n\n{}", desc).as_str());
+                }
+                return Ok(Some(Hover {
+                    range: Some(capture.lsp_range(rope)),
+                    contents: HoverContents::Markup(MarkupContent {
+                        kind: MarkupKind::Markdown,
+                        value,
+                    }),
+                }));
+            }
         }
     }
 
@@ -126,6 +154,7 @@ mod test {
         TextDocumentIdentifier, TextDocumentPositionParams, WorkDoneProgressParams,
         request::HoverRequest,
     };
+    use ts_query_ls::SerializableCapture;
 
     use crate::test_helpers::helpers::{
         TEST_URI, initialize_server, lsp_request_to_jsonrpc_request,
@@ -153,7 +182,7 @@ normal nodes:
 
 ```query
 (ERROR) @error-node
-```")]
+```", Vec::new())]
     #[case(SOURCE, vec!["supertype"], Position { line: 4, character: 4 }, Range::new(
         Position { line: 4, character: 1 },
         Position { line: 4, character: 8 } ),
@@ -167,7 +196,7 @@ using `(MISSING)`:
 
 ```query
 (MISSING) @missing-node
-```")]
+```", Vec::new())]
     #[case(SOURCE, vec!["supertype"], Position { line: 6, character: 1 }, Range::new(
         Position { line: 6, character: 1 },
         Position { line: 6, character: 2 } ),
@@ -182,7 +211,7 @@ For example, this pattern would match any node inside a call:
 
 ```query
 (call (_) @call.inner)
-```")]
+```", Vec::new())]
     #[case(SOURCE, vec!["supertype"], Position { line: 7, character: 0 }, Range::new(
         Position { line: 7, character: 0 },
         Position { line: 7, character: 1 } ),
@@ -197,7 +226,7 @@ For example, this pattern would match any node inside a call:
 
 ```query
 (call (_) @call.inner)
-```")]
+```", Vec::new())]
     #[case(SOURCE, vec!["supertype"], Position { line: 0, character: 17 }, Range::new(
         Position { line: 0, character: 16 },
         Position { line: 0, character: 25 } ),
@@ -206,7 +235,7 @@ For example, this pattern would match any node inside a call:
 ```query
 (test)
 (test2)
-```")]
+```", Vec::new())]
     #[case(SOURCE, vec!["supertype"], Position { line: 2, character: 4 }, Range::new(
         Position { line: 2, character: 1 },
         Position { line: 2, character: 10 } ),
@@ -215,7 +244,7 @@ For example, this pattern would match any node inside a call:
 ```query
 (test)
 (test2)
-```")]
+```", Vec::new())]
     #[case(SOURCE, vec!["supertype"], Position { line: 4, character: 10 }, Range::new(
         Position { line: 4, character: 9 },
         Position { line: 4, character: 18 } ),
@@ -224,7 +253,17 @@ For example, this pattern would match any node inside a call:
 ```query
 (test)
 (test2)
-```")]
+```", Vec::new())]
+    #[case(SOURCE, vec!["supertype"], Position { line: 0, character: 10 }, Range::new(
+        Position { line: 0, character: 8 },
+        Position { line: 0, character: 14 } ),
+    r"## `@error`
+
+An error node", vec![SerializableCapture { name: String::from("error"), description: Some(String::from("An error node")) }])]
+    #[case(SOURCE, vec!["supertype"], Position { line: 0, character: 10 }, Range::new(
+        Position { line: 0, character: 8 },
+        Position { line: 0, character: 14 } ),
+    r"## `@error`", vec![SerializableCapture { name: String::from("error"), description: None }])]
     #[tokio::test(flavor = "current_thread")]
     async fn hover(
         #[case] source: &str,
@@ -232,11 +271,14 @@ For example, this pattern would match any node inside a call:
         #[case] position: Position,
         #[case] range: Range,
         #[case] hover_content: &str,
+        #[case] captures: Vec<SerializableCapture>,
     ) {
         // Arrange
-        let mut service =
-            initialize_server(&[(TEST_URI.clone(), source, Vec::new(), Vec::new(), supertypes)])
-                .await;
+        let mut service = initialize_server(
+            &[(TEST_URI.clone(), source, Vec::new(), Vec::new(), supertypes)],
+            Some(captures),
+        )
+        .await;
 
         // Act
         let tokens = service

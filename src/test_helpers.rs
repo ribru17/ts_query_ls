@@ -2,6 +2,7 @@
 pub mod helpers {
     use ropey::Rope;
     use serde_json::to_value;
+    use ts_query_ls::SerializableCapture;
 
     use std::{
         collections::{BTreeSet, HashMap, HashSet},
@@ -25,7 +26,7 @@ pub mod helpers {
     pub static TEST_URI: LazyLock<Url> =
         LazyLock::new(|| Url::parse("file:///tmp/test.scm").unwrap());
     pub static TEST_URI_2: LazyLock<Url> =
-        LazyLock::new(|| Url::parse("file:///tmp/injections.scm").unwrap());
+        LazyLock::new(|| Url::parse("file:///tmp/injections/test.scm").unwrap());
     pub static SIMPLE_FILE: LazyLock<&str> = LazyLock::new(|| {
         r"((identifier) @constant
  (#match? @constant @constant))
@@ -66,23 +67,35 @@ pub mod helpers {
   (#set! injection.language "html"))"#
     });
 
-    // Always test with id of 1 for simplicity
+    /// Always test with id of 1 for simplicity
     const ID: i64 = 1;
 
-    // A tuple holding the document's URI, source text, symbols, fields, and supertypes
+    /// A tuple holding the document's URI, source text, symbols, fields, supertypes, and allowable
+    /// captures
     pub type Document<'a> = (Url, &'a str, Vec<SymbolInfo>, Vec<&'a str>, Vec<&'a str>);
 
     /// Initialize a test server, populating it with fake documents denoted by (uri, text, symbols, fields) tuples.
-    pub async fn initialize_server(documents: &[Document<'_>]) -> LspService<Backend> {
+    pub async fn initialize_server(
+        documents: &[Document<'_>],
+        allowable_captures: Option<Vec<SerializableCapture>>,
+    ) -> LspService<Backend> {
         let mut parser = Parser::new();
         parser
             .set_language(&QUERY_LANGUAGE)
             .expect("Error loading Query grammar");
+        let allowable_captures = if let Some(caps) = allowable_captures {
+            HashMap::from([(
+                String::from("test"),
+                BTreeSet::from_iter(caps.iter().cloned()),
+            )])
+        } else {
+            HashMap::new()
+        };
         let options = Arc::new(tokio::sync::RwLock::new(Options {
             parser_install_directories: None,
             parser_aliases: None,
             language_retrieval_patterns: None,
-            allowable_captures: HashMap::new(),
+            allowable_captures,
         }));
         let (mut service, _socket) = LspService::build(|client| Backend {
             client,
@@ -246,8 +259,11 @@ pub mod helpers {
 
 #[cfg(test)]
 mod test {
+    use std::collections::BTreeSet;
+
     use pretty_assertions::assert_eq;
     use rstest::rstest;
+    use ts_query_ls::SerializableCapture;
 
     use crate::{
         SymbolInfo,
@@ -259,7 +275,7 @@ mod test {
     use super::helpers::Document;
 
     #[rstest]
-    #[case(&[])]
+    #[case(&[], None)]
     #[case(&[(
         TEST_URI.clone(),
         SIMPLE_FILE.clone(),
@@ -278,11 +294,16 @@ mod test {
             "content",
         ],
         vec!["type"],
-    )])]
+    )],
+        Some(vec![SerializableCapture { name: String::from("variable"), description: Some(String::from("A common variable")) }]),
+    )]
     #[tokio::test(flavor = "current_thread")]
-    async fn initialize_server_helper(#[case] documents: &[Document<'_>]) {
+    async fn initialize_server_helper(
+        #[case] documents: &[Document<'_>],
+        #[case] allowable_captures: Option<Vec<SerializableCapture>>,
+    ) {
         // Act
-        let service = initialize_server(documents).await;
+        let service = initialize_server(documents, allowable_captures.clone()).await;
 
         // Assert
         let backend = service.inner();
@@ -363,6 +384,15 @@ mod test {
                             label: String::from(*supertype)
                         })
                 )
+            }
+            let options = backend.options.read().await;
+            if let Some(ref allowable_captures) = allowable_captures {
+                assert_eq!(
+                    options.allowable_captures.get("test"),
+                    Some(BTreeSet::from_iter(allowable_captures.iter().cloned())).as_ref()
+                );
+            } else {
+                assert_eq!(options.allowable_captures, Default::default());
             }
         }
     }
