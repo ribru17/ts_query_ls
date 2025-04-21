@@ -109,13 +109,16 @@ mod test {
 
 (MISSING supertype) @missingsupertype
         ";
-        let mut service = initialize_server(&[(
-            TEST_URI.clone(),
-            source,
-            Vec::new(),
-            Vec::new(),
-            vec!["supertype"],
-        )])
+        let mut service = initialize_server(
+            &[(
+                TEST_URI.clone(),
+                source,
+                Vec::new(),
+                Vec::new(),
+                vec!["supertype"],
+            )],
+            None,
+        )
         .await;
 
         // Act

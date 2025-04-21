@@ -142,13 +142,16 @@ mod test {
         #[case] edits: &[TestEdit],
     ) {
         // Arrange
-        let mut service = initialize_server(&[(
-            TEST_URI.clone(),
-            original,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        )])
+        let mut service = initialize_server(
+            &[(
+                TEST_URI.clone(),
+                original,
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            )],
+            None,
+        )
         .await;
 
         // Act

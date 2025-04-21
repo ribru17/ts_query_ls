@@ -101,9 +101,11 @@ mod test {
         #[case] locations: &[Coordinate],
     ) {
         // Arrange
-        let mut service =
-            initialize_server(&[(TEST_URI.clone(), input, Vec::new(), Vec::new(), Vec::new())])
-                .await;
+        let mut service = initialize_server(
+            &[(TEST_URI.clone(), input, Vec::new(), Vec::new(), Vec::new())],
+            None,
+        )
+        .await;
 
         // Act
         let refs = service

@@ -143,9 +143,11 @@ mod test {
     #[tokio::test(flavor = "current_thread")]
     async fn document_symbol(#[case] source: &str, #[case] symbols: Vec<DocSymbol>) {
         // Arrange
-        let mut service =
-            initialize_server(&[(TEST_URI.clone(), source, Vec::new(), Vec::new(), Vec::new())])
-                .await;
+        let mut service = initialize_server(
+            &[(TEST_URI.clone(), source, Vec::new(), Vec::new(), Vec::new())],
+            None,
+        )
+        .await;
 
         // Act
         let tokens = service
