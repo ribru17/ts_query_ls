@@ -54,12 +54,14 @@
       ],
       "properties": {
         "description": {
+          "description": "An optional description for this capture.",
           "type": [
             "string",
             "null"
           ]
         },
         "name": {
+          "description": "The name of the capture, sans `@`.",
           "type": "string"
         }
       }
