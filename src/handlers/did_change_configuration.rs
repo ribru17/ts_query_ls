@@ -5,7 +5,7 @@ use crate::{Backend, util::set_configuration_options};
 pub async fn did_change_configuration(backend: &Backend, params: DidChangeConfigurationParams) {
     set_configuration_options(
         backend,
-        params.settings,
+        Some(params.settings),
         backend
             .workspace_uris
             .read()
@@ -77,10 +77,10 @@ mod test {
                     ("jsx".to_string(), "javascript".to_string()),
                     ("foolang".to_string(), "barlang".to_string())
                 ])),
-                parser_install_directories: Some(vec![
+                parser_install_directories: vec![
                     String::from("/my/directory/"),
                     String::from("/tmp/tree-sitter/parsers/"),
-                ]),
+                ],
                 language_retrieval_patterns: Some(vec![String::from(
                     r"\.ts\-([^/]+)\-parser\.wasm"
                 )]),

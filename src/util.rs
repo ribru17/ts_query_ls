@@ -1,5 +1,4 @@
 use std::{
-    env,
     fs::{self},
     path::Path,
     sync::LazyLock,
@@ -219,32 +218,30 @@ pub fn get_language(uri: &Url, options: &Options) -> Option<Language> {
 
 pub fn get_language_object(
     name: &str,
-    directories: &Option<Vec<String>>,
+    directories: &Vec<String>,
     engine: &Engine,
 ) -> Option<Language> {
     let name = name.replace('-', "_");
     let language_fn_name = format!("tree_sitter_{name}");
 
-    if let Some(directories) = directories {
-        for directory in directories {
-            for dylib_extension in DYLIB_EXTENSIONS {
-                let object_name = [name.as_str(), dylib_extension].concat();
-                let library_path = Path::new(directory).join(&object_name);
-                if let Ok(library) = unsafe { libloading::Library::new(library_path) } {
-                    let language = unsafe {
-                        let language_fn: libloading::Symbol<unsafe extern "C" fn() -> Language> =
-                            library
-                                .get(language_fn_name.as_bytes())
-                                .expect("Failed to load symbol");
-                        language_fn()
-                    };
-                    std::mem::forget(library);
-                    return Some(language);
-                }
+    for directory in directories {
+        for dylib_extension in DYLIB_EXTENSIONS {
+            let object_name = [name.as_str(), dylib_extension].concat();
+            let library_path = Path::new(directory).join(&object_name);
+            if let Ok(library) = unsafe { libloading::Library::new(library_path) } {
+                let language = unsafe {
+                    let language_fn: libloading::Symbol<unsafe extern "C" fn() -> Language> =
+                        library
+                            .get(language_fn_name.as_bytes())
+                            .expect("Failed to load symbol");
+                    language_fn()
+                };
+                std::mem::forget(library);
+                return Some(language);
             }
-            if let Some(lang) = get_language_object_wasm(name.as_str(), directory, engine) {
-                return Some(lang);
-            }
+        }
+        if let Some(lang) = get_language_object_wasm(name.as_str(), directory, engine) {
+            return Some(lang);
         }
     }
     None
@@ -308,34 +305,27 @@ fn get_first_valid_file_config(workspace_uris: Vec<Url>) -> Option<Options> {
 
 pub async fn set_configuration_options(
     backend: &Backend,
-    options: Value,
+    init_options: Option<Value>,
     workspace_uris: Vec<Url>,
 ) {
-    let Ok(parsed_options) = serde_json::from_value::<Options>(options) else {
-        warn!("Unable to parse configuration settings!",);
-        return;
-    };
-
     let mut options = backend.options.write().await;
-    options.parser_install_directories = parsed_options
-        .parser_install_directories
-        .map(|d| d.iter().map(|d| expand_env_vars(d)).collect());
-    options.parser_aliases = parsed_options.parser_aliases;
-    options.language_retrieval_patterns = parsed_options.language_retrieval_patterns;
-    options.valid_captures = parsed_options.valid_captures;
+    if let Some(init_options) = init_options {
+        if let Ok(parsed_options) = serde_json::from_value::<Options>(init_options) {
+            options.parser_install_directories = parsed_options.parser_install_directories;
+            options.parser_aliases = parsed_options.parser_aliases;
+            options.language_retrieval_patterns = parsed_options.language_retrieval_patterns;
+            options.valid_captures = parsed_options.valid_captures;
+        } else {
+            warn!("Unable to parse configuration settings!",);
+        };
+    }
 
     if let Some(file_options) = get_first_valid_file_config(workspace_uris) {
         // Merge parser_install_directories, since these are dependent on the local user's
         // installation paths
-        if let Some(mut config_file_dirs) = file_options.parser_install_directories {
-            config_file_dirs.extend(
-                options
-                    .parser_install_directories
-                    .clone()
-                    .unwrap_or_default(),
-            );
-            options.parser_install_directories = Some(config_file_dirs);
-        }
+        let mut config_file_install_dirs = file_options.parser_install_directories;
+        config_file_install_dirs.extend(options.parser_install_directories.clone());
+        options.parser_install_directories = config_file_install_dirs;
         options.parser_aliases = file_options.parser_aliases;
         options.language_retrieval_patterns = file_options.language_retrieval_patterns;
         options.valid_captures = file_options.valid_captures;
@@ -347,37 +337,4 @@ pub fn uri_to_basename(uri: &Url) -> Option<String> {
         path.file_stem()
             .map(|os_str| os_str.to_string_lossy().into_owned())
     })
-}
-
-fn expand_env_vars(input: &str) -> String {
-    let mut result = String::new();
-    let mut chars = input.chars().peekable();
-
-    while let Some(c) = chars.next() {
-        if c == '$' && chars.peek() == Some(&'{') {
-            chars.next(); // consume '{'
-            let mut var_name = String::new();
-
-            while let Some(&ch) = chars.peek() {
-                if ch == '}' {
-                    chars.next(); // consume '}'
-                    break;
-                }
-                var_name.push(ch);
-                chars.next();
-            }
-
-            // Lookup the env var
-            if let Ok(val) = env::var(&var_name) {
-                result.push_str(&val);
-            } else {
-                // Leave untouched if not found
-                result.push_str(&format!("${{{}}}", var_name));
-            }
-        } else {
-            result.push(c);
-        }
-    }
-
-    result
 }

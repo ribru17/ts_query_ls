@@ -338,7 +338,7 @@ async fn main() {
     let stdout = tokio::io::stdout();
 
     let options = Arc::new(tokio::sync::RwLock::new(Options {
-        parser_install_directories: None,
+        parser_install_directories: Default::default(),
         parser_aliases: None,
         language_retrieval_patterns: None,
         valid_captures: Default::default(),
