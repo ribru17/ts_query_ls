@@ -89,7 +89,13 @@ mod test {
               ],
               "language_retrieval_patterns": [
                 "\\.ts\\-([^/]+)\\-parser\\.wasm"
-              ]
+              ],
+              "valid_captures": {
+                "highlights": {
+                  "variable": "Simple identifiers",
+                  "variable.parameter": "Parameters of functions"
+                }
+              }
             }
         "#;
 
@@ -136,6 +142,10 @@ mod test {
         assert_eq!(
             actual_options.language_retrieval_patterns,
             expected_options.language_retrieval_patterns
+        );
+        assert_eq!(
+            actual_options.valid_captures,
+            expected_options.valid_captures
         );
     }
 }

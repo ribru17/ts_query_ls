@@ -2,10 +2,9 @@
 pub mod helpers {
     use ropey::Rope;
     use serde_json::to_value;
-    use ts_query_ls::SerializableCapture;
 
     use std::{
-        collections::{BTreeSet, HashMap, HashSet},
+        collections::{BTreeMap, BTreeSet, HashMap, HashSet},
         sync::{Arc, LazyLock},
     };
     use tower::{Service, ServiceExt};
@@ -77,16 +76,16 @@ pub mod helpers {
     /// Initialize a test server, populating it with fake documents denoted by (uri, text, symbols, fields) tuples.
     pub async fn initialize_server(
         documents: &[Document<'_>],
-        allowable_captures: Option<Vec<SerializableCapture>>,
+        valid_captures: Option<BTreeMap<String, String>>,
     ) -> LspService<Backend> {
         let mut parser = Parser::new();
         parser
             .set_language(&QUERY_LANGUAGE)
             .expect("Error loading Query grammar");
-        let allowable_captures = if let Some(caps) = allowable_captures {
+        let valid_captures = if let Some(caps) = valid_captures {
             HashMap::from([(
                 String::from("test"),
-                BTreeSet::from_iter(caps.iter().cloned()),
+                BTreeMap::from_iter(caps.iter().map(|(name, desc)| (name.clone(), desc.clone()))),
             )])
         } else {
             HashMap::new()
@@ -95,7 +94,7 @@ pub mod helpers {
             parser_install_directories: None,
             parser_aliases: None,
             language_retrieval_patterns: None,
-            allowable_captures,
+            valid_captures,
         }));
         let (mut service, _socket) = LspService::build(|client| Backend {
             client,
@@ -259,11 +258,10 @@ pub mod helpers {
 
 #[cfg(test)]
 mod test {
-    use std::collections::BTreeSet;
+    use std::collections::BTreeMap;
 
     use pretty_assertions::assert_eq;
     use rstest::rstest;
-    use ts_query_ls::SerializableCapture;
 
     use crate::{
         SymbolInfo,
@@ -295,15 +293,15 @@ mod test {
         ],
         vec!["type"],
     )],
-        Some(vec![SerializableCapture { name: String::from("variable"), description: Some(String::from("A common variable")) }]),
+        Some(BTreeMap::from([(String::from("variable"), String::from("A common variable"))])),
     )]
     #[tokio::test(flavor = "current_thread")]
     async fn initialize_server_helper(
         #[case] documents: &[Document<'_>],
-        #[case] allowable_captures: Option<Vec<SerializableCapture>>,
+        #[case] valid_captures: Option<BTreeMap<String, String>>,
     ) {
         // Act
-        let service = initialize_server(documents, allowable_captures.clone()).await;
+        let service = initialize_server(documents, valid_captures.clone()).await;
 
         // Assert
         let backend = service.inner();
@@ -386,13 +384,18 @@ mod test {
                 )
             }
             let options = backend.options.read().await;
-            if let Some(ref allowable_captures) = allowable_captures {
+            if let Some(ref valid_captures) = valid_captures {
                 assert_eq!(
-                    options.allowable_captures.get("test"),
-                    Some(BTreeSet::from_iter(allowable_captures.iter().cloned())).as_ref()
+                    options.valid_captures.get("test"),
+                    Some(BTreeMap::from_iter(
+                        valid_captures
+                            .iter()
+                            .map(|(name, desc)| (name.clone(), desc.clone()))
+                    ))
+                    .as_ref()
                 );
             } else {
-                assert_eq!(options.allowable_captures, Default::default());
+                assert_eq!(options.valid_captures, Default::default());
             }
         }
     }

@@ -1,12 +1,11 @@
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     sync::LazyLock,
 };
 
 use ropey::Rope;
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
 use tree_sitter::{Query, QueryCursor, StreamingIterator as _, Tree};
-use ts_query_ls::SerializableCapture;
 
 use crate::{
     QUERY_LANGUAGE, SymbolInfo,
@@ -61,7 +60,7 @@ pub fn get_diagnostics(
     symbols: &HashSet<SymbolInfo>,
     fields: &HashSet<String>,
     supertypes: &HashMap<SymbolInfo, BTreeSet<SymbolInfo>>,
-    allowable_captures: Option<&BTreeSet<SerializableCapture>>,
+    valid_captures: Option<&BTreeMap<String, String>>,
 ) -> Vec<Diagnostic> {
     let mut cursor = QueryCursor::new();
     let mut matches = cursor.matches(&DIAGNOSTICS_QUERY, tree.root_node(), provider);
@@ -199,12 +198,8 @@ pub fn get_diagnostics(
                         }
                     } else if let Some(suffix) = capture_text.strip_prefix("@") {
                         if !suffix.starts_with('_')
-                            && allowable_captures.is_some_and(|c| {
-                                !c.contains(&SerializableCapture {
-                                    name: String::from(suffix),
-                                    ..Default::default()
-                                })
-                            })
+                            && valid_captures
+                                .is_some_and(|c| !c.contains_key(&String::from(suffix)))
                         {
                             diagnostics.push(Diagnostic {
                                 message: format!("Unsupported capture name \"{capture_text}\", consider prefixing with '_'"),
@@ -256,7 +251,6 @@ mod test {
     use pretty_assertions::assert_eq;
     use rstest::rstest;
     use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
-    use ts_query_ls::SerializableCapture;
 
     use crate::util::TextProviderRope;
     use crate::{
@@ -343,7 +337,7 @@ mod test {
         #[case] symbols: &[SymbolInfo],
         #[case] fields: &[&str],
         #[case] supertypes: &[&str],
-        #[case] allowable_captures: &[&str],
+        #[case] valid_captures: &[&str],
         #[case] expected_diagnostics: &[Diagnostic],
     ) {
         // Arrange
@@ -360,12 +354,9 @@ mod test {
         .await;
         let rope = &service.inner().document_map.get(&TEST_URI).unwrap();
         let provider = &TextProviderRope(rope);
-        let binding = allowable_captures
+        let binding = valid_captures
             .iter()
-            .map(|s| SerializableCapture {
-                name: s.to_string(),
-                ..Default::default()
-            })
+            .map(|s| (s.to_string(), Default::default()))
             .collect();
         let allowable_captures = Some(&binding);
         let symbols = &HashSet::from_iter(symbols.iter().cloned());

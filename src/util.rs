@@ -360,7 +360,7 @@ pub async fn set_configuration_options(
     options.parser_install_directories = parsed_options.parser_install_directories;
     options.parser_aliases = parsed_options.parser_aliases;
     options.language_retrieval_patterns = parsed_options.language_retrieval_patterns;
-    options.allowable_captures = parsed_options.allowable_captures;
+    options.valid_captures = parsed_options.valid_captures;
 
     if let Some(file_options) = get_first_valid_file_config(workspace_uris) {
         // Merge parser_install_directories, since these are dependent on the local user's
@@ -376,7 +376,7 @@ pub async fn set_configuration_options(
         }
         options.parser_aliases = file_options.parser_aliases;
         options.language_retrieval_patterns = file_options.language_retrieval_patterns;
-        options.allowable_captures = file_options.allowable_captures;
+        options.valid_captures = file_options.valid_captures;
     }
 }
 

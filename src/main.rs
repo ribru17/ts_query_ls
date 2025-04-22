@@ -341,7 +341,7 @@ async fn main() {
         parser_install_directories: None,
         parser_aliases: None,
         language_retrieval_patterns: None,
-        allowable_captures: HashMap::default(),
+        valid_captures: Default::default(),
     }));
     let (service, socket) = LspService::build(|client| Backend {
         client,
