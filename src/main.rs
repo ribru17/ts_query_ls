@@ -45,7 +45,11 @@ static SERVER_CAPABILITIES: LazyLock<ServerCapabilities> = LazyLock::new(|| {
         definition_provider: Some(OneOf::Left(true)),
         document_formatting_provider: Some(OneOf::Left(true)),
         completion_provider: Some(CompletionOptions {
-            trigger_characters: Some(["@", "\"", "\\", "(", "/"].map(ToOwned::to_owned).into()),
+            trigger_characters: Some(
+                ["@", "\"", "\\", "(", "/", "."]
+                    .map(ToOwned::to_owned)
+                    .into(),
+            ),
             ..CompletionOptions::default()
         }),
         document_highlight_provider: Some(OneOf::Left(true)),
