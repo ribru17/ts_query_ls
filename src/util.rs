@@ -1,6 +1,5 @@
 use std::{
     fs::{self},
-    ops::Deref,
     path::Path,
     sync::LazyLock,
 };
@@ -12,13 +11,11 @@ use streaming_iterator::StreamingIterator;
 use tower_lsp::lsp_types::{Position, Range, TextDocumentContentChangeEvent, Url};
 use tracing::warn;
 use tree_sitter::{
-    InputEdit, Language, Node, Point, Query, QueryCursor, QueryMatch, QueryPredicateArg,
-    TextProvider, WasmStore, wasmtime::Engine,
+    InputEdit, Language, Node, Point, Query, QueryCursor, TextProvider, WasmStore, wasmtime::Engine,
 };
 
 use crate::{Backend, ENGINE, Options, QUERY_LANGUAGE};
 
-static LINE_START: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([^\S\r\n]*)").unwrap());
 static LANGUAGE_REGEX_1: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"queries/([^/]+)/[^/]+\.scm$").unwrap());
 static LANGUAGE_REGEX_2: LazyLock<Regex> =
@@ -281,53 +278,6 @@ impl NodeUtil for Node<'_> {
             start: ts_point_to_lsp_position(self.start_position(), rope),
             end: ts_point_to_lsp_position(self.end_position(), rope),
         }
-    }
-}
-
-pub fn handle_predicate(
-    match_: &QueryMatch,
-    directive: &str,
-    args: &std::boxed::Box<[tree_sitter::QueryPredicateArg]>,
-    rope: &Rope,
-) -> bool {
-    match directive {
-        "is-start-of-line?" | "not-is-start-of-line?" => {
-            if let QueryPredicateArg::Capture(cap_idx) = &args[0] {
-                let range = match_
-                    .nodes_for_capture_index(*cap_idx)
-                    .next()
-                    .unwrap()
-                    .range();
-                let line = rope.line(range.start_point.row).to_string();
-                let pre_whitespace = LINE_START
-                    .captures(line.as_str())
-                    .and_then(|c| c.get(1))
-                    .map_or(0, |m| m.len());
-                let is_start = pre_whitespace == range.start_point.column;
-                if directive == "not-is-start-of-line?" {
-                    return !is_start;
-                }
-                return is_start;
-            }
-            true
-        }
-        "not-kind-eq?" => {
-            if let QueryPredicateArg::Capture(cap_idx) = &args[0] {
-                let node_type = match match_.nodes_for_capture_index(*cap_idx).next() {
-                    None => return true,
-                    Some(node) => node.kind(),
-                };
-                for arg in &args[1..] {
-                    if let QueryPredicateArg::String(kind) = arg {
-                        if node_type == kind.deref() {
-                            return false;
-                        }
-                    }
-                }
-            }
-            true
-        }
-        &_ => false,
     }
 }
 
