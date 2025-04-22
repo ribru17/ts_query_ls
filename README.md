@@ -11,7 +11,7 @@ its ancestor directories. Below is an example file:
 ```json
 {
   "$schema": "https://raw.githubusercontent.com/ribru17/ts_query_ls/refs/heads/master/schemas/config.json",
-  "parser_install_directories": ["${HOME}/my/parser$", "/installation/paths"],
+  "parser_install_directories": ["${HOME}/my/parser", "/installation/paths"],
   "parser_aliases": {
     "ecma": "javascript"
   },
