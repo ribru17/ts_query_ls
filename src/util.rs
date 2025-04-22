@@ -1,4 +1,5 @@
 use std::{
+    env,
     fs::{self},
     path::Path,
     sync::LazyLock,
@@ -307,7 +308,9 @@ pub async fn set_configuration_options(
     };
 
     let mut options = backend.options.write().await;
-    options.parser_install_directories = parsed_options.parser_install_directories;
+    options.parser_install_directories = parsed_options
+        .parser_install_directories
+        .map(|d| d.iter().map(|d| expand_env_vars(d)).collect());
     options.parser_aliases = parsed_options.parser_aliases;
     options.language_retrieval_patterns = parsed_options.language_retrieval_patterns;
     options.valid_captures = parsed_options.valid_captures;
@@ -335,4 +338,37 @@ pub fn uri_to_basename(uri: &Url) -> Option<String> {
         path.file_stem()
             .map(|os_str| os_str.to_string_lossy().into_owned())
     })
+}
+
+fn expand_env_vars(input: &str) -> String {
+    let mut result = String::new();
+    let mut chars = input.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '$' && chars.peek() == Some(&'{') {
+            chars.next(); // consume '{'
+            let mut var_name = String::new();
+
+            while let Some(&ch) = chars.peek() {
+                if ch == '}' {
+                    chars.next(); // consume '}'
+                    break;
+                }
+                var_name.push(ch);
+                chars.next();
+            }
+
+            // Lookup the env var
+            if let Ok(val) = env::var(&var_name) {
+                result.push_str(&val);
+            } else {
+                // Leave untouched if not found
+                result.push_str(&format!("${{{}}}", var_name));
+            }
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
 }

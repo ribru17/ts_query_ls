@@ -11,7 +11,7 @@ example file:
 ```json
 {
   "$schema": "https://raw.githubusercontent.com/ribru17/ts_query_ls/refs/heads/master/schemas/config.json",
-  "parser_install_directories": ["a/list/of", "parser/installation/paths"],
+  "parser_install_directories": ["${HOME}/my/parser$", "/installation/paths"],
   "parser_aliases": {
     "ecma": "javascript"
   },
@@ -33,6 +33,8 @@ example file:
 
 A list of strings representing directories to search for parsers, of the form
 `<lang>.(so|dll|dylib)` or `tree-sitter-<lang>.wasm`.
+
+Supports environment variable expansion of the form `${VAR}`.
 
 #### `parser_aliases`
 

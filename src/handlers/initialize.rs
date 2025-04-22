@@ -45,6 +45,8 @@ pub async fn initialize(backend: &Backend, params: InitializeParams) -> Result<I
 
 #[cfg(test)]
 mod test {
+    use std::env;
+
     use pretty_assertions::assert_eq;
     use tower::{Service, ServiceExt};
     use tower_lsp::{
@@ -76,6 +78,7 @@ mod test {
             options: Default::default(),
         })
         .finish();
+        unsafe { env::set_var("HOME", "/home/jdoe") };
         let options = r#"
             {
               "parser_aliases": {
@@ -84,8 +87,8 @@ mod test {
                 "foolang": "barlang"
               },
               "parser_install_directories": [
-                "/my/directory/",
-                "/tmp/tree-sitter/parsers/"
+                "${HOME}/my/directory/",
+                "/$tmp/tree-sitter/parsers/"
               ],
               "language_retrieval_patterns": [
                 "\\.ts\\-([^/]+)\\-parser\\.wasm"
@@ -130,7 +133,12 @@ mod test {
         );
         let backend = service.inner();
         let actual_options = backend.options.read().await;
-        let expected_options = serde_json::from_str::<Options>(options).unwrap();
+        let mut expected_options = serde_json::from_str::<Options>(options).unwrap();
+        // Test that env vars are correctly substituted
+        expected_options.parser_install_directories = Some(vec![
+            String::from("/home/jdoe/my/directory/"),
+            String::from("/$tmp/tree-sitter/parsers/"),
+        ]);
         assert_eq!(
             actual_options.parser_aliases,
             expected_options.parser_aliases
