@@ -21,18 +21,16 @@ pub async fn initialize(backend: &Backend, params: InitializeParams) -> Result<I
         }
     }
 
-    if let Some(init_options) = params.initialization_options {
-        set_configuration_options(
-            backend,
-            init_options,
-            backend
-                .workspace_uris
-                .read()
-                .map(|r| r.to_vec())
-                .unwrap_or_default(),
-        )
-        .await;
-    }
+    set_configuration_options(
+        backend,
+        params.initialization_options,
+        backend
+            .workspace_uris
+            .read()
+            .map(|r| r.to_vec())
+            .unwrap_or_default(),
+    )
+    .await;
 
     Ok(InitializeResult {
         capabilities: SERVER_CAPABILITIES.clone(),
@@ -135,10 +133,10 @@ mod test {
         let actual_options = backend.options.read().await;
         let mut expected_options = serde_json::from_str::<Options>(options).unwrap();
         // Test that env vars are correctly substituted
-        expected_options.parser_install_directories = Some(vec![
+        expected_options.parser_install_directories = vec![
             String::from("/home/jdoe/my/directory/"),
             String::from("/$tmp/tree-sitter/parsers/"),
-        ]);
+        ];
         assert_eq!(
             actual_options.parser_aliases,
             expected_options.parser_aliases
