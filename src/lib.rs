@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 pub struct Options {
     /// A list of strings representing directories to search for parsers, of the form
     /// `<lang>.(so|dll|dylib)` or `tree-sitter-<lang>.wasm`.
+    ///
+    /// Supports environment variable expansion of the form `${VAR}`.
     pub parser_install_directories: Option<Vec<String>>,
     /// A map of parser aliases.
     pub parser_aliases: Option<BTreeMap<String, String>>,
