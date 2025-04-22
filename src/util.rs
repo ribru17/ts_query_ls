@@ -334,7 +334,7 @@ pub fn handle_predicate(
 fn get_first_valid_file_config(workspace_uris: Vec<Url>) -> Option<Options> {
     for folder_url in workspace_uris {
         if let Ok(path) = folder_url.to_file_path() {
-            let config_path = path.join("tsqueryrc.json");
+            let config_path = path.join(".tsqueryrc.json");
             if config_path.is_file() {
                 let data = fs::read_to_string(config_path).ok()?;
                 if let Ok(options) = serde_json::from_str(&data) {

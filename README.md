@@ -5,7 +5,7 @@
 ## Configuration
 
 Configuration can be done via server initialization or via a configuration file
-named `tsqueryrc.json` located at the project workspace root. Below is an
+named `.tsqueryrc.json` located at the project workspace root. Below is an
 example file:
 
 ```json
@@ -109,7 +109,7 @@ vim.api.nvim_create_autocmd('FileType', {
     vim.lsp.start {
       name = 'ts_query_ls',
       cmd = { '/path/to/ts_query_ls/target/release/ts_query_ls' },
-      root_dir = vim.fs.root(0, { 'tsqueryrc.json', 'queries' }),
+      root_dir = vim.fs.root(0, { '.tsqueryrc.json', 'queries' }),
       -- OPTIONAL: Override the query omnifunc
       on_attach = function(_, buf)
         vim.bo[buf].omnifunc = 'v:lua.vim.lsp.omnifunc'
@@ -162,7 +162,7 @@ ts_query_ls check ./queries --config \
 The command can accept a list of directories to search for queries, as well as a
 flag to pass JSON configuration to the server (needed to detect parser
 locations). If no configuration flag is passed, the command will attempt to read
-it from the `tsqueryrc.json` configuration file in the current directory. If no
+it from the `.tsqueryrc.json` configuration file in the current directory. If no
 directories are specified to be checked, then the command will search for all
 queries in the current directory.
 

@@ -322,9 +322,9 @@ async fn main() {
             let config_str = match config {
                 Some(config_str) => config_str,
                 None => {
-                    let config_file_path = Path::new("tsqueryrc.json");
+                    let config_file_path = Path::new(".tsqueryrc.json");
                     fs::read_to_string(config_file_path).unwrap_or_else(|_| {
-                        eprintln!("No config parameter given, and no tsqueryrc.json found");
+                        eprintln!("No config parameter given, and no .tsqueryrc.json found");
                         std::process::exit(1);
                     })
                 }
