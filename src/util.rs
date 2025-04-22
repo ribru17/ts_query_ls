@@ -284,13 +284,22 @@ impl NodeUtil for Node<'_> {
 
 fn get_first_valid_file_config(workspace_uris: Vec<Url>) -> Option<Options> {
     for folder_url in workspace_uris {
-        if let Ok(path) = folder_url.to_file_path() {
-            let config_path = path.join(".tsqueryrc.json");
-            if config_path.is_file() {
-                let data = fs::read_to_string(config_path).ok()?;
-                if let Ok(options) = serde_json::from_str(&data) {
-                    return options;
+        if let Ok(mut path) = folder_url.to_file_path() {
+            let mut config_path = path.join(".tsqueryrc.json");
+            loop {
+                if config_path.is_file() {
+                    let data = fs::read_to_string(&config_path)
+                        .ok()
+                        .and_then(|data| serde_json::from_str(&data).ok());
+                    if let Some(options) = data {
+                        return options;
+                    }
                 }
+                path = match path.parent() {
+                    Some(parent) => parent.into(),
+                    None => break,
+                };
+                config_path = path.join(".tsqueryrc.json");
             }
         }
     }
