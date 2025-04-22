@@ -5,8 +5,8 @@
 ## Configuration
 
 Configuration can be done via server initialization or via a configuration file
-named `.tsqueryrc.json` located at the project workspace root. Below is an
-example file:
+named `.tsqueryrc.json` located in the project workspace directory, or in any of
+its ancestor directories. Below is an example file:
 
 ```json
 {
