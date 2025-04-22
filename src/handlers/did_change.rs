@@ -86,7 +86,7 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
                         &fields,
                         &supertypes,
                         options
-                            .allowable_captures
+                            .valid_captures
                             .get(&uri_to_basename(uri).unwrap_or_default()),
                     ),
                     None,

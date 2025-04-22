@@ -23,9 +23,7 @@ fn main() {
     match args.command {
         Commands::Schema => {
             let schema = schemars::schema_for!(Options);
-            let Ok(xtask_path) = std::env::var("CARGO_MANIFEST_DIR") else {
-                panic!("Cannot find CARGO_MANIFEST_DIR");
-            };
+            let xtask_path = env!("CARGO_MANIFEST_DIR");
             let schema_out_dir = Path::new(&xtask_path)
                 .parent()
                 .unwrap()

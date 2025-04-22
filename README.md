@@ -10,6 +10,7 @@ example file:
 
 ```json
 {
+  "$schema": "https://raw.githubusercontent.com/ribru17/ts_query_ls/refs/heads/master/schemas/config.json",
   "parser_install_directories": ["a/list/of", "parser/installation/paths"],
   "parser_aliases": {
     "ecma": "javascript"
@@ -17,17 +18,11 @@ example file:
   "language_retrieval_patterns": [
     "languages/src/([^/]+)/[^/]+\\.scm$"
   ],
-  "allowable_captures": {
-    "highlights": [
-      {
-        "name": "variable",
-        "description": "Simple identifiers"
-      },
-      {
-        "name": "variable.parameter",
-        "description": "Parameters of a function"
-      }
-    ]
+  "valid_captures": {
+    "highlights": {
+      "variable": "Simple identifiers",
+      "variable.parameter": "Parameters of a function"
+    }
   }
 }
 ```
@@ -71,25 +66,19 @@ from highest to lowest precedence. E.g., for `zed` support:
 - `tree-sitter-([^/]+)/queries/[^/]+\.scm$`
 - `queries/([^/]+)/[^/]+\.scm$`
 
-#### `allowable_captures`
+#### `valid_captures`
 
-A map from query file names to allowable captures. Captures are represented as
-an object containing their name (sans `@`) and an optional description. Note
-that captures prefixed with an underscore are always permissible. Example:
+A map from query file name to valid captures. Valid captures are represented as
+a map from capture name (sans `@`) to a short (markdown format) description.
+Note that captures prefixed with an underscore are always permissible.
 
 ```json
 {
-  "allowable_captures": {
-    "highlights": [
-      {
-        "name": "variable",
-        "description": "Simple identifiers"
-      },
-      {
-        "name": "variable.parameter",
-        "description": "Parameters of a function"
-      }
-    ]
+  "valid_captures": {
+    "highlights": {
+      "variable": "Simple identifiers",
+      "variable.parameter": "Parameters of a function"
+    }
   }
 }
 ```

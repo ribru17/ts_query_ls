@@ -109,7 +109,7 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
                     &fields,
                     &supertypes,
                     options
-                        .allowable_captures
+                        .valid_captures
                         .get(&uri_to_basename(uri).unwrap_or_default()),
                 ),
                 None,

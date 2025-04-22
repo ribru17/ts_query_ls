@@ -84,7 +84,7 @@ mod test {
                 language_retrieval_patterns: Some(vec![String::from(
                     r"\.ts\-([^/]+)\-parser\.wasm"
                 )]),
-                allowable_captures: Default::default()
+                valid_captures: Default::default()
             }
         );
     }
