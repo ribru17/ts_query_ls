@@ -185,7 +185,6 @@ pub fn get_language(uri: &Url, options: &Options) -> Option<Language> {
     let mut language_retrieval_regexes: Vec<Regex> = options
         .language_retrieval_patterns
         .clone()
-        .unwrap_or_default()
         .iter()
         .map(|r| Regex::new(r).unwrap())
         .collect();
@@ -205,8 +204,7 @@ pub fn get_language(uri: &Url, options: &Options) -> Option<Language> {
             get_language_object(
                 options
                     .parser_aliases
-                    .as_ref()
-                    .and_then(|map| map.get(cap_str))
+                    .get(cap_str)
                     .unwrap_or(&cap_str.to_owned())
                     .as_str(),
                 &options.parser_install_directories,

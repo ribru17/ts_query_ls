@@ -72,18 +72,16 @@ mod test {
         assert_eq!(
             *options,
             Options {
-                parser_aliases: Some(BTreeMap::from([
+                parser_aliases: BTreeMap::from([
                     ("ecma".to_string(), "javascript".to_string()),
                     ("jsx".to_string(), "javascript".to_string()),
                     ("foolang".to_string(), "barlang".to_string())
-                ])),
+                ]),
                 parser_install_directories: vec![
                     String::from("/my/directory/"),
                     String::from("/tmp/tree-sitter/parsers/"),
                 ],
-                language_retrieval_patterns: Some(vec![String::from(
-                    r"\.ts\-([^/]+)\-parser\.wasm"
-                )]),
+                language_retrieval_patterns: vec![String::from(r"\.ts\-([^/]+)\-parser\.wasm")],
                 valid_captures: Default::default()
             }
         );

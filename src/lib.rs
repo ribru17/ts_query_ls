@@ -15,11 +15,13 @@ pub struct Options {
     #[serde(default, deserialize_with = "deserialize_and_expand")]
     pub parser_install_directories: Vec<String>,
     /// A map of parser aliases.
-    pub parser_aliases: Option<BTreeMap<String, String>>,
+    #[serde(default)]
+    pub parser_aliases: BTreeMap<String, String>,
     /// A list of patterns to aid the LSP in finding a language, given a file path.
     /// Patterns must have one capture group which represents the language name. Ordered
     /// from highest to lowest precedence.
-    pub language_retrieval_patterns: Option<Vec<String>>,
+    #[serde(default)]
+    pub language_retrieval_patterns: Vec<String>,
     /// A map from query file name to valid captures. Valid captures are represented as a map from
     /// capture name (sans `@`) to a short (markdown format) description. Note that captures
     /// prefixed with an underscore are always permissible.

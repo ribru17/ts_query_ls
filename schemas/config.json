@@ -5,20 +5,16 @@
   "properties": {
     "language_retrieval_patterns": {
       "description": "A list of patterns to aid the LSP in finding a language, given a file path. Patterns must have one capture group which represents the language name. Ordered from highest to lowest precedence.",
-      "type": [
-        "array",
-        "null"
-      ],
+      "default": [],
+      "type": "array",
       "items": {
         "type": "string"
       }
     },
     "parser_aliases": {
       "description": "A map of parser aliases.",
-      "type": [
-        "object",
-        "null"
-      ],
+      "default": {},
+      "type": "object",
       "additionalProperties": {
         "type": "string"
       }

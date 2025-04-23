@@ -91,10 +91,8 @@ pub mod helpers {
             HashMap::new()
         };
         let options = Arc::new(tokio::sync::RwLock::new(Options {
-            parser_install_directories: Default::default(),
-            parser_aliases: None,
-            language_retrieval_patterns: None,
             valid_captures,
+            ..Default::default()
         }));
         let (mut service, _socket) = LspService::build(|client| Backend {
             client,
