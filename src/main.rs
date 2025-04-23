@@ -337,12 +337,7 @@ async fn main() {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
-    let options = Arc::new(tokio::sync::RwLock::new(Options {
-        parser_install_directories: Default::default(),
-        parser_aliases: None,
-        language_retrieval_patterns: None,
-        valid_captures: Default::default(),
-    }));
+    let options = Arc::new(tokio::sync::RwLock::new(Options::default()));
     let (service, socket) = LspService::build(|client| Backend {
         client,
         document_map: Default::default(),
