@@ -358,7 +358,7 @@ mod test {
             .iter()
             .map(|s| (s.to_string(), Default::default()))
             .collect();
-        let allowable_captures = Some(&binding);
+        let valid_captures = Some(&binding);
         let symbols = &HashSet::from_iter(symbols.iter().cloned());
         let fields = &HashSet::from_iter(fields.iter().map(|s| s.to_string()));
 
@@ -370,7 +370,7 @@ mod test {
             symbols,
             fields,
             &Default::default(),
-            allowable_captures,
+            valid_captures,
         );
 
         // Assert

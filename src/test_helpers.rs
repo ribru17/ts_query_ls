@@ -69,7 +69,7 @@ pub mod helpers {
     /// Always test with id of 1 for simplicity
     const ID: i64 = 1;
 
-    /// A tuple holding the document's URI, source text, symbols, fields, supertypes, and allowable
+    /// A tuple holding the document's URI, source text, symbols, fields, supertypes, and valid
     /// captures
     pub type Document<'a> = (Url, &'a str, Vec<SymbolInfo>, Vec<&'a str>, Vec<&'a str>);
 
