@@ -33,7 +33,7 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
             Range { start, end }
         };
 
-        edits.push(lsp_textdocchange_to_ts_inputedit(&rope, change).unwrap());
+        edits.push(lsp_textdocchange_to_ts_inputedit(&rope, change));
 
         let start_row_char_idx = rope.line_to_char(range.start.line as usize);
         let start_row_cu = rope.char_to_utf16_cu(start_row_char_idx);

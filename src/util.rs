@@ -30,32 +30,32 @@ pub fn lsp_position_to_byte_offset(position: Position, rope: &Rope) -> Result<us
     rope.try_char_to_byte(rope.try_utf16_cu_to_char(line_cu + position.character as usize)?)
 }
 
-pub fn byte_offset_to_lsp_position(offset: usize, rope: &Rope) -> Result<Position, ropey::Error> {
-    let line_idx = rope.try_byte_to_line(offset)?;
+pub fn byte_offset_to_lsp_position(offset: usize, rope: &Rope) -> Position {
+    let line_idx = rope.byte_to_line(offset);
 
     let line_utf16_cu_idx = {
-        let char_idx = rope.try_line_to_char(line_idx)?;
-        rope.try_char_to_utf16_cu(char_idx)?
+        let char_idx = rope.line_to_char(line_idx);
+        rope.char_to_utf16_cu(char_idx)
     };
 
     let character_utf16_cu_idx = {
-        let char_idx = rope.try_byte_to_char(offset)?;
-        rope.try_char_to_utf16_cu(char_idx)?
+        let char_idx = rope.byte_to_char(offset);
+        rope.char_to_utf16_cu(char_idx)
     };
 
     let line = line_idx as u32;
     let character = (character_utf16_cu_idx - line_utf16_cu_idx) as u32;
 
-    Ok(Position { line, character })
+    Position { line, character }
 }
 
-fn byte_offset_to_ts_point(index: usize, rope: &Rope) -> Result<Point, ropey::Error> {
-    let line = rope.try_byte_to_line(index)?;
-    let char = index - rope.try_line_to_byte(line)?;
-    Ok(Point {
+fn byte_offset_to_ts_point(index: usize, rope: &Rope) -> Point {
+    let line = rope.byte_to_line(index);
+    let char = index - rope.line_to_byte(line);
+    Point {
         row: line,
         column: char,
-    })
+    }
 }
 
 pub trait ToTsPoint {
@@ -64,13 +64,13 @@ pub trait ToTsPoint {
 
 impl ToTsPoint for Position {
     fn to_ts_point(&self, rope: &Rope) -> Point {
-        byte_offset_to_ts_point(lsp_position_to_byte_offset(*self, rope).unwrap(), rope).unwrap()
+        byte_offset_to_ts_point(lsp_position_to_byte_offset(*self, rope).unwrap(), rope)
     }
 }
 
 fn ts_point_to_lsp_position(point: Point, rope: &Rope) -> Position {
     let offset = rope.line_to_byte(point.row) + point.column;
-    byte_offset_to_lsp_position(offset, rope).unwrap()
+    byte_offset_to_lsp_position(offset, rope)
 }
 
 pub fn get_current_capture_node(root: Node, point: Point) -> Option<Node> {
@@ -138,22 +138,22 @@ pub fn node_is_or_has_ancestor(root: Node, node: Node, kind: &str) -> bool {
 pub fn lsp_textdocchange_to_ts_inputedit(
     rope: &Rope,
     change: &TextDocumentContentChangeEvent,
-) -> Result<InputEdit, Box<dyn std::error::Error>> {
+) -> InputEdit {
     let text = change.text.as_str();
     let text_end_byte_count = text.len();
 
     let range = if let Some(range) = change.range {
         range
     } else {
-        let start = byte_offset_to_lsp_position(0, rope)?;
-        let end = byte_offset_to_lsp_position(text_end_byte_count, rope)?;
+        let start = byte_offset_to_lsp_position(0, rope);
+        let end = byte_offset_to_lsp_position(text_end_byte_count, rope);
         Range { start, end }
     };
 
     let start_position = range.start.to_ts_point(rope);
-    let start_byte = lsp_position_to_byte_offset(range.start, rope)?;
+    let start_byte = lsp_position_to_byte_offset(range.start, rope).unwrap();
     let old_end_position = range.end.to_ts_point(rope);
-    let old_end_byte = lsp_position_to_byte_offset(range.end, rope)?;
+    let old_end_byte = lsp_position_to_byte_offset(range.end, rope).unwrap();
 
     let new_end_byte = start_byte as usize + text_end_byte_count;
 
@@ -163,20 +163,20 @@ pub fn lsp_textdocchange_to_ts_inputedit(
             let line_byte_idx = ropey::str_utils::line_to_byte_idx(text, line_idx);
             let row = rope.len_lines() + line_idx;
             let column = text_end_byte_count - line_byte_idx;
-            Ok(Point { row, column })
+            Point { row, column }
         } else {
             byte_offset_to_ts_point(new_end_byte, rope)
         }
-    }?;
+    };
 
-    Ok(InputEdit {
+    InputEdit {
         start_byte,
         old_end_byte,
         new_end_byte,
         start_position,
         old_end_position,
         new_end_position,
-    })
+    }
 }
 
 const DYLIB_EXTENSIONS: [&str; 3] = [".so", ".dll", ".dylib"];
