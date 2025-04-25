@@ -1,6 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Options",
+  "description": "Configuration options for the language server.",
   "type": "object",
   "properties": {
     "language_retrieval_patterns": {
@@ -37,6 +38,131 @@
           "type": "string"
         }
       }
+    },
+    "valid_directives": {
+      "description": "A map of directive names (sans `#` and `!`) to parameter specifications.",
+      "default": {},
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/Predicate"
+      }
+    },
+    "valid_predicates": {
+      "description": "A map of predicate names (sans `#` and `?`) to parameter specifications.",
+      "default": {},
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/Predicate"
+      }
+    }
+  },
+  "definitions": {
+    "Predicate": {
+      "description": "A type specification for a predicate (or directive).",
+      "type": "object",
+      "required": [
+        "description",
+        "parameters"
+      ],
+      "properties": {
+        "description": {
+          "description": "A short description of the predicate (in Markdown format).",
+          "type": "string"
+        },
+        "parameters": {
+          "description": "The list of valid parameter types.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PredicateParameter"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "PredicateParameter": {
+      "description": "A parameter type reference.\n\nParameters can be one or both of two types (a capture or a string), and can be required, optional, or \"varargs\" (there can be zero-to-many of them).",
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "arity": {
+          "description": "The arity of the predicate parameter. Must be `\"required\"`, `\"optional\"`, or `\"varargs\"`.",
+          "default": "required",
+          "allOf": [
+            {
+              "$ref": "#/definitions/PredicateParameterArity"
+            }
+          ]
+        },
+        "description": {
+          "description": "An optional description of this parameter.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "description": "The type of this parameter. Can be `capture`, `string`, or `any` (either a capture or a string).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/PredicateParameterType"
+            }
+          ]
+        }
+      }
+    },
+    "PredicateParameterArity": {
+      "description": "The arity of the predicate parameter.",
+      "oneOf": [
+        {
+          "description": "A regular, required parameter.",
+          "type": "string",
+          "enum": [
+            "required"
+          ]
+        },
+        {
+          "description": "A parameter which can be omitted. Must only be followed by other optional parameters.",
+          "type": "string",
+          "enum": [
+            "optional"
+          ]
+        },
+        {
+          "description": "A parameter which can appear zero-to-many times. Must be the last parameter if present.",
+          "type": "string",
+          "enum": [
+            "varargs"
+          ]
+        }
+      ]
+    },
+    "PredicateParameterType": {
+      "description": "The type of the predicate parameter.",
+      "oneOf": [
+        {
+          "description": "Must be a capture (e.g. `@variable`).",
+          "type": "string",
+          "enum": [
+            "capture"
+          ]
+        },
+        {
+          "description": "Must be a string (e.g. `foo`).",
+          "type": "string",
+          "enum": [
+            "string"
+          ]
+        },
+        {
+          "description": "Can be either a capture or a string.",
+          "type": "string",
+          "enum": [
+            "any"
+          ]
+        }
+      ]
     }
   }
 }

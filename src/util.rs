@@ -313,6 +313,8 @@ pub async fn set_configuration_options(
             options.parser_aliases = parsed_options.parser_aliases;
             options.language_retrieval_patterns = parsed_options.language_retrieval_patterns;
             options.valid_captures = parsed_options.valid_captures;
+            options.valid_predicates = parsed_options.valid_predicates;
+            options.valid_directives = parsed_options.valid_directives;
         } else {
             warn!("Unable to parse configuration settings!",);
         };
@@ -327,6 +329,8 @@ pub async fn set_configuration_options(
         options.parser_aliases = file_options.parser_aliases;
         options.language_retrieval_patterns = file_options.language_retrieval_patterns;
         options.valid_captures = file_options.valid_captures;
+        options.valid_predicates = file_options.valid_predicates;
+        options.valid_directives = file_options.valid_directives;
     }
 }
 

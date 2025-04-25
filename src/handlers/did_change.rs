@@ -3,7 +3,7 @@ use tree_sitter::Parser;
 
 use crate::{
     Backend, QUERY_LANGUAGE,
-    util::{TextProviderRope, lsp_textdocchange_to_ts_inputedit, uri_to_basename},
+    util::{TextProviderRope, lsp_textdocchange_to_ts_inputedit},
 };
 
 use super::diagnostic::get_diagnostics;
@@ -85,9 +85,8 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
                         &symbols,
                         &fields,
                         &supertypes,
-                        options
-                            .valid_captures
-                            .get(&uri_to_basename(uri).unwrap_or_default()),
+                        &options,
+                        uri,
                     ),
                     None,
                 )
