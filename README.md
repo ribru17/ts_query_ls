@@ -203,6 +203,9 @@ ts_query_ls check ./queries --config \
 '{"parser_install_directories": ["/home/jdoe/Documents/parsers/"]}'
 ```
 
+Note that unlike the live server diagnostics, the `check` command runs a full
+query scan to check for things like impossible query patterns.
+
 The command can accept a list of directories to search for queries, as well as a
 flag to pass JSON configuration to the server (needed to detect parser
 locations). If no configuration flag is passed, the command will attempt to read
