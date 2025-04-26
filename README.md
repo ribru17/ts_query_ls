@@ -37,7 +37,6 @@ its ancestor directories. Below is an example file:
         }
       ],
       "description": "Checks for equality between two nodes, or a node and a string."
-    },
     }
   }
 }
