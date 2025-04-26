@@ -106,8 +106,8 @@ Note that captures prefixed with an underscore are always permissible.
 A map of predicate names (sans `#` and `?`) to parameter specifications.
 
 Parameters can be one or both of two types (a capture or a string), and can be
-required, optional, or "varargs" (there can be zero-to-many of them). Optional
-parameters cannot be followed by required parameters, and a varargs parameter
+required, optional, or "variadic" (there can be zero-to-many of them). Optional
+parameters cannot be followed by required parameters, and a variadic parameter
 may only appear once, as the last parameter.
 
 ```json
@@ -125,7 +125,7 @@ may only appear once, as the last parameter.
         },
         {
           "type": "string",
-          "arity": "varargs"
+          "arity": "variadic"
         }
       ],
       "description": "Checks for equality between multiple strings"

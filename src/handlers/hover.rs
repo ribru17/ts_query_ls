@@ -11,6 +11,7 @@ use crate::{
 pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hover>> {
     let uri = &params.text_document_position_params.text_document.uri;
     let position = params.text_document_position_params.position;
+    let options = backend.options.read().await;
 
     if let (Some(tree), Some(rope), Some(supertypes)) = (
         backend.cst_map.get(uri),
@@ -30,12 +31,41 @@ pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hove
             named: true,
         };
 
-        // TODO: Support documentation for default predicates.
+        let node_parent = node.parent();
         if node.kind() == "identifier"
-            && node
-                .parent()
-                .is_some_and(|p| p.kind() == "named_node" || p.kind() == "missing_node")
+            && node_parent.is_some_and(|p| {
+                p.kind() == "named_node" || p.kind() == "missing_node" || p.kind() == "predicate"
+            })
         {
+            let node_parent = node_parent.unwrap();
+            if node_parent.kind() == "predicate" {
+                let is_predicate = node_parent
+                    .named_child(1)
+                    .is_some_and(|c| c.text(rope) == "?");
+                let validator = if is_predicate {
+                    &options.valid_predicates
+                } else {
+                    &options.valid_directives
+                };
+                if let Some(predicate) = validator.get(&node_text) {
+                    let mut value =
+                        format!("{}\n\n---\n\n## Parameters:\n\n", predicate.description);
+                    for param in &predicate.parameters {
+                        value += format!("- Type: `{}` ({})\n", param.type_, param.arity).as_str();
+                        if let Some(desc) = &param.description {
+                            value += format!("  - {}\n", desc).as_str();
+                        }
+                    }
+                    return Ok(Some(Hover {
+                        range: Some(node_range),
+                        contents: HoverContents::Markup(MarkupContent {
+                            kind: MarkupKind::Markdown,
+                            value,
+                        }),
+                    }));
+                }
+                return Ok(None);
+            }
             if let Some(subtypes) = supertypes.get(&sym).and_then(|subtypes| {
                 (subtypes.iter().fold(
                     format!("Subtypes of `({node_text})`:\n\n```query"),

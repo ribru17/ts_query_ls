@@ -288,7 +288,7 @@ fn validate_predicate<'a>(
                 diagnostics.push(type_mismatch_diag(is_capture, param, param_spec));
             }
             prev_param_spec = param_spec;
-        } else if prev_param_spec.arity != PredicateParameterArity::Varargs {
+        } else if prev_param_spec.arity != PredicateParameterArity::Variadic {
             diagnostics.push(Diagnostic {
                 message: format!("Unexpected parameter: \"{}\"", param.text(rope),),
                 severity: Some(DiagnosticSeverity::WARNING),
@@ -543,7 +543,7 @@ mod test {
                     description: None,
                 }, PredicateParameter {
                     type_: PredicateParameterType::String,
-                    arity: PredicateParameterArity::Varargs,
+                    arity: PredicateParameterArity::Variadic,
                     description: None,
                 }],
             })]),
@@ -569,7 +569,7 @@ mod test {
                     description: None,
                 }, PredicateParameter {
                     type_: PredicateParameterType::String,
-                    arity: PredicateParameterArity::Varargs,
+                    arity: PredicateParameterArity::Variadic,
                     description: None,
                 }],
             })]),
@@ -610,7 +610,7 @@ mod test {
                     description: None,
                 }, PredicateParameter {
                     type_: PredicateParameterType::Any,
-                    arity: PredicateParameterArity::Varargs,
+                    arity: PredicateParameterArity::Variadic,
                     description: None,
                 }],
             })]),
@@ -636,7 +636,7 @@ mod test {
                     description: None,
                 }, PredicateParameter {
                     type_: PredicateParameterType::Any,
-                    arity: PredicateParameterArity::Varargs,
+                    arity: PredicateParameterArity::Variadic,
                     description: None,
                 }],
             })]),
@@ -755,7 +755,7 @@ mod test {
                     description: None,
                 }, PredicateParameter {
                     type_: PredicateParameterType::Any,
-                    arity: PredicateParameterArity::Varargs,
+                    arity: PredicateParameterArity::Variadic,
                     description: None,
                 }],
             })]),
