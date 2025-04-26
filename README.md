@@ -23,6 +23,22 @@ its ancestor directories. Below is an example file:
       "variable": "Simple identifiers",
       "variable.parameter": "Parameters of a function"
     }
+  },
+  "valid_predicates": {
+    "eq": {
+      "parameters": [
+        {
+          "type": "capture",
+          "arity": "required"
+        },
+        {
+          "type": "any",
+          "arity": "required"
+        }
+      ],
+      "description": "Checks for equality between two nodes, or a node and a string."
+    },
+    }
   }
 }
 ```
@@ -84,6 +100,43 @@ Note that captures prefixed with an underscore are always permissible.
   }
 }
 ```
+
+### `valid_predicates`
+
+A map of predicate names (sans `#` and `?`) to parameter specifications.
+
+Parameters can be one or both of two types (a capture or a string), and can be
+required, optional, or "varargs" (there can be zero-to-many of them). Optional
+parameters cannot be followed by required parameters, and a varargs parameter
+may only appear once, as the last parameter.
+
+```json
+{
+  "valid_predicates": {
+    "any-of": {
+      "parameters": [
+        {
+          "type": "capture",
+          "arity": "required"
+        },
+        {
+          "type": "string",
+          "arity": "required"
+        },
+        {
+          "type": "string",
+          "arity": "varargs"
+        }
+      ],
+      "description": "Checks for equality between multiple strings"
+    }
+  }
+}
+```
+
+### `valid_directives`
+
+Same as `valid_predicates`, but for directives (e.g. `#foo!`).
 
 ### Example setup (for Neovim):
 

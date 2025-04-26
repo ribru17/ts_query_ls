@@ -8,7 +8,7 @@ use tree_sitter::Parser;
 use crate::{
     Backend, QUERY_LANGUAGE, SymbolInfo,
     handlers::diagnostic::get_diagnostics,
-    util::{TextProviderRope, get_language, uri_to_basename},
+    util::{TextProviderRope, get_language},
 };
 
 pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
@@ -108,9 +108,8 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
                     &symbols,
                     &fields,
                     &supertypes,
-                    options
-                        .valid_captures
-                        .get(&uri_to_basename(uri).unwrap_or_default()),
+                    &options,
+                    uri,
                 ),
                 None,
             )

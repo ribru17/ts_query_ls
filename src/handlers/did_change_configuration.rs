@@ -82,7 +82,7 @@ mod test {
                     String::from("/tmp/tree-sitter/parsers/"),
                 ],
                 language_retrieval_patterns: vec![String::from(r"\.ts\-([^/]+)\-parser\.wasm")],
-                valid_captures: Default::default()
+                ..Default::default()
             }
         );
     }

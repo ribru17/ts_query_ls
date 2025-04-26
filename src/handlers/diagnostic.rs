@@ -1,58 +1,45 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     sync::LazyLock,
 };
 
 use ropey::Rope;
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
-use tree_sitter::{Query, QueryCursor, StreamingIterator as _, Tree};
+use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Url};
+use tree_sitter::{Node, Query, QueryCursor, StreamingIterator as _, Tree, TreeCursor};
+use ts_query_ls::{Options, PredicateParameter, PredicateParameterArity, PredicateParameterType};
 
 use crate::{
     QUERY_LANGUAGE, SymbolInfo,
-    util::{CAPTURES_QUERY, NodeUtil as _, TextProviderRope},
+    util::{CAPTURES_QUERY, NodeUtil as _, TextProviderRope, uri_to_basename},
 };
 
 static DIAGNOSTICS_QUERY: LazyLock<Query> = LazyLock::new(|| {
     Query::new(
         &QUERY_LANGUAGE,
         r#"
-(ERROR) @e
-(MISSING) @m
-(anonymous_node (string (string_content) @a))
-(named_node . name: (identifier) @n)
+(ERROR) @error
+(MISSING) @missing
+(anonymous_node (string (string_content) @node.anon))
+(named_node . name: (identifier) @node.named)
 (named_node . supertype: (identifier) @supertype)
-(missing_node name: (identifier) @n)
-(missing_node name: (string (string_content) @a))
-(field_definition name: (identifier) @f)
-(capture) @c
+(missing_node name: (identifier) @node.named)
+(missing_node name: (string (string_content) @node.anon))
+(field_definition name: (identifier) @field)
+(capture) @capture
 (predicate
-  name: (identifier) @_name
-  (parameters
-    .
-    ; NOTE: Technically this can be a "_" but it doesn't work with anchors. Also rare?
-    [(string) (identifier)] @arg)
-    (#any-of? @_name "eq" "not-eq" "any-eq" "any-not-eq"
-      "match" "not-match" "any-match" "any-not-match"
-      "any-of" "not-any-of"))
+  name: (identifier) @predicate
+  (predicate_type) @_type
+  (#eq? @_type "?"))
 (predicate
-  name: (identifier) @_name
-    (#any-of? @_name "eq" "not-eq" "any-eq" "any-not-eq")
-  (parameters
-    (capture)
-    _
-    _+ @bad_eq))
-(predicate
-  name: (identifier) @_name
-    (#any-of? @_name "match" "not-match" "any-match" "any-not-match")
-  (parameters
-    (capture)
-    _
-    _+ @bad_match))
+  name: (identifier) @directive
+  (predicate_type) @_type
+  (#eq? @_type "!"))
 "#,
     )
     .unwrap()
 });
 
+#[allow(clippy::too_many_arguments)]
 pub fn get_diagnostics(
     tree: &Tree,
     rope: &Rope,
@@ -60,9 +47,16 @@ pub fn get_diagnostics(
     symbols: &HashSet<SymbolInfo>,
     fields: &HashSet<String>,
     supertypes: &HashMap<SymbolInfo, BTreeSet<SymbolInfo>>,
-    valid_captures: Option<&BTreeMap<String, String>>,
+    options: &Options,
+    uri: &Url,
 ) -> Vec<Diagnostic> {
+    let valid_captures = options
+        .valid_captures
+        .get(&uri_to_basename(uri).unwrap_or_default());
+    let valid_predicates = &options.valid_predicates;
+    let valid_directives = &options.valid_directives;
     let mut cursor = QueryCursor::new();
+    let mut tree_cursor = tree.root_node().walk();
     let mut matches = cursor.matches(&DIAGNOSTICS_QUERY, tree.root_node(), provider);
     let mut diagnostics = vec![];
     let has_language_info = !symbols.is_empty();
@@ -73,13 +67,13 @@ pub fn get_diagnostics(
             let severity = Some(DiagnosticSeverity::ERROR);
             let range = capture.node.lsp_range(rope);
             match capture_name {
-                "a" | "n" => {
+                capture_name if capture_name.starts_with("node.") => {
                     if !has_language_info {
                         continue;
                     }
                     let sym = SymbolInfo {
                         label: capture_text.clone(),
-                        named: capture_name == "n",
+                        named: capture_name == "node.named",
                     };
                     if !symbols.contains(&sym) {
                         diagnostics.push(Diagnostic {
@@ -133,7 +127,7 @@ pub fn get_diagnostics(
                         });
                     }
                 }
-                "f" => {
+                "field" => {
                     if !has_language_info {
                         continue;
                     }
@@ -147,19 +141,19 @@ pub fn get_diagnostics(
                         });
                     }
                 }
-                "e" => diagnostics.push(Diagnostic {
+                "error" => diagnostics.push(Diagnostic {
                     message: "Invalid syntax".to_owned(),
                     severity,
                     range,
                     ..Default::default()
                 }),
-                "m" => diagnostics.push(Diagnostic {
+                "missing" => diagnostics.push(Diagnostic {
                     message: format!("Missing \"{}\"", capture.node.kind()),
                     severity,
                     range,
                     ..Default::default()
                 }),
-                "c" => {
+                "capture" => {
                     if capture
                         .node
                         .parent()
@@ -210,31 +204,31 @@ pub fn get_diagnostics(
                         }
                     }
                 }
-                "arg" => {
-                    diagnostics.push(Diagnostic {
-                        message: "First argument must be a capture".to_owned(),
-                        range,
-                        severity: Some(DiagnosticSeverity::WARNING),
-                        ..Default::default()
-                    });
-                }
-                "bad_eq" => {
-                    diagnostics.push(Diagnostic {
-                        message: r##""#eq?" family predicates cannot accept multiple arguments. Consider using "#any-of?""##.to_owned(),
-                        range,
-                        severity: Some(DiagnosticSeverity::WARNING),
-                        ..Default::default()
-                    });
-                }
-                "bad_match" => {
-                    diagnostics.push(Diagnostic {
-                        message:
-                            r##""#match?" family predicates cannot accept multiple arguments"##
-                                .to_owned(),
-                        range,
-                        severity: Some(DiagnosticSeverity::WARNING),
-                        ..Default::default()
-                    });
+                "predicate" | "directive" => {
+                    let validator = if capture_name == "predicate" {
+                        valid_predicates
+                    } else {
+                        valid_directives
+                    };
+                    if validator.is_empty() {
+                        continue;
+                    }
+                    if let Some(predicate) = validator.get(&capture_text) {
+                        validate_predicate(
+                            &mut diagnostics,
+                            &mut tree_cursor,
+                            rope,
+                            &predicate.parameters,
+                            capture.node,
+                        );
+                    } else {
+                        diagnostics.push(Diagnostic {
+                            message: format!("Unrecognized {capture_name} \"{capture_text}\""),
+                            severity: Some(DiagnosticSeverity::WARNING),
+                            range,
+                            ..Default::default()
+                        });
+                    }
                 }
                 _ => {}
             }
@@ -243,14 +237,94 @@ pub fn get_diagnostics(
     diagnostics
 }
 
+fn validate_predicate<'a>(
+    diagnostics: &mut Vec<Diagnostic>,
+    tree_cursor: &mut TreeCursor<'a>,
+    rope: &Rope,
+    predicate_params: &[PredicateParameter],
+    predicate_node: Node<'a>,
+) {
+    let params_node = predicate_node.parent().unwrap().named_child(2).unwrap();
+    let mut param_spec_iter = predicate_params.iter().peekable();
+    let mut prev_param_spec = match param_spec_iter.peek() {
+        Some(p) => *p,
+        None => {
+            diagnostics.push(Diagnostic {
+                message: String::from("Parameter specification must not be empty"),
+                severity: Some(DiagnosticSeverity::WARNING),
+                range: params_node.lsp_range(rope),
+                ..Default::default()
+            });
+            return;
+        }
+    };
+
+    let param_type_mismatch = |is_capture: bool, param_spec: &PredicateParameter| {
+        is_capture && param_spec.type_ == PredicateParameterType::String
+            || !is_capture && param_spec.type_ == PredicateParameterType::Capture
+    };
+
+    let type_mismatch_diag =
+        |is_capture: bool, param: Node<'a>, param_spec: &PredicateParameter| Diagnostic {
+            message: format!(
+                "Parameter type mismatch: expected \"{}\", got \"{}\"",
+                param_spec.type_,
+                if is_capture { "capture" } else { "string" }
+            ),
+            severity: Some(DiagnosticSeverity::WARNING),
+            range: param.lsp_range(rope),
+            ..Default::default()
+        };
+
+    for param in params_node.children(tree_cursor) {
+        if param.is_missing() {
+            // At least one parameter must be passed; this will be caught by the MISSING syntax
+            // error diagnostic.
+            break;
+        }
+        let is_capture = param.kind() == "capture";
+        if let Some(param_spec) = param_spec_iter.next() {
+            if param_type_mismatch(is_capture, param_spec) {
+                diagnostics.push(type_mismatch_diag(is_capture, param, param_spec));
+            }
+            prev_param_spec = param_spec;
+        } else if prev_param_spec.arity != PredicateParameterArity::Varargs {
+            diagnostics.push(Diagnostic {
+                message: format!("Unexpected parameter: \"{}\"", param.text(rope),),
+                severity: Some(DiagnosticSeverity::WARNING),
+                range: param.lsp_range(rope),
+                ..Default::default()
+            });
+        } else if param_type_mismatch(is_capture, prev_param_spec) {
+            diagnostics.push(type_mismatch_diag(is_capture, param, prev_param_spec));
+        }
+    }
+    if let Some(PredicateParameter {
+        type_,
+        description: _,
+        arity: PredicateParameterArity::Required,
+    }) = param_spec_iter.next()
+    {
+        diagnostics.push(Diagnostic {
+            message: format!("Missing parameter of type \"{}\"", type_),
+            severity: Some(DiagnosticSeverity::WARNING),
+            range: predicate_node.parent().unwrap().lsp_range(rope),
+            ..Default::default()
+        });
+    }
+}
+
 // TODO: Handle many more cases
 #[cfg(test)]
 mod test {
-    use std::collections::HashSet;
+    use std::collections::{BTreeMap, HashMap, HashSet};
 
     use pretty_assertions::assert_eq;
     use rstest::rstest;
     use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
+    use ts_query_ls::{
+        Options, Predicate, PredicateParameter, PredicateParameterArity, PredicateParameterType,
+    };
 
     use crate::util::TextProviderRope;
     use crate::{
@@ -266,7 +340,14 @@ mod test {
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
-        &["variable", "variable.parameter"],
+        &Options {
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([
+                    (String::from("variable"), String::default()),
+                    (String::from("variable.parameter"), String::default()),
+                ]))]),
+            ..Default::default()
+        },
         &[Diagnostic {
             range: Range {
                 start: Position {
@@ -305,7 +386,14 @@ mod test {
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
-        &["variable", "variable.parameter"],
+        &Options {
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([
+                    (String::from("variable"), String::default()),
+                    (String::from("variable.parameter"), String::default()),
+                ]))]),
+            ..Default::default()
+        },
         &[Diagnostic {
             range: Range {
                 start: Position {
@@ -328,8 +416,369 @@ mod test {
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
-        &["variable", "variable.parameter"],
+        &Options {
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([
+                    (String::from("variable"), String::default()),
+                    (String::from("variable.parameter"), String::default()),
+                ]))]),
+            ..Default::default()
+        },
         &[],
+    )]
+    #[case(
+        r#"((identifier) @variable.builtin
+(#eq? @variable.builtin "self"))"#,
+        &[SymbolInfo { label: String::from("identifier"), named: true }],
+        &["operator"],
+        &["supertype"],
+        &Options {
+            valid_predicates: BTreeMap::from([(String::from("eq"), Predicate {
+                description: String::from("Checks for equality"),
+                parameters: vec![PredicateParameter {
+                    type_: PredicateParameterType::Capture,
+                    arity: PredicateParameterArity::Required,
+                    description: None,
+                }, PredicateParameter {
+                    type_: PredicateParameterType::Any,
+                    arity: PredicateParameterArity::Required,
+                    description: None,
+                }],
+            })]),
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([(String::from("variable.builtin"), String::default())]))]),
+            ..Default::default()
+        },
+        &[],
+    )]
+    #[case(
+        r#"((identifier) @variable.builtin
+(#eq? @variable.builtin))"#,
+        &[SymbolInfo { label: String::from("identifier"), named: true }],
+        &["operator"],
+        &["supertype"],
+        &Options {
+            valid_predicates: BTreeMap::from([(String::from("eq"), Predicate {
+                description: String::from("Checks for equality"),
+                parameters: vec![PredicateParameter {
+                    type_: PredicateParameterType::Capture,
+                    arity: PredicateParameterArity::Required,
+                    description: None,
+                }, PredicateParameter {
+                    type_: PredicateParameterType::Any,
+                    arity: PredicateParameterArity::Required,
+                    description: None,
+                }],
+            })]),
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([(String::from("variable.builtin"), String::default())]))]),
+            ..Default::default()
+        },
+        &[Diagnostic {
+            range: Range {
+                start: Position { line: 1, character: 0 },
+                end: Position { line: 1, character: 24 },
+            },
+            severity: Some(DiagnosticSeverity::WARNING),
+            code: None,
+            code_description: None,
+            source: None,
+            message: String::from("Missing parameter of type \"any\""),
+            related_information: None,
+            tags: None,
+            data: None,
+        }],
+    )]
+    #[case(
+        r#"((identifier) @variable.builtin
+(#eq? @variable.builtin "self" @variable.builtin))"#,
+        &[SymbolInfo { label: String::from("identifier"), named: true }],
+        &["operator"],
+        &["supertype"],
+        &Options {
+            valid_predicates: BTreeMap::from([(String::from("eq"), Predicate {
+                description: String::from("Checks for equality"),
+                parameters: vec![PredicateParameter {
+                    type_: PredicateParameterType::Capture,
+                    arity: PredicateParameterArity::Required,
+                    description: None,
+                }, PredicateParameter {
+                    type_: PredicateParameterType::Any,
+                    arity: PredicateParameterArity::Required,
+                    description: None,
+                }],
+            })]),
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([(String::from("variable.builtin"), String::default())]))]),
+            ..Default::default()
+        },
+        &[Diagnostic {
+            range: Range {
+                start: Position { line: 1, character: 31 },
+                end: Position { line: 1, character: 48 },
+            },
+            severity: Some(DiagnosticSeverity::WARNING),
+            code: None,
+            code_description: None,
+            source: None,
+            message: String::from("Unexpected parameter: \"@variable.builtin\""),
+            related_information: None,
+            tags: None,
+            data: None,
+        }],
+    )]
+    #[case(
+        r#"((identifier) @variable.builtin
+(#set! @variable.builtin "self" "asdf" "bar"))"#,
+        &[SymbolInfo { label: String::from("identifier"), named: true }],
+        &["operator"],
+        &["supertype"],
+        &Options {
+            valid_predicates: Default::default(),
+            valid_directives: BTreeMap::from([(String::from("set"), Predicate {
+                description: String::from("Checks for equality"),
+                parameters: vec![PredicateParameter {
+                    type_: PredicateParameterType::Capture,
+                    arity: PredicateParameterArity::Required,
+                    description: None,
+                }, PredicateParameter {
+                    type_: PredicateParameterType::String,
+                    arity: PredicateParameterArity::Varargs,
+                    description: None,
+                }],
+            })]),
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([(String::from("variable.builtin"), String::default())]))]),
+            ..Default::default()
+        },
+        &[],
+    )]
+    #[case(
+        r#"((identifier) @variable.builtin
+(#set! @variable.builtin "self" "asdf" "bar" @variable.builtin))"#,
+        &[SymbolInfo { label: String::from("identifier"), named: true }],
+        &["operator"],
+        &["supertype"],
+        &Options {
+            valid_predicates: Default::default(),
+            valid_directives: BTreeMap::from([(String::from("set"), Predicate {
+                description: String::from("Checks for equality"),
+                parameters: vec![PredicateParameter {
+                    type_: PredicateParameterType::Capture,
+                    arity: PredicateParameterArity::Required,
+                    description: None,
+                }, PredicateParameter {
+                    type_: PredicateParameterType::String,
+                    arity: PredicateParameterArity::Varargs,
+                    description: None,
+                }],
+            })]),
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([(String::from("variable.builtin"), String::default())]))]),
+            ..Default::default()
+        },
+        &[
+            Diagnostic {
+                range: Range {
+                    start: Position { line: 1, character: 45, },
+                    end: Position { line: 1, character: 62, },
+                },
+                severity: Some(DiagnosticSeverity::WARNING),
+                code: None,
+                code_description: None,
+                source: None,
+                message: String::from("Parameter type mismatch: expected \"string\", got \"capture\""),
+                related_information: None,
+                tags: None,
+                data: None,
+            },
+        ]
+    )]
+    #[case(
+        r#"((identifier) @variable.builtin
+(#set! @variable.builtin "self" "asdf" "bar" @variable.builtin))"#,
+        &[SymbolInfo { label: String::from("identifier"), named: true }],
+        &["operator"],
+        &["supertype"],
+        &Options {
+            valid_predicates: Default::default(),
+            valid_directives: BTreeMap::from([(String::from("set"), Predicate {
+                description: String::from("Checks for equality"),
+                parameters: vec![PredicateParameter {
+                    type_: PredicateParameterType::Capture,
+                    arity: PredicateParameterArity::Required,
+                    description: None,
+                }, PredicateParameter {
+                    type_: PredicateParameterType::Any,
+                    arity: PredicateParameterArity::Varargs,
+                    description: None,
+                }],
+            })]),
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([(String::from("variable.builtin"), String::default())]))]),
+            ..Default::default()
+        },
+        &[]
+    )]
+    #[case(
+        r#"((identifier) @variable.builtin
+(#set! @variable.builtin))"#,
+        &[SymbolInfo { label: String::from("identifier"), named: true }],
+        &["operator"],
+        &["supertype"],
+        &Options {
+            valid_predicates: Default::default(),
+            valid_directives: BTreeMap::from([(String::from("set"), Predicate {
+                description: String::from("Checks for equality"),
+                parameters: vec![PredicateParameter {
+                    type_: PredicateParameterType::Capture,
+                    arity: PredicateParameterArity::Required,
+                    description: None,
+                }, PredicateParameter {
+                    type_: PredicateParameterType::Any,
+                    arity: PredicateParameterArity::Varargs,
+                    description: None,
+                }],
+            })]),
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([(String::from("variable.builtin"), String::default())]))]),
+            ..Default::default()
+        },
+        &[]
+    )]
+    #[case(
+        r#"((identifier) @variable.builtin
+(#set! @variable.builtin))"#,
+        &[SymbolInfo { label: String::from("identifier"), named: true }],
+        &["operator"],
+        &["supertype"],
+        &Options {
+            valid_predicates: Default::default(),
+            valid_directives: BTreeMap::from([(String::from("set"), Predicate {
+                description: String::from("Checks for equality"),
+                parameters: vec![PredicateParameter {
+                    type_: PredicateParameterType::Capture,
+                    arity: PredicateParameterArity::Required,
+                    description: None,
+                }, PredicateParameter {
+                    type_: PredicateParameterType::Any,
+                    arity: PredicateParameterArity::Optional,
+                    description: None,
+                }],
+            })]),
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([(String::from("variable.builtin"), String::default())]))]),
+            ..Default::default()
+        },
+        &[]
+    )]
+    #[case(
+        r#"((identifier) @variable.builtin
+(#set! @variable.builtin "self"))"#,
+        &[SymbolInfo { label: String::from("identifier"), named: true }],
+        &["operator"],
+        &["supertype"],
+        &Options {
+            valid_predicates: Default::default(),
+            valid_directives: BTreeMap::from([(String::from("set"), Predicate {
+                description: String::from("Checks for equality"),
+                parameters: vec![PredicateParameter {
+                    type_: PredicateParameterType::Capture,
+                    arity: PredicateParameterArity::Required,
+                    description: None,
+                }, PredicateParameter {
+                    type_: PredicateParameterType::Any,
+                    arity: PredicateParameterArity::Optional,
+                    description: None,
+                }],
+            })]),
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([(String::from("variable.builtin"), String::default())]))]),
+            ..Default::default()
+        },
+        &[]
+    )]
+    #[case(
+        r#"((identifier) @variable.builtin
+(#set! @variable.builtin "self" "asdf"))"#,
+        &[SymbolInfo { label: String::from("identifier"), named: true }],
+        &["operator"],
+        &["supertype"],
+        &Options {
+            valid_predicates: Default::default(),
+            valid_directives: BTreeMap::from([(String::from("set"), Predicate {
+                description: String::from("Checks for equality"),
+                parameters: vec![PredicateParameter {
+                    type_: PredicateParameterType::Capture,
+                    arity: PredicateParameterArity::Required,
+                    description: None,
+                }, PredicateParameter {
+                    type_: PredicateParameterType::Any,
+                    arity: PredicateParameterArity::Optional,
+                    description: None,
+                }],
+            })]),
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([(String::from("variable.builtin"), String::default())]))]),
+            ..Default::default()
+        },
+        &[
+            Diagnostic {
+                range: Range {
+                    start: Position { line: 1, character: 32, },
+                    end: Position { line: 1, character: 38, },
+                },
+                severity: Some(DiagnosticSeverity::WARNING),
+                code: None,
+                code_description: None,
+                source: None,
+                message: String::from("Unexpected parameter: \"\"asdf\"\""),
+                related_information: None,
+                tags: None,
+                data: None,
+            },
+        ]
+    )]
+    #[case(
+        r#"((identifier) @variable.builtin
+(#sett! @variable.builtin "self" "asdf" "bar" @variable.builtin))"#,
+        &[SymbolInfo { label: String::from("identifier"), named: true }],
+        &["operator"],
+        &["supertype"],
+        &Options {
+            valid_predicates: Default::default(),
+            valid_directives: BTreeMap::from([(String::from("set"), Predicate {
+                description: String::from("Checks for equality"),
+                parameters: vec![PredicateParameter {
+                    type_: PredicateParameterType::Capture,
+                    arity: PredicateParameterArity::Required,
+                    description: None,
+                }, PredicateParameter {
+                    type_: PredicateParameterType::Any,
+                    arity: PredicateParameterArity::Varargs,
+                    description: None,
+                }],
+            })]),
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([(String::from("variable.builtin"), String::default())]))]),
+            ..Default::default()
+        },
+        &[
+            Diagnostic {
+                range: Range {
+                    start: Position { line: 1, character: 2, },
+                    end: Position { line: 1, character: 6, },
+                },
+                severity: Some(DiagnosticSeverity::WARNING),
+                code: None,
+                code_description: None,
+                source: None,
+                message: String::from("Unrecognized directive \"sett\""),
+                related_information: None,
+                tags: None,
+                data: None,
+            },
+        ]
     )]
     #[tokio::test(flavor = "current_thread")]
     async fn server_diagnostics(
@@ -337,7 +786,7 @@ mod test {
         #[case] symbols: &[SymbolInfo],
         #[case] fields: &[&str],
         #[case] supertypes: &[&str],
-        #[case] valid_captures: &[&str],
+        #[case] options: &Options,
         #[case] expected_diagnostics: &[Diagnostic],
     ) {
         // Arrange
@@ -354,11 +803,6 @@ mod test {
         .await;
         let rope = &service.inner().document_map.get(&TEST_URI).unwrap();
         let provider = &TextProviderRope(rope);
-        let binding = valid_captures
-            .iter()
-            .map(|s| (s.to_string(), Default::default()))
-            .collect();
-        let valid_captures = Some(&binding);
         let symbols = &HashSet::from_iter(symbols.iter().cloned());
         let fields = &HashSet::from_iter(fields.iter().map(|s| s.to_string()));
 
@@ -370,7 +814,8 @@ mod test {
             symbols,
             fields,
             &Default::default(),
-            valid_captures,
+            options,
+            &TEST_URI,
         );
 
         // Assert
