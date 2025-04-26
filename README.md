@@ -137,7 +137,7 @@ may only appear once, as the last parameter.
 Predicates are special because they can also accept two other properties: `not`
 (`boolean`, default `true`), and `any` (`boolean`, default `false`). `not` means
 that the predicate supports a `not-` prefixed version of itself, which acts as
-its negation, and `has` means that is supports a `any-` prefixed version of
+its negation, and `any` means that is supports an `any-` prefixed version of
 itself, which holds true if any of the nodes in a quantified capture hold true.
 If both properties are `true`, then there will be a predicate of the form
 `#not-any-foo?`.
