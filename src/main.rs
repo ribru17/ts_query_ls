@@ -3,7 +3,8 @@ use core::fmt;
 use rayon::iter::{IntoParallelRefIterator as _, ParallelIterator as _};
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
-    env, fs,
+    env,
+    fs::{self},
     path::{Path, PathBuf},
     sync::{Arc, LazyLock, RwLock, atomic::AtomicI32},
 };
@@ -16,20 +17,21 @@ use tower_lsp::{
     Client, LanguageServer, LspService, Server,
     jsonrpc::Result,
     lsp_types::{
-        CompletionOptions, CompletionParams, CompletionResponse, DidChangeConfigurationParams,
-        DidChangeTextDocumentParams, DidOpenTextDocumentParams, DocumentFormattingParams,
-        DocumentHighlight, DocumentHighlightParams, DocumentSymbolParams, DocumentSymbolResponse,
-        GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams, HoverProviderCapability,
-        InitializeParams, InitializeResult, Location, OneOf, ReferenceParams, RenameParams,
-        SemanticTokenModifier, SemanticTokenType, SemanticTokensFullOptions, SemanticTokensLegend,
-        SemanticTokensOptions, SemanticTokensParams, SemanticTokensResult,
-        SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentSyncCapability,
-        TextDocumentSyncKind, TextEdit, Url, WorkspaceEdit,
+        CompletionOptions, CompletionParams, CompletionResponse, DiagnosticSeverity,
+        DidChangeConfigurationParams, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
+        DocumentFormattingParams, DocumentHighlight, DocumentHighlightParams, DocumentSymbolParams,
+        DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams,
+        HoverProviderCapability, InitializeParams, InitializeResult, Location, OneOf,
+        ReferenceParams, RenameParams, SemanticTokenModifier, SemanticTokenType,
+        SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
+        SemanticTokensParams, SemanticTokensResult, SemanticTokensServerCapabilities,
+        ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
+        WorkspaceEdit,
     },
 };
 use tree_sitter::{Language, Query, QueryErrorKind, Tree, wasmtime::Engine};
 
-use handlers::*;
+use handlers::{diagnostic::get_diagnostics, *};
 
 mod handlers;
 mod test_helpers;
@@ -283,6 +285,46 @@ fn check_directories(directories: &[PathBuf], config: String) -> i32 {
                         _ => {
                             eprintln!("In {:?}:\n{}\n", path.canonicalize().unwrap(), err);
                             exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                    }
+                } else {
+                    let mut parser = tree_sitter::Parser::new();
+                    parser
+                        .set_language(&QUERY_LANGUAGE)
+                        .expect("Error loading Query grammar");
+                    let tree = parser.parse(source.as_str(), None).unwrap();
+                    let rope = Rope::from(source);
+                    let provider = &util::TextProviderRope(&rope);
+                    let diagnostics = get_diagnostics(
+                        &tree,
+                        &rope,
+                        provider,
+                        // The query construction already validates node names, fields, supertypes,
+                        // etc.
+                        &Default::default(),
+                        &Default::default(),
+                        &Default::default(),
+                        &options,
+                        &uri,
+                    );
+                    if !diagnostics.is_empty() {
+                        exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
+                        for diagnostic in diagnostics {
+                            let kind = match diagnostic.severity {
+                                Some(DiagnosticSeverity::ERROR) => "Error",
+                                Some(DiagnosticSeverity::WARNING) => "Warning",
+                                Some(DiagnosticSeverity::INFORMATION) => "Info",
+                                Some(DiagnosticSeverity::HINT) => "Hint",
+                                _ => "Diagnostic",
+                            };
+                            eprintln!(
+                                "{} in \"{}\" on line {}, col {}:\n  {}",
+                                kind,
+                                path.to_str().unwrap(),
+                                diagnostic.range.start.line,
+                                diagnostic.range.start.character,
+                                diagnostic.message
+                            );
                         }
                     }
                 }
