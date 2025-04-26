@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// Configuration options for the language server.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default, JsonSchema, Clone)]
 pub struct Options {
     /// A list of strings representing directories to search for parsers, of the form
     /// `<lang>.(so|dll|dylib)` or `tree-sitter-<lang>.wasm`.
@@ -38,7 +38,7 @@ pub struct Options {
 }
 
 /// A type specification for a predicate (or directive).
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default, JsonSchema, Clone)]
 pub struct Predicate {
     /// A short description of the predicate (in Markdown format).
     pub description: String,
@@ -51,7 +51,7 @@ pub struct Predicate {
 ///
 /// Parameters can be one or both of two types (a capture or a string), and can be required,
 /// optional, or "varargs" (there can be zero-to-many of them).
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, JsonSchema, Clone)]
 pub struct PredicateParameter {
     /// An optional description of this parameter.
     pub description: Option<String>,
@@ -65,7 +65,7 @@ pub struct PredicateParameter {
 }
 
 /// The type of the predicate parameter.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, JsonSchema, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum PredicateParameterType {
     /// Must be a capture (e.g. `@variable`).
@@ -87,7 +87,7 @@ impl Display for PredicateParameterType {
 }
 
 /// The arity of the predicate parameter.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, JsonSchema, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum PredicateParameterArity {
     /// A regular, required parameter.

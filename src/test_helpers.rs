@@ -4,7 +4,7 @@ pub mod helpers {
     use serde_json::to_value;
 
     use std::{
-        collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+        collections::{BTreeSet, HashMap, HashSet},
         sync::{Arc, LazyLock},
     };
     use tower::{Service, ServiceExt};
@@ -76,24 +76,13 @@ pub mod helpers {
     /// Initialize a test server, populating it with fake documents denoted by (uri, text, symbols, fields) tuples.
     pub async fn initialize_server(
         documents: &[Document<'_>],
-        valid_captures: Option<BTreeMap<String, String>>,
+        options: &Options,
     ) -> LspService<Backend> {
         let mut parser = Parser::new();
         parser
             .set_language(&QUERY_LANGUAGE)
             .expect("Error loading Query grammar");
-        let valid_captures = if let Some(caps) = valid_captures {
-            HashMap::from([(
-                String::from("test"),
-                BTreeMap::from_iter(caps.iter().map(|(name, desc)| (name.clone(), desc.clone()))),
-            )])
-        } else {
-            HashMap::new()
-        };
-        let options = Arc::new(tokio::sync::RwLock::new(Options {
-            valid_captures,
-            ..Default::default()
-        }));
+        let options = Arc::new(tokio::sync::RwLock::new(options.clone()));
         let (mut service, _socket) = LspService::build(|client| Backend {
             client,
             document_map: DashMap::from_iter(
@@ -256,7 +245,11 @@ pub mod helpers {
 
 #[cfg(test)]
 mod test {
-    use std::collections::BTreeMap;
+    use std::{
+        collections::{BTreeMap, HashMap},
+        ops::Deref,
+    };
+    use ts_query_ls::Options;
 
     use pretty_assertions::assert_eq;
     use rstest::rstest;
@@ -271,7 +264,7 @@ mod test {
     use super::helpers::Document;
 
     #[rstest]
-    #[case(&[], None)]
+    #[case(&[], &Default::default())]
     #[case(&[(
         TEST_URI.clone(),
         SIMPLE_FILE.clone(),
@@ -291,18 +284,23 @@ mod test {
         ],
         vec!["type"],
     )],
-        Some(BTreeMap::from([(String::from("variable"), String::from("A common variable"))])),
+        &Options {
+            valid_captures: HashMap::from([(String::from("test"), BTreeMap::from([(String::from("variable"), String::from("A common variable"))]))]),
+            ..Default::default()
+        }
     )]
     #[tokio::test(flavor = "current_thread")]
     async fn initialize_server_helper(
         #[case] documents: &[Document<'_>],
-        #[case] valid_captures: Option<BTreeMap<String, String>>,
+        #[case] options: &Options,
     ) {
         // Act
-        let service = initialize_server(documents, valid_captures.clone()).await;
+        let service = initialize_server(documents, options).await;
 
         // Assert
         let backend = service.inner();
+        let actual_options = backend.options.read().await;
+        assert_eq!(actual_options.deref(), options);
         assert_eq!(backend.document_map.len(), documents.len());
         assert_eq!(backend.cst_map.len(), documents.len());
         assert_eq!(backend.symbols_vec_map.len(), documents.len());
@@ -380,20 +378,6 @@ mod test {
                             label: String::from(*supertype)
                         })
                 )
-            }
-            let options = backend.options.read().await;
-            if let Some(ref valid_captures) = valid_captures {
-                assert_eq!(
-                    options.valid_captures.get("test"),
-                    Some(BTreeMap::from_iter(
-                        valid_captures
-                            .iter()
-                            .map(|(name, desc)| (name.clone(), desc.clone()))
-                    ))
-                    .as_ref()
-                );
-            } else {
-                assert_eq!(options.valid_captures, Default::default());
             }
         }
     }

@@ -137,7 +137,9 @@ For example, this pattern would match any node inside a call:
 
 #[cfg(test)]
 mod test {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, HashMap};
+
+    use ts_query_ls::Options;
 
     use pretty_assertions::assert_eq;
     use rstest::rstest;
@@ -264,7 +266,10 @@ An error node", BTreeMap::from([(String::from("error"), String::from("An error n
         // Arrange
         let mut service = initialize_server(
             &[(TEST_URI.clone(), source, Vec::new(), Vec::new(), supertypes)],
-            Some(captures),
+            &Options {
+                valid_captures: HashMap::from([(String::from("test"), captures)]),
+                ..Default::default()
+            },
         )
         .await;
 
