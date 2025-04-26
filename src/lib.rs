@@ -7,6 +7,94 @@ use std::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 
+/// A type specification for a predicate.
+#[derive(Clone, Debug, PartialEq, Eq, Default, JsonSchema, Serialize, Deserialize)]
+struct PredicateAux {
+    /// A short description of the predicate (in Markdown format).
+    description: String,
+    /// The list of valid parameter types.
+    #[schemars(length(min = 1))]
+    parameters: Vec<PredicateParameter>,
+    /// Whether this predicate supports a `not-` prefixed variant. Defaults to `true`.
+    #[serde(default = "default_true")]
+    not: bool,
+    /// Whether this predicate supports a `any-` prefixed variant. Defaults to `false`.
+    #[serde(default)]
+    any: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn add_prefixes<'de, D>(deserializer: D) -> Result<BTreeMap<String, Predicate>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = BTreeMap::<String, PredicateAux>::deserialize(deserializer)?;
+    let mut valid_predicates = BTreeMap::new();
+    for (name, pred) in raw {
+        valid_predicates.insert(
+            name.clone(),
+            PredicateAux {
+                description: pred.description.clone(),
+                parameters: pred.parameters.clone(),
+                not: pred.not,
+                any: false,
+            },
+        );
+        if pred.any {
+            let description = format!(
+                "Like `#{name}?`, but for quantified patterns only one captured node must match. `#{name}?` is defined as follows:\n\n{}",
+                pred.description
+            );
+            valid_predicates.insert(
+                format!("any-{name}"),
+                PredicateAux {
+                    description,
+                    parameters: pred.parameters,
+                    not: pred.not,
+                    any: false,
+                },
+            );
+        }
+    }
+    Ok(valid_predicates
+        .into_iter()
+        .flat_map(|(name, pred)| {
+            let it = if !pred.not {
+                vec![(
+                    name,
+                    Predicate {
+                        description: pred.description,
+                        parameters: pred.parameters,
+                    },
+                )]
+            } else {
+                let pref_name = format!("not-{name}");
+                let pref_pred = Predicate {
+                    parameters: pred.parameters.clone(),
+                    description: format!(
+                        "The inverse of `#{name}?`, which is defined as follows:\n\n{}",
+                        pred.description
+                    ),
+                };
+                vec![
+                    (
+                        name,
+                        Predicate {
+                            description: pred.description,
+                            parameters: pred.parameters,
+                        },
+                    ),
+                    (pref_name, pref_pred),
+                ]
+            };
+            it.into_iter()
+        })
+        .collect())
+}
+
 /// Configuration options for the language server.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default, JsonSchema, Clone)]
 pub struct Options {
@@ -30,14 +118,20 @@ pub struct Options {
     #[serde(default)]
     pub valid_captures: HashMap<String, BTreeMap<String, String>>,
     /// A map of predicate names (sans `#` and `?`) to parameter specifications.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "add_prefixes")]
+    #[schemars(schema_with = "prefixes_schema")]
     pub valid_predicates: BTreeMap<String, Predicate>,
     /// A map of directive names (sans `#` and `!`) to parameter specifications.
     #[serde(default)]
     pub valid_directives: BTreeMap<String, Predicate>,
 }
 
-/// A type specification for a predicate (or directive).
+fn prefixes_schema(gen_: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    let raw = <BTreeMap<String, PredicateAux>>::json_schema(gen_).into_object();
+    raw.into()
+}
+
+/// A type specification for a directive.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default, JsonSchema, Clone)]
 pub struct Predicate {
     /// A short description of the predicate (in Markdown format).

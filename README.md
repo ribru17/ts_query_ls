@@ -36,7 +36,8 @@ its ancestor directories. Below is an example file:
           "arity": "required"
         }
       ],
-      "description": "Checks for equality between two nodes, or a node and a string."
+      "description": "Checks for equality between two nodes, or a node and a string.",
+      "any": true
     }
   }
 }
@@ -132,6 +133,14 @@ may only appear once, as the last parameter.
   }
 }
 ```
+
+Predicates are special because they can also accept two other properties: `not`
+(`boolean`, default `true`), and `any` (`boolean`, default `false`). `not` means
+that the predicate supports a `not-` prefixed version of itself, which acts as
+its negation, and `has` means that is supports a `any-` prefixed version of
+itself, which holds true if any of the nodes in a quantified capture hold true.
+If both properties are `true`, then there will be a predicate of the form
+`#not-any-foo?`.
 
 ### `valid_directives`
 

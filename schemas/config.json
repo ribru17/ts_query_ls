@@ -52,13 +52,13 @@
       "default": {},
       "type": "object",
       "additionalProperties": {
-        "$ref": "#/definitions/Predicate"
+        "$ref": "#/definitions/PredicateAux"
       }
     }
   },
   "definitions": {
     "Predicate": {
-      "description": "A type specification for a predicate (or directive).",
+      "description": "A type specification for a directive.",
       "type": "object",
       "required": [
         "description",
@@ -68,6 +68,38 @@
         "description": {
           "description": "A short description of the predicate (in Markdown format).",
           "type": "string"
+        },
+        "parameters": {
+          "description": "The list of valid parameter types.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PredicateParameter"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "PredicateAux": {
+      "description": "A type specification for a predicate.",
+      "type": "object",
+      "required": [
+        "description",
+        "parameters"
+      ],
+      "properties": {
+        "any": {
+          "description": "Whether this predicate supports a `any-` prefixed variant. Defaults to `false`.",
+          "default": false,
+          "type": "boolean"
+        },
+        "description": {
+          "description": "A short description of the predicate (in Markdown format).",
+          "type": "string"
+        },
+        "not": {
+          "description": "Whether this predicate supports a `not-` prefixed variant. Defaults to `true`.",
+          "default": true,
+          "type": "boolean"
         },
         "parameters": {
           "description": "The list of valid parameter types.",
