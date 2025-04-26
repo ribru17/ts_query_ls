@@ -145,7 +145,7 @@ mod test {
         // Arrange
         let mut service = initialize_server(
             &[(TEST_URI.clone(), source, Vec::new(), Vec::new(), Vec::new())],
-            None,
+            &Default::default(),
         )
         .await;
 

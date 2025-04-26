@@ -4,10 +4,11 @@ use streaming_iterator::StreamingIterator;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
     CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, CompletionTextEdit,
-    Documentation, MarkupContent, MarkupKind, Range, TextEdit,
+    Documentation, InsertTextFormat, MarkupContent, MarkupKind, Range, TextEdit,
 };
 use tracing::warn;
 use tree_sitter::QueryCursor;
+use ts_query_ls::{PredicateParameterArity, PredicateParameterType};
 
 use crate::util::{
     CAPTURES_QUERY, NodeUtil, TextProviderRope, ToTsPoint, get_current_capture_node,
@@ -50,6 +51,7 @@ pub async fn completion(
     // Subtype completions
     if params
         .context
+        .as_ref()
         .is_some_and(|ctx| ctx.trigger_character == Some("/".to_string()))
         || current_node
             .prev_sibling()
@@ -74,6 +76,74 @@ pub async fn completion(
             ))
         };
         return Ok(response());
+    }
+
+    // Predicates and directives completions
+    let cursor_after_hashtag = lsp_position_to_byte_offset(position, rope)
+        .and_then(|b| rope.try_byte_to_char(b))
+        .is_ok_and(|c| rope.char(c) == '#');
+    if cursor_after_hashtag
+        || current_node
+            .prev_sibling()
+            .is_some_and(|sib| sib.kind() == "#")
+    {
+        let options = backend.options.read().await;
+        let predicates = &options.valid_predicates;
+        let directives = &options.valid_directives;
+        let range = if cursor_after_hashtag {
+            Range {
+                start: position,
+                end: params.text_document_position.position,
+            }
+        } else {
+            current_node.parent().unwrap().lsp_range(rope)
+        };
+        let completions = predicates
+            .iter()
+            .map(|(name, pred)| (true, name, pred))
+            .chain(directives.iter().map(|(name, pred)| (false, name, pred)))
+            .map(|(is_pred, name, predicate)| {
+                let label = if is_pred {
+                    format!("#{name}?")
+                } else {
+                    format!("#{name}!")
+                };
+                CompletionItem {
+                    label: label.clone(),
+                    documentation: Some(Documentation::MarkupContent(MarkupContent {
+                        kind: MarkupKind::Markdown,
+                        value: predicate.description.clone(),
+                    })),
+                    kind: Some(CompletionItemKind::FUNCTION),
+                    insert_text_format: Some(InsertTextFormat::SNIPPET),
+                    text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+                        range,
+                        new_text: format!(
+                            "{label} {}",
+                            predicate
+                                .parameters
+                                .iter()
+                                .enumerate()
+                                .filter_map(|(i, param)| {
+                                    let i = i + 1;
+                                    if param.arity == PredicateParameterArity::Required {
+                                        Some(if param.type_ == PredicateParameterType::Capture {
+                                            format!("${{{i}:@capture}}")
+                                        } else {
+                                            format!("${{{i}:text}}")
+                                        })
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        ),
+                    })),
+                    ..Default::default()
+                }
+            });
+        return Ok(Some(CompletionResponse::Array(completions.collect())));
     }
 
     let mut completion_items = vec![];
@@ -213,16 +283,19 @@ pub async fn completion(
 
 #[cfg(test)]
 mod test {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, HashMap};
 
     use pretty_assertions::assert_eq;
     use rstest::rstest;
     use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
         CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse,
-        CompletionTextEdit, MarkupContent, MarkupKind, PartialResultParams, Position, Range,
-        TextDocumentIdentifier, TextDocumentPositionParams, TextEdit, WorkDoneProgressParams,
-        request::Completion,
+        CompletionTextEdit, InsertTextFormat, MarkupContent, MarkupKind, PartialResultParams,
+        Position, Range, TextDocumentIdentifier, TextDocumentPositionParams, TextEdit,
+        WorkDoneProgressParams, request::Completion,
+    };
+    use ts_query_ls::{
+        Options, Predicate, PredicateParameter, PredicateParameterArity, PredicateParameterType,
     };
 
     use crate::{
@@ -241,7 +314,7 @@ mod test {
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
-        None,
+        &Default::default(),
         &[CompletionItem {
             label: String::from("@constant"),
             kind: Some(CompletionItemKind::VARIABLE),
@@ -262,7 +335,7 @@ mod test {
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
-        None,
+        &Default::default(),
         &[
             CompletionItem {
                 label: String::from("identifier"),
@@ -290,7 +363,7 @@ mod test {
         &[SymbolInfo { label: String::from("constant"), named: true }],
         &["operator"],
         &["supertype"],
-        None,
+        &Default::default(),
         &[]
     )]
     #[case(
@@ -299,7 +372,7 @@ mod test {
         &[SymbolInfo { label: String::from("constant"), named: true }],
         &["operator"],
         &["supertype"],
-        None,
+        &Default::default(),
         &[
             CompletionItem {
                 label: String::from("test"),
@@ -319,7 +392,9 @@ mod test {
         &[SymbolInfo { label: String::from("constant"), named: true }],
         &["operator"],
         &["supertype"],
-        Some(BTreeMap::from([(String::from("constant"), String::from("a constant"))])),
+        &Options { valid_captures: HashMap::from([(String::from("test"),
+            BTreeMap::from([(String::from("constant"), String::from("a constant"))]))]),
+            ..Default::default() },
         &[
             CompletionItem {
                 label: String::from("@constant"),
@@ -341,7 +416,9 @@ mod test {
         &[SymbolInfo { label: String::from("constant"), named: true }],
         &["operator"],
         &["supertype"],
-        Some(BTreeMap::from([(String::from("constant"), String::from("a constant"))])),
+        &Options { valid_captures: HashMap::from([(String::from("test"),
+            BTreeMap::from([(String::from("constant"), String::from("a constant"))]))]),
+            ..Default::default() },
         &[
             CompletionItem {
                 label: String::from("@constant"),
@@ -363,7 +440,9 @@ mod test {
         &[SymbolInfo { label: String::from("constant"), named: true }],
         &["operator"],
         &["supertype"],
-        Some(BTreeMap::from([(String::from("constant"), String::from("a constant"))])),
+        &Options { valid_captures: HashMap::from([(String::from("test"),
+            BTreeMap::from([(String::from("constant"), String::from("a constant"))]))]),
+            ..Default::default() },
         &[
             CompletionItem {
                 label: String::from("@constant"),
@@ -381,7 +460,9 @@ mod test {
         &[SymbolInfo { label: String::from("constant"), named: true }],
         &["operator"],
         &["supertype"],
-        Some(BTreeMap::from([(String::from("constant"), String::from("a constant"))])),
+        &Options { valid_captures: HashMap::from([(String::from("test"),
+            BTreeMap::from([(String::from("constant"), String::from("a constant"))]))]),
+            ..Default::default() },
         &[
             CompletionItem {
                 label: String::from("@constant"),
@@ -393,6 +474,76 @@ mod test {
             },
         ]
     )]
+    #[case(
+        r"( (constant) @constant (#) ) ",
+        Position { line: 0, character: 25 },
+        &[SymbolInfo { label: String::from("constant"), named: true }],
+        &["operator"],
+        &["supertype"],
+        &Options {
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([(String::from("constant"), String::from("a constant"))]))]),
+            valid_predicates: BTreeMap::from([
+                (String::from("eq"), Predicate {
+                    description: String::from("Equality check"),
+                    parameters: vec![PredicateParameter {
+                        type_: PredicateParameterType::Capture,
+                        arity: PredicateParameterArity::Required,
+                        description: None,
+                    }, PredicateParameter {
+                        type_: PredicateParameterType::Any,
+                        arity: PredicateParameterArity::Required,
+                        description: None,
+                    }]
+                })
+            ]),
+            valid_directives: BTreeMap::from([
+                (String::from("set"), Predicate {
+                    description: String::from("Set metadata"),
+                    parameters: vec![PredicateParameter {
+                        type_: PredicateParameterType::Any,
+                        arity: PredicateParameterArity::Required,
+                        description: None,
+                    }, PredicateParameter {
+                        type_: PredicateParameterType::String,
+                        arity: PredicateParameterArity::Required,
+                        description: None,
+                    }, PredicateParameter {
+                        type_: PredicateParameterType::String,
+                        arity: PredicateParameterArity::Optional,
+                        description: None,
+                    }]
+                })
+            ]),
+            ..Default::default()
+        },
+        &[
+            CompletionItem {
+                label: String::from("#eq?"),
+                kind: Some(CompletionItemKind::FUNCTION),
+                documentation:
+                    Some(tower_lsp::lsp_types::Documentation::MarkupContent(MarkupContent { kind:
+                        MarkupKind::Markdown, value: String::from("Equality check") })),
+                insert_text_format: Some(InsertTextFormat::SNIPPET),
+                text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+                    range: Range { start: Position { line: 0, character: 24 }, end: Position { line: 0, character: 25 } },
+                    new_text: String::from("#eq? ${1:@capture} ${2:text}") })),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("#set!"),
+                kind: Some(CompletionItemKind::FUNCTION),
+                documentation:
+                    Some(tower_lsp::lsp_types::Documentation::MarkupContent(MarkupContent { kind:
+                        MarkupKind::Markdown, value: String::from("Set metadata") })),
+                insert_text_format: Some(InsertTextFormat::SNIPPET),
+                text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+                    range: Range { start: Position { line: 0, character: 24 }, end: Position { line: 0, character: 25 } },
+                    new_text: String::from("#set! ${1:text} ${2:text}") })),
+                ..Default::default()
+            },
+        ]
+    )]
     #[tokio::test(flavor = "current_thread")]
     async fn server_completions(
         #[case] source: &str,
@@ -400,7 +551,7 @@ mod test {
         #[case] symbols: &[SymbolInfo],
         #[case] fields: &[&str],
         #[case] supertypes: &[&str],
-        #[case] valid_captures: Option<BTreeMap<String, String>>,
+        #[case] options: &Options,
         #[case] expected_completions: &[CompletionItem],
     ) {
         // Arrange
@@ -412,7 +563,7 @@ mod test {
                 fields.to_vec(),
                 supertypes.to_vec(),
             )],
-            valid_captures,
+            options,
         )
         .await;
 

@@ -196,7 +196,7 @@ expression: (boolean) @boolean",
         // Arrange
         let mut service = initialize_server(
             &[(TEST_URI.clone(), input, Vec::new(), Vec::new(), Vec::new())],
-            None,
+            &Default::default(),
         )
         .await;
 

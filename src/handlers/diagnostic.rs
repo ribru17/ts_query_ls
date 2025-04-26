@@ -798,7 +798,7 @@ mod test {
                 fields.to_vec(),
                 supertypes.to_vec(),
             )],
-            None,
+            &Default::default(),
         )
         .await;
         let rope = &service.inner().document_map.get(&TEST_URI).unwrap();

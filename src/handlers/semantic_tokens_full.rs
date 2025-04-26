@@ -117,7 +117,7 @@ mod test {
                 Vec::new(),
                 vec!["supertype"],
             )],
-            None,
+            &Default::default(),
         )
         .await;
 

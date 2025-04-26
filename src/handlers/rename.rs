@@ -149,7 +149,7 @@ mod test {
                 Vec::new(),
                 Vec::new(),
             )],
-            None,
+            &Default::default(),
         )
         .await;
 
