@@ -50,7 +50,7 @@ pub struct Predicate {
 /// A parameter type reference.
 ///
 /// Parameters can be one or both of two types (a capture or a string), and can be required,
-/// optional, or "varargs" (there can be zero-to-many of them).
+/// optional, or "variadic" (there can be zero-to-many of them).
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, JsonSchema, Clone)]
 pub struct PredicateParameter {
     /// An optional description of this parameter.
@@ -59,7 +59,7 @@ pub struct PredicateParameter {
     /// string).
     #[serde(rename = "type")]
     pub type_: PredicateParameterType,
-    /// The arity of the predicate parameter. Must be `"required"`, `"optional"`, or `"varargs"`.
+    /// The arity of the predicate parameter. Must be `"required"`, `"optional"`, or `"variadic"`.
     #[serde(default)]
     pub arity: PredicateParameterArity,
 }
@@ -95,7 +95,17 @@ pub enum PredicateParameterArity {
     /// A parameter which can be omitted. Must only be followed by other optional parameters.
     Optional,
     /// A parameter which can appear zero-to-many times. Must be the last parameter if present.
-    Varargs,
+    Variadic,
+}
+
+impl Display for PredicateParameterArity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Required => write!(f, "required"),
+            Self::Optional => write!(f, "optional"),
+            Self::Variadic => write!(f, "variadic"),
+        }
+    }
 }
 
 impl Default for PredicateParameterArity {

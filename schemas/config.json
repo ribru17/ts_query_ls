@@ -80,14 +80,14 @@
       }
     },
     "PredicateParameter": {
-      "description": "A parameter type reference.\n\nParameters can be one or both of two types (a capture or a string), and can be required, optional, or \"varargs\" (there can be zero-to-many of them).",
+      "description": "A parameter type reference.\n\nParameters can be one or both of two types (a capture or a string), and can be required, optional, or \"variadic\" (there can be zero-to-many of them).",
       "type": "object",
       "required": [
         "type"
       ],
       "properties": {
         "arity": {
-          "description": "The arity of the predicate parameter. Must be `\"required\"`, `\"optional\"`, or `\"varargs\"`.",
+          "description": "The arity of the predicate parameter. Must be `\"required\"`, `\"optional\"`, or `\"variadic\"`.",
           "default": "required",
           "allOf": [
             {
@@ -133,7 +133,7 @@
           "description": "A parameter which can appear zero-to-many times. Must be the last parameter if present.",
           "type": "string",
           "enum": [
-            "varargs"
+            "variadic"
           ]
         }
       ]
