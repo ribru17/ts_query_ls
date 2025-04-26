@@ -180,12 +180,6 @@ struct Arguments {
     commands: Option<Commands>,
 }
 
-#[derive(clap::ValueEnum, Clone, Debug)]
-enum Mode {
-    Check,
-    Write,
-}
-
 #[derive(Subcommand)]
 enum Commands {
     /// Format the query files in the given directories
@@ -193,9 +187,9 @@ enum Commands {
         /// List of directories to format
         directories: Vec<PathBuf>,
 
-        /// Operation to perform on files
+        /// Only check that formatting is valid, do not write
         #[arg(long, short)]
-        mode: Mode,
+        check: bool,
     },
     /// Check the query files in the given directories for errors
     Check {
@@ -223,10 +217,15 @@ fn get_scm_files(directories: &[PathBuf]) -> Vec<PathBuf> {
         .collect()
 }
 
-fn format_directories(directories: &[PathBuf], mode: Mode) -> i32 {
-    let scm_files = get_scm_files(directories);
+fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
+    if directories.is_empty() {
+        eprintln!("No directories were specified to be formatted. No work was done.");
+        return 1;
+    }
 
+    let scm_files = get_scm_files(directories);
     let exit_code = AtomicI32::new(0);
+
     scm_files.par_iter().for_each(|path| {
         if let Ok(contents) = fs::read_to_string(path) {
             let mut parser = tree_sitter::Parser::new();
@@ -238,23 +237,18 @@ fn format_directories(directories: &[PathBuf], mode: Mode) -> i32 {
             if let Some(formatted) = formatting::format_document(&rope, &tree) {
                 // Add newline at EOF
                 let formatted = formatted + "\n";
-                match mode {
-                    Mode::Check => {
-                        let edits = formatting::diff(&contents, &formatted, &rope);
-                        if !edits.is_empty() {
-                            exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
-                            eprintln!(
-                                "Improper formatting detected for {:?}",
-                                path.canonicalize().unwrap()
-                            );
-                        }
+                if check {
+                    let edits = formatting::diff(&contents, &formatted, &rope);
+                    if !edits.is_empty() {
+                        exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
+                        eprintln!(
+                            "Improper formatting detected for {:?}",
+                            path.canonicalize().unwrap()
+                        );
                     }
-                    Mode::Write => {
-                        if fs::write(path, formatted).is_err() {
-                            exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
-                            eprint!("Failed to write to {:?}", path.canonicalize().unwrap())
-                        };
-                    }
+                } else if fs::write(path, formatted).is_err() {
+                    exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
+                    eprint!("Failed to write to {:?}", path.canonicalize().unwrap())
                 }
             }
         } else {
@@ -316,8 +310,8 @@ async fn main() {
 
     let args = Arguments::parse();
     match args.commands {
-        Some(Commands::Format { directories, mode }) => {
-            std::process::exit(format_directories(&directories, mode));
+        Some(Commands::Format { directories, check }) => {
+            std::process::exit(format_directories(&directories, check));
         }
         Some(Commands::Check {
             directories,
