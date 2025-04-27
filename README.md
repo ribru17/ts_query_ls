@@ -217,9 +217,10 @@ query scan to check for things like impossible query patterns.
 The command can accept a list of directories to search for queries, as well as a
 flag to pass JSON configuration to the server (needed to detect parser
 locations). If no configuration flag is passed, the command will attempt to read
-it from the `.tsqueryrc.json` configuration file in the current directory. If no
-directories are specified to be checked, then the command will search for all
-queries in the current directory.
+it from the `.tsqueryrc.json` configuration file in the current directory. The
+command also accepts a `--format` (`-f`) flag which instructs it to also check
+formatting for the given directories. If no directories are specified to be
+checked, then the command will search for all queries in the current directory.
 
 ```sh
 # use this command for the full documentation
