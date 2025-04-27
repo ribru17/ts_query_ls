@@ -17,12 +17,13 @@ use tower_lsp::{
     Client, LanguageServer, LspService, Server,
     jsonrpc::Result,
     lsp_types::{
-        CompletionOptions, CompletionParams, CompletionResponse, DiagnosticSeverity,
-        DidChangeConfigurationParams, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
-        DocumentFormattingParams, DocumentHighlight, DocumentHighlightParams, DocumentSymbolParams,
-        DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams,
-        HoverProviderCapability, InitializeParams, InitializeResult, Location, OneOf,
-        ReferenceParams, RenameParams, SemanticTokenModifier, SemanticTokenType,
+        CodeActionParams, CodeActionProviderCapability, CodeActionResponse, CompletionOptions,
+        CompletionParams, CompletionResponse, DiagnosticSeverity, DidChangeConfigurationParams,
+        DidChangeTextDocumentParams, DidOpenTextDocumentParams, DocumentFormattingParams,
+        DocumentHighlight, DocumentHighlightParams, DocumentSymbolParams, DocumentSymbolResponse,
+        ExecuteCommandOptions, ExecuteCommandParams, GotoDefinitionParams, GotoDefinitionResponse,
+        Hover, HoverParams, HoverProviderCapability, InitializeParams, InitializeResult, Location,
+        OneOf, ReferenceParams, RenameParams, SemanticTokenModifier, SemanticTokenType,
         SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
         SemanticTokensParams, SemanticTokensResult, SemanticTokensServerCapabilities,
         ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
@@ -68,6 +69,11 @@ static SERVER_CAPABILITIES: LazyLock<ServerCapabilities> = LazyLock::new(|| {
         )),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         document_symbol_provider: Some(OneOf::Left(true)),
+        code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
+        execute_command_provider: Some(ExecuteCommandOptions {
+            commands: vec!["ts-query-ls.checkImpossiblePatterns".to_string()],
+            ..Default::default()
+        }),
         ..Default::default()
     }
 });
@@ -168,6 +174,17 @@ impl LanguageServer for Backend {
         params: DocumentSymbolParams,
     ) -> Result<Option<DocumentSymbolResponse>> {
         document_symbol::document_symbol(self, params).await
+    }
+
+    async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
+        code_action::code_action(self, params).await
+    }
+
+    async fn execute_command(
+        &self,
+        params: ExecuteCommandParams,
+    ) -> Result<Option<serde_json::Value>> {
+        execute_command::execute_command(self, params).await
     }
 }
 
