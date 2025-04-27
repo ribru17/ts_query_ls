@@ -201,6 +201,10 @@ enum Commands {
         /// String representing server's JSON configuration
         #[arg(long, short)]
         config: Option<String>,
+
+        /// Check for valid formatting
+        #[arg(long, short)]
+        format: bool,
     },
 }
 
@@ -261,7 +265,7 @@ fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
     exit_code.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-fn check_directories(directories: &[PathBuf], config: String) -> i32 {
+fn check_directories(directories: &[PathBuf], config: String, format: bool) -> i32 {
     let Ok(options) = serde_json::from_str::<Options>(&config) else {
         eprintln!("Could not parse the provided configuration");
         return 1;
@@ -340,6 +344,9 @@ fn check_directories(directories: &[PathBuf], config: String) -> i32 {
             )
         };
     });
+    if format && format_directories(directories, true) != 0 {
+        exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
+    }
     exit_code.load(std::sync::atomic::Ordering::Relaxed)
 }
 
@@ -358,6 +365,7 @@ async fn main() {
         Some(Commands::Check {
             directories,
             config,
+            format,
         }) => {
             let config_str = match config {
                 Some(config_str) => config_str,
@@ -369,7 +377,7 @@ async fn main() {
                     })
                 }
             };
-            std::process::exit(check_directories(&directories, config_str));
+            std::process::exit(check_directories(&directories, config_str, format));
         }
         _ => {}
     }
