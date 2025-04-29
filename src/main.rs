@@ -210,7 +210,9 @@ enum Commands {
         #[arg(long, short)]
         check: bool,
     },
-    /// Check the query files in the given directories for errors
+    /// Check the query files in the given directories for errors. This will only check for query
+    /// parsing errors. Pass the `--lint` flag to also check for lint warnings. See the `--lint`
+    /// flag description for more details.
     Check {
         /// List of directories to check
         directories: Vec<PathBuf>,
@@ -222,6 +224,23 @@ enum Commands {
         /// Check for valid formatting
         #[arg(long, short)]
         format: bool,
+
+        /// Check for lint warnings in addition to query errors. This catches things like invalid
+        /// capture names or predicate signatures (as defined by the configuration options).
+        #[arg(long, short)]
+        lint: bool,
+    },
+    /// Lint the query files in the given directories for errors. This differs from `check` because
+    /// it does not perform a full semantic analysis (e.g. analyzing for impossible patterns), but
+    /// it does validate that there are no invalid captures or predicates as specified by the
+    /// configuration options. Useful when you don't (yet?) have access to the parser objects.
+    Lint {
+        /// List of directories to lint
+        directories: Vec<PathBuf>,
+
+        /// String representing server's JSON configuration
+        #[arg(long, short)]
+        config: Option<String>,
     },
 }
 
@@ -282,7 +301,7 @@ fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
     exit_code.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-fn check_directories(directories: &[PathBuf], config: String, format: bool) -> i32 {
+fn check_directories(directories: &[PathBuf], config: String, format: bool, lint: bool) -> i32 {
     let Ok(options) = serde_json::from_str::<Options>(&config) else {
         eprintln!("Could not parse the provided configuration");
         return 1;
@@ -308,46 +327,9 @@ fn check_directories(directories: &[PathBuf], config: String, format: bool) -> i
                             exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
                         }
                     }
-                } else {
-                    let mut parser = tree_sitter::Parser::new();
-                    parser
-                        .set_language(&QUERY_LANGUAGE)
-                        .expect("Error loading Query grammar");
-                    let tree = parser.parse(source.as_str(), None).unwrap();
-                    let rope = Rope::from(source);
-                    let provider = &util::TextProviderRope(&rope);
-                    let diagnostics = get_diagnostics(
-                        &tree,
-                        &rope,
-                        provider,
-                        // The query construction already validates node names, fields, supertypes,
-                        // etc.
-                        &Default::default(),
-                        &Default::default(),
-                        &Default::default(),
-                        &options,
-                        &uri,
-                    );
-                    if !diagnostics.is_empty() {
-                        exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
-                        for diagnostic in diagnostics {
-                            let kind = match diagnostic.severity {
-                                Some(DiagnosticSeverity::ERROR) => "Error",
-                                Some(DiagnosticSeverity::WARNING) => "Warning",
-                                Some(DiagnosticSeverity::INFORMATION) => "Info",
-                                Some(DiagnosticSeverity::HINT) => "Hint",
-                                _ => "Diagnostic",
-                            };
-                            eprintln!(
-                                "{} in \"{}\" on line {}, col {}:\n  {}",
-                                kind,
-                                path.to_str().unwrap(),
-                                diagnostic.range.start.line,
-                                diagnostic.range.start.character,
-                                diagnostic.message
-                            );
-                        }
-                    }
+                }
+                if lint {
+                    lint_file(path, &uri, &source, &options, &exit_code);
                 }
             } else {
                 eprintln!("Failed to read {:?}", path.canonicalize().unwrap());
@@ -367,6 +349,90 @@ fn check_directories(directories: &[PathBuf], config: String, format: bool) -> i
     exit_code.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+fn lint_file(path: &Path, uri: &Url, source: &str, options: &Options, exit_code: &AtomicI32) {
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&QUERY_LANGUAGE)
+        .expect("Error loading Query grammar");
+    let tree = parser.parse(source, None).unwrap();
+    let rope = Rope::from(source);
+    let provider = &util::TextProviderRope(&rope);
+    let diagnostics = get_diagnostics(
+        &tree,
+        &rope,
+        provider,
+        // The query construction already validates node names, fields, supertypes,
+        // etc.
+        &Default::default(),
+        &Default::default(),
+        &Default::default(),
+        options,
+        uri,
+    );
+    if !diagnostics.is_empty() {
+        exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
+        for diagnostic in diagnostics {
+            let kind = match diagnostic.severity {
+                Some(DiagnosticSeverity::ERROR) => "Error",
+                Some(DiagnosticSeverity::WARNING) => "Warning",
+                Some(DiagnosticSeverity::INFORMATION) => "Info",
+                Some(DiagnosticSeverity::HINT) => "Hint",
+                _ => "Diagnostic",
+            };
+            eprintln!(
+                "{} in \"{}\" on line {}, col {}:\n  {}",
+                kind,
+                path.to_str().unwrap(),
+                diagnostic.range.start.line,
+                diagnostic.range.start.character,
+                diagnostic.message
+            );
+        }
+    }
+}
+
+/// Lint all the given directories according to the given configuration. Linting covers things like
+/// invalid capture names or predicate signatures, but not errors like invalid node names or
+/// impossible patterns.
+fn lint_directories(directories: &[PathBuf], config: String) -> i32 {
+    let Ok(options) = serde_json::from_str::<Options>(&config) else {
+        eprintln!("Could not parse the provided configuration");
+        return 1;
+    };
+    let exit_code = AtomicI32::new(0);
+    // If directories are not specified, lint all files in the current directory
+    let scm_files = if directories.is_empty() {
+        get_scm_files(&[env::current_dir().expect("Failed to get current directory")])
+    } else {
+        get_scm_files(directories)
+    };
+    scm_files.par_iter().for_each(|path| {
+        let uri = Url::from_file_path(path.canonicalize().unwrap()).unwrap();
+        if let Ok(source) = fs::read_to_string(path) {
+            lint_file(path, &uri, &source, &options, &exit_code);
+        } else {
+            eprintln!("Failed to read {:?}", path.canonicalize().unwrap());
+            exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    });
+    exit_code.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Return the given config string, or read it from a config file if not given. This function can
+/// exit the program.
+fn get_config_str(config: Option<String>) -> String {
+    match config {
+        Some(config_str) => config_str,
+        None => {
+            let config_file_path = Path::new(".tsqueryrc.json");
+            fs::read_to_string(config_file_path).unwrap_or_else(|_| {
+                eprintln!("No config parameter given, and no .tsqueryrc.json found");
+                std::process::exit(1);
+            })
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
@@ -383,20 +449,19 @@ async fn main() {
             directories,
             config,
             format,
+            lint,
         }) => {
-            let config_str = match config {
-                Some(config_str) => config_str,
-                None => {
-                    let config_file_path = Path::new(".tsqueryrc.json");
-                    fs::read_to_string(config_file_path).unwrap_or_else(|_| {
-                        eprintln!("No config parameter given, and no .tsqueryrc.json found");
-                        std::process::exit(1);
-                    })
-                }
-            };
-            std::process::exit(check_directories(&directories, config_str, format));
+            let config_str = get_config_str(config);
+            std::process::exit(check_directories(&directories, config_str, format, lint));
         }
-        _ => {}
+        Some(Commands::Lint {
+            directories,
+            config,
+        }) => {
+            let config_str = get_config_str(config);
+            std::process::exit(lint_directories(&directories, config_str))
+        }
+        None => {}
     }
 
     let stdin = tokio::io::stdin();
