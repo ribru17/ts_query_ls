@@ -201,10 +201,10 @@ the files.
 ts_query_ls format --help
 ```
 
-### Linter
+### CI Tool
 
-The formatter can also be used as standalone linter by passing the `check`
-argument, e.g:
+The language server can also be used as standalone CI tool by passing the
+`check` argument, e.g:
 
 ```sh
 ts_query_ls check ./queries --config \
@@ -212,7 +212,8 @@ ts_query_ls check ./queries --config \
 ```
 
 Note that unlike the live server diagnostics, the `check` command runs a full
-query scan to check for things like impossible query patterns.
+query scan to check for things like impossible query patterns. This will catch
+any errors that prevent a query from compiling.
 
 The command can accept a list of directories to search for queries, as well as a
 flag to pass JSON configuration to the server (needed to detect parser
@@ -222,9 +223,27 @@ command also accepts a `--format` (`-f`) flag which instructs it to also check
 formatting for the given directories. If no directories are specified to be
 checked, then the command will search for all queries in the current directory.
 
+> **NOTE:** This command will _not_ perform linting (checking capture names,
+> predicate signatures, etc.) unless passed the `--lint` flag.
+
 ```sh
 # use this command for the full documentation
 ts_query_ls check --help
+```
+
+### Linter
+
+The server can be used as a general linter which can operate without access to
+the underlying parser objects. The following command will lint the `queries`
+directory, meaning it will scan it for invalid capture names or invalid
+predicate signatures, as defined by the configuration. Configuration can be
+passed in via the `--config` flag, or it will be read from the current directory
+if no flag is passed.
+
+```sh
+ts_query_ls lint ./queries
+# Use this command for the full documentation
+ts_query_ls lint --help
 ```
 
 ## Checklist
