@@ -73,7 +73,7 @@ mod test {
     type DocSymbol = (String, Range, Range);
 
     #[rstest]
-    #[case(SIMPLE_FILE.clone(), vec![(
+    #[case(SIMPLE_FILE, vec![(
         String::from("@constant"),
         Range {
             start: Position {
