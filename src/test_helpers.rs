@@ -26,45 +26,14 @@ pub mod helpers {
         LazyLock::new(|| Url::parse("file:///tmp/test.scm").unwrap());
     pub static TEST_URI_2: LazyLock<Url> =
         LazyLock::new(|| Url::parse("file:///tmp/injections/test.scm").unwrap());
-    pub static SIMPLE_FILE: LazyLock<&str> = LazyLock::new(|| {
-        r"((identifier) @constant
- (#match? @constant @constant))
- ; @constant here"
-    });
-    pub static COMPLEX_FILE: LazyLock<&str> = LazyLock::new(|| {
-        r#"((comment) @injection.content
-  (#set! injection.language "comment"))
-
-; html(`...`), html`...`, sql(`...`), etc.
-(call_expression
-  function: (identifier) @injection.language
-  arguments: [
-    (arguments
-      (template_string) @injection.content)
-    (template_string) @injection.content
-  ]
-  (#lua-match? @injection.language "^[a-zA-Z][a-zA-Z0-9]*$")
-  (#offset! @injection.content 0 1 0 -1)
-  (#set! injection.include-children)
-  ; Languages excluded from auto-injection due to special rules
-  ; - svg uses the html parser
-  ; - css uses the styled parser
-  (#not-any-of? @injection.language "svg" "css")
-  (#not-any-of? @injection.content "test"))
-
-; svg`...` or svg(`...`)
-(call_expression
-  function: (identifier) @_name
-  (#eq? @_name "svg")
-  arguments: [
-    (arguments
-      (template_string) @injection.content)
-    (template_string) @injection.content
-  ]
-  (#offset! @injection.content 0 1 0 -1)
-  (#set! injection.include-children)
-  (#set! injection.language "html"))"#
-    });
+    pub const SIMPLE_FILE: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/queries/example_test_files/simple.scm"
+    ));
+    pub const COMPLEX_FILE: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/queries/example_test_files/complex.scm"
+    ));
 
     /// Always test with id of 1 for simplicity
     const ID: i64 = 1;
@@ -267,13 +236,13 @@ mod test {
     #[case(&[], &Default::default())]
     #[case(&[(
         TEST_URI.clone(),
-        SIMPLE_FILE.clone(),
+        SIMPLE_FILE,
         Vec::new(),
         Vec::new(),
         Vec::new(),
     ), (
         TEST_URI_2.clone(),
-        COMPLEX_FILE.clone(),
+        COMPLEX_FILE,
         vec![
             SymbolInfo { named: true, label: String::from("identifier") },
             SymbolInfo { named: false, label: String::from(";") }

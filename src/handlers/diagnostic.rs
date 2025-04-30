@@ -16,25 +16,10 @@ use crate::{
 static DIAGNOSTICS_QUERY: LazyLock<Query> = LazyLock::new(|| {
     Query::new(
         &QUERY_LANGUAGE,
-        r#"
-(ERROR) @error
-(MISSING) @missing
-(anonymous_node (string (string_content) @node.anon))
-(named_node . name: (identifier) @node.named)
-(named_node . supertype: (identifier) @supertype)
-(missing_node name: (identifier) @node.named)
-(missing_node name: (string (string_content) @node.anon))
-(field_definition name: (identifier) @field)
-(capture) @capture
-(predicate
-  name: (identifier) @predicate
-  (predicate_type) @_type
-  (#eq? @_type "?"))
-(predicate
-  name: (identifier) @directive
-  (predicate_type) @_type
-  (#eq? @_type "!"))
-"#,
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/queries/query/diagnostics.scm"
+        )),
     )
     .unwrap()
 });
