@@ -26,7 +26,7 @@ pub async fn semantic_tokens_full(
 ) -> Result<Option<SemanticTokensResult>> {
     let uri = &params.text_document.uri;
     let Some(doc) = backend.document_map.get(uri) else {
-        warn!("Could not find document for which to retrieve semantic tokens");
+        warn!("No document found for URI: {uri} when retrieving semantic tokens");
         return Ok(None);
     };
     let mut tokens = Vec::new();

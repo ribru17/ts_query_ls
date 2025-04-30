@@ -20,7 +20,7 @@ pub async fn goto_definition(
     info!("ts_query_ls goto_definition: {params:?}");
     let uri = &params.text_document_position_params.text_document.uri;
     let Some(doc) = backend.document_map.get(uri) else {
-        warn!("No document for URI: {uri:?}");
+        warn!("No document found for URI: {uri} when handling goto_definition");
         return Ok(None);
     };
     let rope = &doc.rope;

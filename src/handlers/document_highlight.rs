@@ -19,7 +19,7 @@ pub async fn document_highlight(
     let uri = &params.text_document_position_params.text_document.uri;
 
     let Some(doc) = backend.document_map.get(uri) else {
-        warn!("No document for URI: {uri:?}");
+        warn!("No document found for URI: {uri} when retrieving document highlights");
         return Ok(None);
     };
     let rope = &doc.rope;

@@ -15,7 +15,7 @@ pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hove
     let options = backend.options.read().await;
 
     let Some(doc) = backend.document_map.get(uri) else {
-        warn!("No document for uri: {uri}");
+        warn!("No document found for URI: {uri} when handling hover");
         return Ok(None);
     };
 

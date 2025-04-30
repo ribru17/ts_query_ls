@@ -9,6 +9,7 @@ use std::{
     str,
     sync::{Arc, LazyLock, RwLock, atomic::AtomicI32},
 };
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use ts_query_ls::Options;
 use walkdir::WalkDir;
 
@@ -34,8 +35,10 @@ use tower_lsp::{
 use tree_sitter::{Language, Query, QueryErrorKind, Tree, wasmtime::Engine};
 
 use handlers::{diagnostic::get_diagnostics, *};
+use logging::LspLogLayer;
 
 mod handlers;
+mod logging;
 mod test_helpers;
 mod util;
 
@@ -438,11 +441,6 @@ fn get_config_str(config: Option<String>) -> String {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_ansi(false)
-        .init();
-
     let args = Arguments::parse();
     match args.commands {
         Some(Commands::Format { directories, check }) => {
@@ -471,11 +469,16 @@ async fn main() {
     let stdout = tokio::io::stdout();
 
     let options = Arc::new(tokio::sync::RwLock::new(Options::default()));
-    let (service, socket) = LspService::build(|client| Backend {
-        client,
-        document_map: Default::default(),
-        workspace_uris: Default::default(),
-        options,
+    let (service, socket) = LspService::build(|client| {
+        let lsp_layer = LspLogLayer::new(client.clone());
+        tracing_subscriber::registry().with(lsp_layer).init();
+
+        Backend {
+            client,
+            document_map: Default::default(),
+            workspace_uris: Default::default(),
+            options,
+        }
     })
     .finish();
 

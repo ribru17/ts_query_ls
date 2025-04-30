@@ -25,7 +25,7 @@ static IDENTIFIER_PATTERN: LazyLock<Regex> =
 pub async fn rename(backend: &Backend, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
     let uri = &params.text_document_position.text_document.uri;
     let Some(doc) = backend.document_map.get(uri) else {
-        warn!("No document built for URI: {uri:?}");
+        warn!("No document found for URI: {uri} when handling rename");
         return Ok(None);
     };
     let rope = &doc.rope;
