@@ -642,4 +642,6 @@
 
 
 
-
+(normal_command
+   (identifier) @_function
+   (#match? @_function "\\c^list$"))

@@ -234,7 +234,9 @@ fn format_iter<'a>(
                 }
             } else if map.get("format.make-pound").unwrap().contains_key(id) {
                 lines.last_mut().unwrap().push('#');
-            } else if child.child_count() == 0 {
+            // Stop recursively formatting on leaf nodes (or strings, which should not have their
+            // inner content touched)
+            } else if child.child_count() == 0 || child.kind() == "string" {
                 let text = NEWLINES
                     .split(
                         CRLF.replace_all(child.text(rope).as_str(), "\n")

@@ -282,8 +282,6 @@ fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
             let tree = parser.parse(contents.as_str(), None).unwrap();
             let rope = Rope::from(contents.as_str());
             if let Some(formatted) = formatting::format_document(&rope, &tree) {
-                // Add newline at EOF
-                let formatted = formatted + "\n";
                 if check {
                     let edits = formatting::diff(&contents, &formatted, &rope);
                     if !edits.is_empty() {
