@@ -786,14 +786,15 @@ mod test {
             &Default::default(),
         )
         .await;
-        let rope = &service.inner().document_map.get(&TEST_URI).unwrap();
+        let doc = &service.inner().document_map.get(&TEST_URI).unwrap();
+        let rope = &doc.rope;
         let provider = &TextProviderRope(rope);
         let symbols = &HashSet::from_iter(symbols.iter().cloned());
         let fields = &HashSet::from_iter(fields.iter().map(|s| s.to_string()));
 
         // Act
         let diagnostics = get_diagnostics(
-            &service.inner().cst_map.get(&TEST_URI).unwrap(),
+            &doc.tree,
             rope,
             provider,
             symbols,

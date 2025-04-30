@@ -17,11 +17,12 @@ pub async fn document_symbol(
     let uri = &params.text_document.uri;
     let mut document_symbols = vec![];
 
-    let (Some(rope), Some(tree)) = (&backend.document_map.get(uri), backend.cst_map.get(uri))
-    else {
+    let Some(doc) = backend.document_map.get(uri) else {
         warn!("No document found for URI: {uri} when searching for document symbols.");
         return Ok(None);
     };
+    let rope = &doc.rope;
+    let tree = &doc.tree;
 
     let provider = &TextProviderRope(rope);
     let mut cursor = QueryCursor::new();

@@ -6,7 +6,7 @@ use tracing::info;
 use tree_sitter::Parser;
 
 use crate::{
-    Backend, QUERY_LANGUAGE, SymbolInfo,
+    Backend, DocumentData, QUERY_LANGUAGE, SymbolInfo,
     handlers::diagnostic::get_diagnostics,
     util::{TextProviderRope, get_language},
 };
@@ -20,10 +20,7 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     parser
         .set_language(&QUERY_LANGUAGE)
         .expect("Error loading Query grammar");
-    backend.document_map.insert(uri.clone(), rope.clone());
-    backend
-        .cst_map
-        .insert(uri.clone(), parser.parse(&contents, None).unwrap());
+    let tree = parser.parse(&contents, None).unwrap();
 
     // Initialize language info
     let mut symbols_vec: Vec<SymbolInfo> = vec![];
@@ -63,9 +60,7 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
                         .collect(),
                 );
             }
-            if symbols_set.contains(&symbol_info)
-                || !(lang.node_kind_is_visible(i) || lang.node_kind_is_supertype(i))
-            {
+            if symbols_set.contains(&symbol_info) || !(lang.node_kind_is_visible(i) || supertype) {
                 continue;
             }
             symbols_set.insert(symbol_info.clone());
@@ -80,34 +75,48 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
             }
         }
     }
-    backend.symbols_vec_map.insert(uri.to_owned(), symbols_vec);
-    backend.symbols_set_map.insert(uri.to_owned(), symbols_set);
-    backend.fields_vec_map.insert(uri.to_owned(), fields_vec);
-    backend.fields_set_map.insert(uri.to_owned(), fields_set);
-    backend
-        .supertype_map_map
-        .insert(uri.to_owned(), supertype_map);
+
+    backend.document_map.insert(
+        uri.clone(),
+        DocumentData {
+            rope,
+            tree,
+            symbols_set,
+            symbols_vec,
+            fields_set,
+            fields_vec,
+            supertype_map,
+        },
+    );
 
     // Publish diagnostics
-    if let (Some(tree), Some(symbols), Some(fields), Some(supertypes), options) = (
-        backend.cst_map.get(uri),
-        backend.symbols_set_map.get(uri),
-        backend.fields_set_map.get(uri),
-        backend.supertype_map_map.get(uri),
+    if let (
+        Some(DocumentData {
+            symbols_set,
+            fields_set,
+            supertype_map,
+            rope,
+            tree,
+            fields_vec: _,
+            symbols_vec: _,
+        }),
+        options,
+    ) = (
+        backend.document_map.get(uri).as_deref(),
         backend.options.read().await,
     ) {
-        let provider = TextProviderRope(&rope);
+        let provider = TextProviderRope(rope);
         backend
             .client
             .publish_diagnostics(
                 uri.clone(),
                 get_diagnostics(
-                    &tree,
-                    &rope,
+                    tree,
+                    rope,
                     &provider,
-                    &symbols,
-                    &fields,
-                    &supertypes,
+                    symbols_set,
+                    fields_set,
+                    supertype_map,
                     &options,
                     uri,
                 ),
@@ -154,13 +163,10 @@ mod test {
             .unwrap();
 
         // Assert
-        let doc_rope = service.inner().document_map.get(&TEST_URI);
-        assert!(doc_rope.is_some());
-        let doc_rope = doc_rope.unwrap();
+        let doc = service.inner().document_map.get(&TEST_URI).unwrap();
+        let doc_rope = &doc.rope;
         assert_eq!(doc_rope.to_string(), source);
-        let tree = service.inner().cst_map.get(&TEST_URI);
-        assert!(tree.is_some());
-        let tree = tree.unwrap();
+        let tree = &doc.tree;
         assert_eq!(
             tree.root_node().utf8_text(source.as_bytes()).unwrap(),
             doc_rope.to_string()

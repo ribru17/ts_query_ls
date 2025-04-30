@@ -1,4 +1,5 @@
 use tower_lsp::lsp_types::{DidChangeTextDocumentParams, Position, Range};
+use tracing::warn;
 use tree_sitter::Parser;
 
 use crate::{
@@ -10,7 +11,10 @@ use super::diagnostic::get_diagnostics;
 
 pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) {
     let uri = &params.text_document.uri;
-    let mut rope = backend.document_map.get_mut(uri).unwrap();
+    let Some(mut document) = backend.document_map.get_mut(uri) else {
+        return;
+    };
+    let rope = &mut document.rope;
     let mut parser = Parser::new();
     parser
         .set_language(&QUERY_LANGUAGE)
@@ -33,7 +37,7 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
             Range { start, end }
         };
 
-        edits.push(lsp_textdocchange_to_ts_inputedit(&rope, change).unwrap());
+        edits.push(lsp_textdocchange_to_ts_inputedit(rope, change).unwrap());
 
         let start_row_char_idx = rope.line_to_char(range.start.line as usize);
         let start_row_cu = rope.char_to_utf16_cu(start_row_char_idx);
@@ -54,45 +58,43 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
         }
     }
     let contents = rope.to_string();
-    let result = {
-        let mut old_tree = backend.cst_map.get_mut(uri).unwrap();
+    let mut old_tree = document.tree.clone();
 
-        for edit in edits {
-            old_tree.edit(&edit);
-        }
+    for edit in edits {
+        old_tree.edit(&edit);
+    }
 
-        parser.parse(&contents, Some(&old_tree))
+    let Some(tree) = parser.parse(&contents, Some(&old_tree)) else {
+        warn!("Failure during tree parse");
+        return;
     };
 
-    if let Some(tree) = result {
-        *backend.cst_map.get_mut(uri).unwrap() = tree.clone();
-        // Update diagnostics
-        if let (Some(symbols), Some(fields), Some(supertypes), options) = (
-            backend.symbols_set_map.get(uri),
-            backend.fields_set_map.get(uri),
-            backend.supertype_map_map.get(uri),
-            backend.options.read().await,
-        ) {
-            let provider = TextProviderRope(&rope);
-            backend
-                .client
-                .publish_diagnostics(
-                    uri.clone(),
-                    get_diagnostics(
-                        &tree,
-                        &rope,
-                        &provider,
-                        &symbols,
-                        &fields,
-                        &supertypes,
-                        &options,
-                        uri,
-                    ),
-                    None,
-                )
-                .await;
-        }
-    }
+    document.tree = tree;
+    let document = &*document;
+    let options = &backend.options.read().await;
+    let symbols = &document.symbols_set;
+    let fields = &document.fields_set;
+    let supertypes = &document.supertype_map;
+    let provider = TextProviderRope(&document.rope);
+
+    // Update diagnostics
+    backend
+        .client
+        .publish_diagnostics(
+            uri.clone(),
+            get_diagnostics(
+                &document.tree,
+                &document.rope,
+                &provider,
+                symbols,
+                fields,
+                supertypes,
+                options,
+                uri,
+            ),
+            None,
+        )
+        .await;
 }
 
 #[cfg(test)]
@@ -176,13 +178,10 @@ mod test {
             .unwrap();
 
         // Assert
-        let doc = service.inner().document_map.get(&TEST_URI);
-        let tree = service.inner().cst_map.get(&TEST_URI);
-        assert!(doc.is_some());
-        let doc = doc.unwrap();
-        assert_eq!(doc.to_string(), expected);
-        assert!(tree.is_some());
-        let tree = tree.unwrap();
+        let doc = service.inner().document_map.get(&TEST_URI).unwrap();
+        let rope = &doc.rope;
+        assert_eq!(rope.to_string(), expected);
+        let tree = &doc.tree;
         assert_eq!(
             tree.root_node().utf8_text(expected.as_bytes()).unwrap(),
             expected

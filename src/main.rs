@@ -6,6 +6,7 @@ use std::{
     env,
     fs::{self},
     path::{Path, PathBuf},
+    str,
     sync::{Arc, LazyLock, RwLock, atomic::AtomicI32},
 };
 use ts_query_ls::Options;
@@ -93,15 +94,19 @@ impl fmt::Display for SymbolInfo {
     }
 }
 
+struct DocumentData {
+    symbols_set: HashSet<SymbolInfo>,
+    symbols_vec: Vec<SymbolInfo>,
+    fields_set: HashSet<String>,
+    fields_vec: Vec<String>,
+    supertype_map: HashMap<SymbolInfo, BTreeSet<SymbolInfo>>,
+    rope: Rope,
+    tree: Tree,
+}
+
 struct Backend {
     client: Client,
-    document_map: DashMap<Url, Rope>,
-    cst_map: DashMap<Url, Tree>,
-    symbols_set_map: DashMap<Url, HashSet<SymbolInfo>>,
-    symbols_vec_map: DashMap<Url, Vec<SymbolInfo>>,
-    fields_set_map: DashMap<Url, HashSet<String>>,
-    fields_vec_map: DashMap<Url, Vec<String>>,
-    supertype_map_map: DashMap<Url, HashMap<SymbolInfo, BTreeSet<SymbolInfo>>>,
+    document_map: DashMap<Url, DocumentData>,
     options: Arc<tokio::sync::RwLock<Options>>,
     workspace_uris: Arc<RwLock<Vec<Url>>>,
 }
@@ -471,12 +476,6 @@ async fn main() {
     let (service, socket) = LspService::build(|client| Backend {
         client,
         document_map: Default::default(),
-        cst_map: Default::default(),
-        symbols_set_map: Default::default(),
-        symbols_vec_map: Default::default(),
-        fields_set_map: Default::default(),
-        fields_vec_map: Default::default(),
-        supertype_map_map: Default::default(),
         workspace_uris: Default::default(),
         options,
     })

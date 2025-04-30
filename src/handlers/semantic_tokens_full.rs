@@ -4,6 +4,7 @@ use tower_lsp::{
     jsonrpc::Result,
     lsp_types::{SemanticToken, SemanticTokens, SemanticTokensParams, SemanticTokensResult},
 };
+use tracing::warn;
 use tree_sitter::{Query, QueryCursor, StreamingIterator};
 
 use crate::{
@@ -24,58 +25,61 @@ pub async fn semantic_tokens_full(
     params: SemanticTokensParams,
 ) -> Result<Option<SemanticTokensResult>> {
     let uri = &params.text_document.uri;
+    let Some(doc) = backend.document_map.get(uri) else {
+        warn!("Could not find document for which to retrieve semantic tokens");
+        return Ok(None);
+    };
     let mut tokens = Vec::new();
-    if let (Some(tree), Some(rope), Some(supertypes)) = (
-        backend.cst_map.get(uri),
-        &backend.document_map.get(uri),
-        backend.supertype_map_map.get(uri),
-    ) {
-        let query = &SEM_TOK_QUERY;
-        let mut cursor = QueryCursor::new();
-        let provider = TextProviderRope(rope);
-        let mut matches = cursor.matches(query, tree.root_node(), &provider);
-        let mut prev_line = 0;
-        let mut prev_col = 0;
-        while let Some(match_) = matches.next() {
-            for cap in match_.captures.iter() {
-                let node = &cap.node;
-                let node_text = node.text(rope);
-                let start_row = node.start_position().row as u32;
-                let start_col = node.start_position().column as u32;
-                let delta_line = start_row - prev_line;
-                let length = node.byte_range().len() as u32;
-                let delta_start = if start_row - prev_line == 0 {
-                    start_col - prev_col
-                } else {
-                    start_col
-                };
-                if node_text == "ERROR" {
-                    tokens.push(SemanticToken {
-                        delta_line,
-                        delta_start,
-                        length,
-                        token_type: 1,
-                        token_modifiers_bitset: 1,
-                    });
-                    prev_line = start_row;
-                    prev_col = start_col;
-                } else if supertypes.contains_key(&SymbolInfo {
-                    label: node_text,
-                    named: true,
-                }) {
-                    tokens.push(SemanticToken {
-                        delta_line,
-                        delta_start,
-                        length,
-                        token_type: 0,
-                        token_modifiers_bitset: 0,
-                    });
-                    prev_line = start_row;
-                    prev_col = start_col;
-                }
+    let tree = &doc.tree;
+    let rope = &doc.rope;
+    let supertypes = &doc.supertype_map;
+    let query = &SEM_TOK_QUERY;
+    let mut cursor = QueryCursor::new();
+    let provider = TextProviderRope(rope);
+    let mut matches = cursor.matches(query, tree.root_node(), &provider);
+    let mut prev_line = 0;
+    let mut prev_col = 0;
+
+    while let Some(match_) = matches.next() {
+        for cap in match_.captures.iter() {
+            let node = &cap.node;
+            let node_text = node.text(rope);
+            let start_row = node.start_position().row as u32;
+            let start_col = node.start_position().column as u32;
+            let delta_line = start_row - prev_line;
+            let length = node.byte_range().len() as u32;
+            let delta_start = if start_row - prev_line == 0 {
+                start_col - prev_col
+            } else {
+                start_col
+            };
+            if node_text == "ERROR" {
+                tokens.push(SemanticToken {
+                    delta_line,
+                    delta_start,
+                    length,
+                    token_type: 1,
+                    token_modifiers_bitset: 1,
+                });
+                prev_line = start_row;
+                prev_col = start_col;
+            } else if supertypes.contains_key(&SymbolInfo {
+                label: node_text,
+                named: true,
+            }) {
+                tokens.push(SemanticToken {
+                    delta_line,
+                    delta_start,
+                    length,
+                    token_type: 0,
+                    token_modifiers_bitset: 0,
+                });
+                prev_line = start_row;
+                prev_col = start_col;
             }
         }
     }
+
     Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
         result_id: None,
         data: tokens,

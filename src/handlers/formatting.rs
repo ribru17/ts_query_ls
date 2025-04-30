@@ -6,6 +6,7 @@ use regex::Regex;
 use ropey::Rope;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{DocumentFormattingParams, Range, TextEdit};
+use tracing::warn;
 use tree_sitter::{
     Node, Query, QueryCursor, QueryMatch, QueryPredicateArg, StreamingIterator as _, Tree,
     TreeCursor,
@@ -19,18 +20,16 @@ pub async fn formatting(
     backend: &Backend,
     params: DocumentFormattingParams,
 ) -> Result<Option<Vec<TextEdit>>> {
-    let uri = params.text_document.uri;
-    let tree = match backend.cst_map.get(&uri) {
-        None => return Ok(None),
-        Some(val) => val,
+    let uri = &params.text_document.uri;
+    let Some(doc) = backend.document_map.get(uri) else {
+        warn!("No document for URI: {uri}");
+        return Ok(None);
     };
-    let rope = match backend.document_map.get(&uri) {
-        None => return Ok(None),
-        Some(val) => val,
-    };
+    let rope = &doc.rope;
+    let tree = &doc.tree;
 
-    if let Some(formatted_doc) = format_document(&rope, &tree) {
-        Ok(Some(diff(rope.to_string().as_str(), &formatted_doc, &rope)))
+    if let Some(formatted_doc) = format_document(rope, tree) {
+        Ok(Some(diff(rope.to_string().as_str(), &formatted_doc, rope)))
     } else {
         Ok(None)
     }
@@ -413,6 +412,6 @@ mod test {
 
         // Assert
         let doc = service.inner().document_map.get(&TEST_URI).unwrap();
-        assert_eq!(doc.to_string(), String::from(after));
+        assert_eq!(doc.rope.to_string(), String::from(after));
     }
 }

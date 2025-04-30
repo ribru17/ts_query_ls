@@ -22,14 +22,12 @@ pub async fn completion(
 ) -> Result<Option<CompletionResponse>> {
     let uri = &params.text_document_position.text_document.uri;
 
-    let Some(tree) = backend.cst_map.get(uri) else {
-        warn!("No CST built for URI: {uri:?}");
+    let Some(doc) = backend.document_map.get(uri) else {
+        warn!("No document for URI: {uri:?}");
         return Ok(None);
     };
-    let Some(rope) = &backend.document_map.get(uri) else {
-        warn!("No document built for URI: {uri:?}");
-        return Ok(None);
-    };
+    let rope = &doc.rope;
+    let tree = &doc.tree;
 
     let mut position = params.text_document_position.position;
     if position.character > 0 {
@@ -59,8 +57,8 @@ pub async fn completion(
     {
         let response = || {
             let supertype = current_node.prev_named_sibling()?;
-            let supertype_map_map = backend.supertype_map_map.get(uri)?;
-            let subtypes = supertype_map_map.get(&SymbolInfo {
+            let supertypes = &doc.supertype_map;
+            let subtypes = supertypes.get(&SymbolInfo {
                 label: supertype.text(rope),
                 named: true,
             })?;
@@ -160,26 +158,23 @@ pub async fn completion(
         let in_anon = node_is_or_has_ancestor(root, current_node, "string") && !in_predicate;
         let top_level = current_node.kind() == "program";
         if !top_level {
-            if let (Some(symbols), Some(supertypes)) = (
-                backend.symbols_vec_map.get(uri),
-                backend.supertype_map_map.get(uri),
-            ) {
-                for symbol in symbols.iter() {
-                    if (in_anon && !symbol.named) || (!in_anon && symbol.named) {
-                        completion_items.push(CompletionItem {
-                            label: symbol.label.clone(),
-                            kind: if symbol.named {
-                                if !supertypes.contains_key(symbol) {
-                                    Some(CompletionItemKind::CLASS)
-                                } else {
-                                    Some(CompletionItemKind::INTERFACE)
-                                }
+            let symbols = &doc.symbols_vec;
+            let supertypes = &doc.supertype_map;
+            for symbol in symbols.iter() {
+                if (in_anon && !symbol.named) || (!in_anon && symbol.named) {
+                    completion_items.push(CompletionItem {
+                        label: symbol.label.clone(),
+                        kind: if symbol.named {
+                            if !supertypes.contains_key(symbol) {
+                                Some(CompletionItemKind::CLASS)
                             } else {
-                                Some(CompletionItemKind::CONSTANT)
-                            },
-                            ..Default::default()
-                        });
-                    }
+                                Some(CompletionItemKind::INTERFACE)
+                            }
+                        } else {
+                            Some(CompletionItemKind::CONSTANT)
+                        },
+                        ..Default::default()
+                    });
                 }
             }
         }
@@ -191,14 +186,12 @@ pub async fn completion(
                     ..Default::default()
                 });
             }
-            if let Some(fields) = backend.fields_vec_map.get(uri) {
-                for field in fields.iter() {
-                    completion_items.push(CompletionItem {
-                        label: format!("{field}: "),
-                        kind: Some(CompletionItemKind::FIELD),
-                        ..Default::default()
-                    });
-                }
+            for field in doc.fields_vec.iter() {
+                completion_items.push(CompletionItem {
+                    label: format!("{field}: "),
+                    kind: Some(CompletionItemKind::FIELD),
+                    ..Default::default()
+                });
             }
         }
     }
