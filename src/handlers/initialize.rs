@@ -66,12 +66,6 @@ mod test {
         let (mut service, _socket) = LspService::build(|client| Backend {
             client,
             document_map: Default::default(),
-            cst_map: Default::default(),
-            symbols_set_map: Default::default(),
-            symbols_vec_map: Default::default(),
-            fields_set_map: Default::default(),
-            fields_vec_map: Default::default(),
-            supertype_map_map: Default::default(),
             workspace_uris: Default::default(),
             options: Default::default(),
         })

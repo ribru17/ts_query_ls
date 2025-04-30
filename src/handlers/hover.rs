@@ -2,6 +2,7 @@ use tower_lsp::{
     jsonrpc::Result,
     lsp_types::{Hover, HoverContents, HoverParams, MarkupContent, MarkupKind},
 };
+use tracing::warn;
 
 use crate::{
     Backend, SymbolInfo,
@@ -13,80 +14,83 @@ pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hove
     let position = params.text_document_position_params.position;
     let options = backend.options.read().await;
 
-    if let (Some(tree), Some(rope), Some(supertypes)) = (
-        backend.cst_map.get(uri),
-        &backend.document_map.get(uri),
-        backend.supertype_map_map.get(uri),
-    ) {
-        let Some(node) = tree
-            .root_node()
-            .descendant_for_point_range(position.to_ts_point(rope), position.to_ts_point(rope))
-        else {
-            return Ok(None);
-        };
-        let node_text = node.text(rope);
-        let node_range = node.lsp_range(rope);
-        let sym = SymbolInfo {
-            label: node_text.clone(),
-            named: true,
-        };
+    let Some(doc) = backend.document_map.get(uri) else {
+        warn!("No document for uri: {uri}");
+        return Ok(None);
+    };
 
-        let node_parent = node.parent();
-        if node.kind() == "identifier"
-            && node_parent.is_some_and(|p| {
-                p.kind() == "named_node" || p.kind() == "missing_node" || p.kind() == "predicate"
-            })
-        {
-            let node_parent = node_parent.unwrap();
-            if node_parent.kind() == "predicate" {
-                let is_predicate = node_parent
-                    .named_child(1)
-                    .is_some_and(|c| c.text(rope) == "?");
-                let validator = if is_predicate {
-                    &options.valid_predicates
-                } else {
-                    &options.valid_directives
-                };
-                if let Some(predicate) = validator.get(&node_text) {
-                    let mut value =
-                        format!("{}\n\n---\n\n## Parameters:\n\n", predicate.description);
-                    for param in &predicate.parameters {
-                        value += format!("- Type: `{}` ({})\n", param.type_, param.arity).as_str();
-                        if let Some(desc) = &param.description {
-                            value += format!("  - {}\n", desc).as_str();
-                        }
+    let tree = &doc.tree;
+    let rope = &doc.rope;
+    let supertypes = &doc.supertype_map;
+
+    let Some(node) = tree
+        .root_node()
+        .descendant_for_point_range(position.to_ts_point(rope), position.to_ts_point(rope))
+    else {
+        return Ok(None);
+    };
+    let node_text = node.text(rope);
+    let node_range = node.lsp_range(rope);
+    let sym = SymbolInfo {
+        label: node_text.clone(),
+        named: true,
+    };
+
+    let node_parent = node.parent();
+    if node.kind() == "identifier"
+        && node_parent.is_some_and(|p| {
+            p.kind() == "named_node" || p.kind() == "missing_node" || p.kind() == "predicate"
+        })
+    {
+        let node_parent = node_parent.unwrap();
+        if node_parent.kind() == "predicate" {
+            let is_predicate = node_parent
+                .named_child(1)
+                .is_some_and(|c| c.text(rope) == "?");
+            let validator = if is_predicate {
+                &options.valid_predicates
+            } else {
+                &options.valid_directives
+            };
+            if let Some(predicate) = validator.get(&node_text) {
+                let mut value = format!("{}\n\n---\n\n## Parameters:\n\n", predicate.description);
+                for param in &predicate.parameters {
+                    value += format!("- Type: `{}` ({})\n", param.type_, param.arity).as_str();
+                    if let Some(desc) = &param.description {
+                        value += format!("  - {}\n", desc).as_str();
                     }
-                    return Ok(Some(Hover {
-                        range: Some(node_range),
-                        contents: HoverContents::Markup(MarkupContent {
-                            kind: MarkupKind::Markdown,
-                            value,
-                        }),
-                    }));
                 }
-                return Ok(None);
-            }
-            if let Some(subtypes) = supertypes.get(&sym).and_then(|subtypes| {
-                (subtypes.iter().fold(
-                    format!("Subtypes of `({node_text})`:\n\n```query"),
-                    |acc, subtype| format!("{acc}\n{}", subtype),
-                ) + "\n```")
-                    .into()
-            }) {
                 return Ok(Some(Hover {
                     range: Some(node_range),
                     contents: HoverContents::Markup(MarkupContent {
                         kind: MarkupKind::Markdown,
-                        value: subtypes,
+                        value,
                     }),
                 }));
-            } else if node_text == "ERROR" {
-                return Ok(Some(Hover {
-                    range: Some(node_range),
-                    contents: HoverContents::Markup(MarkupContent {
-                        kind: MarkupKind::Markdown,
-                        value: String::from(
-                            r"### The `ERROR` Node
+            }
+            return Ok(None);
+        }
+        if let Some(subtypes) = supertypes.get(&sym).and_then(|subtypes| {
+            (subtypes.iter().fold(
+                format!("Subtypes of `({node_text})`:\n\n```query"),
+                |acc, subtype| format!("{acc}\n{}", subtype),
+            ) + "\n```")
+                .into()
+        }) {
+            return Ok(Some(Hover {
+                range: Some(node_range),
+                contents: HoverContents::Markup(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: subtypes,
+                }),
+            }));
+        } else if node_text == "ERROR" {
+            return Ok(Some(Hover {
+                range: Some(node_range),
+                contents: HoverContents::Markup(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: String::from(
+                        r"### The `ERROR` Node
 
 When the parser encounters text it does not recognize, it represents this node
 as `(ERROR)` in the syntax tree. These error nodes can be queried just like
@@ -95,17 +99,17 @@ normal nodes:
 ```query
 (ERROR) @error-node
 ```",
-                        ),
-                    }),
-                }));
-            }
-        } else if node.kind() == "MISSING" {
-            return Ok(Some(Hover {
-                range: Some(node_range),
-                contents: HoverContents::Markup(MarkupContent {
-                    kind: MarkupKind::Markdown,
-                    value: String::from(
-                        r"### The `MISSING` Node
+                    ),
+                }),
+            }));
+        }
+    } else if node.kind() == "MISSING" {
+        return Ok(Some(Hover {
+            range: Some(node_range),
+            contents: HoverContents::Markup(MarkupContent {
+                kind: MarkupKind::Markdown,
+                value: String::from(
+                    r"### The `MISSING` Node
 
 If the parser is able to recover from erroneous text by inserting a missing token and then reducing, it will insert that
 missing node in the final tree so long as that tree has the lowest error cost. These missing nodes appear as seemingly normal
@@ -116,16 +120,16 @@ using `(MISSING)`:
 ```query
 (MISSING) @missing-node
 ```",
-                    ),
-                }),
-            }));
-        } else if node.kind() == "_" {
-            return Ok(Some(Hover {
-                range: Some(node_range),
-                contents: HoverContents::Markup(MarkupContent {
-                    kind: MarkupKind::Markdown,
-                    value: String::from(
-                        r"### The Wildcard Node
+                ),
+            }),
+        }));
+    } else if node.kind() == "_" {
+        return Ok(Some(Hover {
+            range: Some(node_range),
+            contents: HoverContents::Markup(MarkupContent {
+                kind: MarkupKind::Markdown,
+                value: String::from(
+                    r"### The Wildcard Node
 
 A wildcard node is represented with an underscore (`_`), it matches any node.
 This is similar to `.` in regular expressions.
@@ -137,28 +141,27 @@ For example, this pattern would match any node inside a call:
 ```query
 (call (_) @call.inner)
 ```",
-                    ),
+                ),
+            }),
+        }));
+    } else if let Some(capture) =
+        get_current_capture_node(tree.root_node(), position.to_ts_point(rope))
+    {
+        let options = backend.options.read().await;
+        if let Some(description) = uri_to_basename(uri).and_then(|base| {
+            options
+                .valid_captures
+                .get(&base)
+                .and_then(|c| c.get(&capture.text(rope)[1..].to_string()))
+        }) {
+            let value = format!("## `{}`\n\n{}", capture.text(rope), description);
+            return Ok(Some(Hover {
+                range: Some(capture.lsp_range(rope)),
+                contents: HoverContents::Markup(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value,
                 }),
             }));
-        } else if let Some(capture) =
-            get_current_capture_node(tree.root_node(), position.to_ts_point(rope))
-        {
-            let options = backend.options.read().await;
-            if let Some(description) = uri_to_basename(uri).and_then(|base| {
-                options
-                    .valid_captures
-                    .get(&base)
-                    .and_then(|c| c.get(&capture.text(rope)[1..].to_string()))
-            }) {
-                let value = format!("## `{}`\n\n{}", capture.text(rope), description);
-                return Ok(Some(Hover {
-                    range: Some(capture.lsp_range(rope)),
-                    contents: HoverContents::Markup(MarkupContent {
-                        kind: MarkupKind::Markdown,
-                        value,
-                    }),
-                }));
-            }
         }
     }
 

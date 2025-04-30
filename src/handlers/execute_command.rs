@@ -35,11 +35,12 @@ async fn check_impossible_patterns(backend: &Backend, params: ExecuteCommandPara
         }
     };
 
-    let (Some(rope), Some(tree)) = (&backend.document_map.get(&uri), backend.cst_map.get(&uri))
-    else {
+    let Some(doc) = &backend.document_map.get(&uri) else {
         warn!("No document built for URI '{uri}' when executing check impossible patterns command");
         return;
     };
+    let rope = &doc.rope;
+    let tree = &doc.tree;
     let options = &backend.options.read().await;
     let Some(lang) = util::get_language(&uri, options) else {
         error!("Could not retrieve language for path: '{}'", uri.path());
@@ -83,23 +84,13 @@ async fn check_impossible_patterns(backend: &Backend, params: ExecuteCommandPara
             }
         }
     }
-    if let (Some(symbols), Some(fields), Some(supertypes)) = (
-        backend.symbols_set_map.get(&uri),
-        backend.fields_set_map.get(&uri),
-        backend.supertype_map_map.get(&uri),
-    ) {
-        let provider = TextProviderRope(rope);
-        diagnostics.append(&mut get_diagnostics(
-            &tree,
-            rope,
-            &provider,
-            &symbols,
-            &fields,
-            &supertypes,
-            options,
-            &uri,
-        ));
-    }
+    let symbols = &doc.symbols_set;
+    let fields = &doc.fields_set;
+    let supertypes = &doc.supertype_map;
+    let provider = TextProviderRope(rope);
+    diagnostics.append(&mut get_diagnostics(
+        tree, rope, &provider, symbols, fields, supertypes, options, &uri,
+    ));
 
     backend
         .client

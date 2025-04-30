@@ -19,14 +19,12 @@ pub async fn goto_definition(
 ) -> Result<Option<GotoDefinitionResponse>> {
     info!("ts_query_ls goto_definition: {params:?}");
     let uri = &params.text_document_position_params.text_document.uri;
-    let Some(tree) = backend.cst_map.get(uri) else {
-        warn!("No CST built for URI: {uri:?}");
+    let Some(doc) = backend.document_map.get(uri) else {
+        warn!("No document for URI: {uri:?}");
         return Ok(None);
     };
-    let Some(rope) = &backend.document_map.get(uri) else {
-        warn!("No document built for URI: {uri:?}");
-        return Ok(None);
-    };
+    let rope = &doc.rope;
+    let tree = &doc.tree;
     let cur_pos = params.text_document_position_params.position;
     let Some(current_node) = get_current_capture_node(tree.root_node(), cur_pos.to_ts_point(rope))
     else {

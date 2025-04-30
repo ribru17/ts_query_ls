@@ -20,7 +20,7 @@ pub mod helpers {
         },
     };
 
-    use crate::{Backend, Options, QUERY_LANGUAGE, SymbolInfo};
+    use crate::{Backend, DocumentData, Options, QUERY_LANGUAGE, SymbolInfo};
 
     pub static TEST_URI: LazyLock<Url> =
         LazyLock::new(|| Url::parse("file:///tmp/test.scm").unwrap());
@@ -54,60 +54,36 @@ pub mod helpers {
         let options = Arc::new(tokio::sync::RwLock::new(options.clone()));
         let (mut service, _socket) = LspService::build(|client| Backend {
             client,
-            document_map: DashMap::from_iter(
-                documents
-                    .iter()
-                    .map(|(uri, source, _, _, _)| (uri.clone(), Rope::from(*source))),
-            ),
-            cst_map: DashMap::from_iter(
-                documents.iter().map(|(uri, source, _, _, _)| {
-                    (uri.clone(), parser.parse(*source, None).unwrap())
-                }),
-            ),
-            symbols_set_map: DashMap::from_iter(
-                documents.iter().map(|(uri, _, symbols, _, _)| {
-                    (uri.clone(), HashSet::from_iter(symbols.clone()))
-                }),
-            ),
-            symbols_vec_map: DashMap::from_iter(
-                documents
-                    .iter()
-                    .map(|(uri, _, symbols, _, _)| (uri.clone(), symbols.clone())),
-            ),
-            fields_set_map: DashMap::from_iter(documents.iter().map(|(uri, _, _, fields, _)| {
-                (
-                    uri.clone(),
-                    HashSet::from_iter(fields.iter().map(ToString::to_string)),
-                )
-            })),
-            fields_vec_map: DashMap::from_iter(documents.iter().map(|(uri, _, _, fields, _)| {
-                (
-                    uri.clone(),
-                    fields.clone().iter().map(ToString::to_string).collect(),
-                )
-            })),
-            supertype_map_map: DashMap::from_iter(documents.iter().map(
-                |(uri, _, _, _, supertypes)| {
+            document_map: DashMap::from_iter(documents.iter().map(
+                |(uri, source, symbols, fields, supertypes)| {
                     (
                         uri.clone(),
-                        HashMap::from_iter(supertypes.iter().map(|supertype| {
-                            (
-                                SymbolInfo {
-                                    named: true,
-                                    label: String::from(*supertype),
-                                },
-                                BTreeSet::from([
+                        DocumentData {
+                            rope: Rope::from(*source),
+                            tree: parser.parse(*source, None).unwrap(),
+                            symbols_set: HashSet::from_iter(symbols.clone()),
+                            symbols_vec: symbols.clone(),
+                            fields_set: HashSet::from_iter(fields.iter().map(ToString::to_string)),
+                            fields_vec: fields.clone().iter().map(ToString::to_string).collect(),
+                            supertype_map: HashMap::from_iter(supertypes.iter().map(|supertype| {
+                                (
                                     SymbolInfo {
                                         named: true,
-                                        label: String::from("test"),
+                                        label: String::from(*supertype),
                                     },
-                                    SymbolInfo {
-                                        named: true,
-                                        label: String::from("test2"),
-                                    },
-                                ]),
-                            )
-                        })),
+                                    BTreeSet::from([
+                                        SymbolInfo {
+                                            named: true,
+                                            label: String::from("test"),
+                                        },
+                                        SymbolInfo {
+                                            named: true,
+                                            label: String::from("test2"),
+                                        },
+                                    ]),
+                                )
+                            })),
+                        },
                     )
                 },
             )),
@@ -271,82 +247,33 @@ mod test {
         let actual_options = backend.options.read().await;
         assert_eq!(actual_options.deref(), options);
         assert_eq!(backend.document_map.len(), documents.len());
-        assert_eq!(backend.cst_map.len(), documents.len());
-        assert_eq!(backend.symbols_vec_map.len(), documents.len());
-        assert_eq!(backend.symbols_set_map.len(), documents.len());
-        assert_eq!(backend.fields_vec_map.len(), documents.len());
-        assert_eq!(backend.fields_set_map.len(), documents.len());
-        for (uri, doc, symbols, fields, supertypes) in documents {
+        for (uri, source, symbols, fields, supertypes) in documents {
+            let doc = backend.document_map.get(uri).unwrap();
+            assert_eq!(doc.rope.to_string(), (*source).to_string());
             assert_eq!(
-                backend.document_map.get(uri).unwrap().to_string(),
-                (*doc).to_string()
-            );
-            assert_eq!(
-                backend
-                    .cst_map
-                    .get(uri)
-                    .unwrap()
+                doc.tree
                     .root_node()
-                    .utf8_text((*doc).to_string().as_bytes())
+                    .utf8_text((*source).to_string().as_bytes())
                     .unwrap(),
-                (*doc).to_string()
+                (*source).to_string()
             );
-            assert!(
-                backend
-                    .symbols_vec_map
-                    .get(uri)
-                    .is_some_and(|v| v.len() == symbols.len())
-            );
-            assert!(
-                backend
-                    .symbols_set_map
-                    .get(uri)
-                    .is_some_and(|v| v.len() == symbols.len())
-            );
+            assert!(doc.symbols_vec.len() == symbols.len());
+            assert!(doc.symbols_set.len() == symbols.len());
             for symbol in symbols {
-                assert!(backend.symbols_vec_map.get(uri).unwrap().contains(symbol));
-                assert!(backend.symbols_set_map.get(uri).unwrap().contains(symbol));
+                assert!(doc.symbols_vec.contains(symbol));
+                assert!(doc.symbols_set.contains(symbol));
             }
-            assert!(
-                backend
-                    .fields_vec_map
-                    .get(uri)
-                    .is_some_and(|v| v.len() == fields.len())
-            );
-            assert!(
-                backend
-                    .fields_set_map
-                    .get(uri)
-                    .is_some_and(|v| v.len() == fields.len())
-            );
+            assert!(doc.fields_vec.len() == fields.len());
+            assert!(doc.fields_set.len() == fields.len());
             for field in fields {
-                assert!(
-                    backend
-                        .fields_vec_map
-                        .get(uri)
-                        .unwrap()
-                        .contains(&field.to_string())
-                );
-                assert!(
-                    backend
-                        .fields_set_map
-                        .get(uri)
-                        .unwrap()
-                        .contains(&field.to_string())
-                );
+                assert!(doc.fields_vec.contains(&field.to_string()));
+                assert!(doc.fields_set.contains(*field));
             }
-            assert!(backend.supertype_map_map.get(uri).is_some());
             for supertype in supertypes {
-                assert!(
-                    backend
-                        .supertype_map_map
-                        .get(uri)
-                        .unwrap()
-                        .contains_key(&SymbolInfo {
-                            named: true,
-                            label: String::from(*supertype)
-                        })
-                )
+                assert!(doc.supertype_map.contains_key(&SymbolInfo {
+                    named: true,
+                    label: String::from(*supertype)
+                }))
             }
         }
     }

@@ -24,14 +24,12 @@ static IDENTIFIER_PATTERN: LazyLock<Regex> =
 
 pub async fn rename(backend: &Backend, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
     let uri = &params.text_document_position.text_document.uri;
-    let Some(tree) = backend.cst_map.get(uri) else {
-        warn!("No CST built for URI: {uri:?}");
-        return Ok(None);
-    };
-    let Some(rope) = &backend.document_map.get(uri) else {
+    let Some(doc) = backend.document_map.get(uri) else {
         warn!("No document built for URI: {uri:?}");
         return Ok(None);
     };
+    let rope = &doc.rope;
+    let tree = &doc.tree;
     let current_node = match get_current_capture_node(
         tree.root_node(),
         params.text_document_position.position.to_ts_point(rope),
