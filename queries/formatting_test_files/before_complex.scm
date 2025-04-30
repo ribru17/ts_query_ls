@@ -6,7 +6,9 @@
 ;                         Basic highlights                         ;;
 ;------------------------------------------------------------------;;
 ; basic ;;
-(number) @number
+(((
+  (((
+    (number))))))) @number
 
 ; format-ignore
 (   character   )
