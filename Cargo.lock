@@ -1701,9 +1701,9 @@ dependencies = [
 
 [[package]]
 name = "tree-sitter"
-version = "0.25.0"
+version = "0.25.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19bcada1000487b94b3858dbcf935f039dc898ed82fe7aa9ef9db01aa423af6e"
+checksum = "b9ac5ea5e7f2f1700842ec071401010b9c59bf735295f6e9fa079c3dc035b167"
 dependencies = [
  "cc",
  "regex",
@@ -1722,8 +1722,8 @@ checksum = "e8ddffe35a0e5eeeadf13ff7350af564c6e73993a24db62caee1822b185c2600"
 
 [[package]]
 name = "tree-sitter-query"
-version = "0.4.0"
-source = "git+https://github.com/tree-sitter-grammars/tree-sitter-query?rev=9bf4d5cad5ecf51d9102cd50765e8d6119616a9a#9bf4d5cad5ecf51d9102cd50765e8d6119616a9a"
+version = "0.5.1"
+source = "git+https://github.com/tree-sitter-grammars/tree-sitter-query#930202c2a80965a7a9ca018b5b2a08b25dfa7f12"
 dependencies = [
  "cc",
  "tree-sitter-language",
