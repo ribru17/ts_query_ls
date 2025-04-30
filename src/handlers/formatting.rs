@@ -235,7 +235,7 @@ fn format_iter<'a>(
                 }
             } else if map.get("format.make-pound").unwrap().contains_key(id) {
                 lines.last_mut().unwrap().push('#');
-            } else if child.named_child_count() == 0 || child.kind() == "string" {
+            } else if child.child_count() == 0 {
                 let text = NEWLINES
                     .split(
                         CRLF.replace_all(child.text(rope).as_str(), "\n")
