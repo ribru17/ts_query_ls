@@ -72,26 +72,14 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
     document.tree = tree;
     let document = &*document;
     let options = &backend.options.read().await;
-    let symbols = &document.symbols_set;
-    let fields = &document.fields_set;
-    let supertypes = &document.supertype_map;
-    let provider = TextProviderRope(&document.rope);
+    let provider = &TextProviderRope(&document.rope);
 
     // Update diagnostics
     backend
         .client
         .publish_diagnostics(
             uri.clone(),
-            get_diagnostics(
-                &document.tree,
-                &document.rope,
-                &provider,
-                symbols,
-                fields,
-                supertypes,
-                options,
-                uri,
-            ),
+            get_diagnostics(uri, document, options, provider),
             None,
         )
         .await;

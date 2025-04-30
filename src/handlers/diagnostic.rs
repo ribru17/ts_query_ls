@@ -1,15 +1,12 @@
-use std::{
-    collections::{BTreeSet, HashMap, HashSet},
-    sync::LazyLock,
-};
+use std::sync::LazyLock;
 
 use ropey::Rope;
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Url};
-use tree_sitter::{Node, Query, QueryCursor, StreamingIterator as _, Tree, TreeCursor};
+use tree_sitter::{Node, Query, QueryCursor, StreamingIterator as _, TreeCursor};
 use ts_query_ls::{Options, PredicateParameter, PredicateParameterArity, PredicateParameterType};
 
 use crate::{
-    QUERY_LANGUAGE, SymbolInfo,
+    DocumentData, QUERY_LANGUAGE, SymbolInfo,
     util::{CAPTURES_QUERY, NodeUtil as _, TextProviderRope, uri_to_basename},
 };
 
@@ -24,22 +21,22 @@ static DIAGNOSTICS_QUERY: LazyLock<Query> = LazyLock::new(|| {
     .unwrap()
 });
 
-#[allow(clippy::too_many_arguments)]
 pub fn get_diagnostics(
-    tree: &Tree,
-    rope: &Rope,
-    provider: &TextProviderRope,
-    symbols: &HashSet<SymbolInfo>,
-    fields: &HashSet<String>,
-    supertypes: &HashMap<SymbolInfo, BTreeSet<SymbolInfo>>,
-    options: &Options,
     uri: &Url,
+    document: &DocumentData,
+    options: &Options,
+    provider: &TextProviderRope,
 ) -> Vec<Diagnostic> {
     let valid_captures = options
         .valid_captures
         .get(&uri_to_basename(uri).unwrap_or_default());
     let valid_predicates = &options.valid_predicates;
     let valid_directives = &options.valid_directives;
+    let tree = &document.tree;
+    let rope = &document.rope;
+    let symbols = &document.symbols_set;
+    let fields = &document.fields_set;
+    let supertypes = &document.supertype_map;
     let mut cursor = QueryCursor::new();
     let mut tree_cursor = tree.root_node().walk();
     let mut matches = cursor.matches(&DIAGNOSTICS_QUERY, tree.root_node(), provider);
@@ -302,7 +299,7 @@ fn validate_predicate<'a>(
 // TODO: Handle many more cases
 #[cfg(test)]
 mod test {
-    use std::collections::{BTreeMap, HashMap, HashSet};
+    use std::collections::{BTreeMap, HashMap};
 
     use pretty_assertions::assert_eq;
     use rstest::rstest;
@@ -789,20 +786,9 @@ mod test {
         let doc = &service.inner().document_map.get(&TEST_URI).unwrap();
         let rope = &doc.rope;
         let provider = &TextProviderRope(rope);
-        let symbols = &HashSet::from_iter(symbols.iter().cloned());
-        let fields = &HashSet::from_iter(fields.iter().map(|s| s.to_string()));
 
         // Act
-        let diagnostics = get_diagnostics(
-            &doc.tree,
-            rope,
-            provider,
-            symbols,
-            fields,
-            &Default::default(),
-            options,
-            &TEST_URI,
-        );
+        let diagnostics = get_diagnostics(&TEST_URI, doc, options, provider);
 
         // Assert
         assert_eq!(diagnostics, expected_diagnostics)
