@@ -688,3 +688,7 @@
 
 ((sexp_comment) @comment
   (#set! priority 110))
+
+(normal_command
+  (identifier) @_function
+  (#match? @_function "\\c^list$"))
