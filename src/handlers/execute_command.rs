@@ -84,13 +84,8 @@ async fn check_impossible_patterns(backend: &Backend, params: ExecuteCommandPara
             }
         }
     }
-    let symbols = &doc.symbols_set;
-    let fields = &doc.fields_set;
-    let supertypes = &doc.supertype_map;
-    let provider = TextProviderRope(rope);
-    diagnostics.append(&mut get_diagnostics(
-        tree, rope, &provider, symbols, fields, supertypes, options, &uri,
-    ));
+    let provider = &TextProviderRope(rope);
+    diagnostics.append(&mut get_diagnostics(&uri, doc, options, provider));
 
     backend
         .client

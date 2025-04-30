@@ -361,19 +361,19 @@ fn lint_file(path: &Path, uri: &Url, source: &str, options: &Options, exit_code:
         .expect("Error loading Query grammar");
     let tree = parser.parse(source, None).unwrap();
     let rope = Rope::from(source);
-    let provider = &util::TextProviderRope(&rope);
-    let diagnostics = get_diagnostics(
-        &tree,
-        &rope,
-        provider,
+    let doc = DocumentData {
+        tree,
+        rope,
         // The query construction already validates node names, fields, supertypes,
         // etc.
-        &Default::default(),
-        &Default::default(),
-        &Default::default(),
-        options,
-        uri,
-    );
+        symbols_set: Default::default(),
+        symbols_vec: Default::default(),
+        fields_set: Default::default(),
+        fields_vec: Default::default(),
+        supertype_map: Default::default(),
+    };
+    let provider = &util::TextProviderRope(&doc.rope);
+    let diagnostics = get_diagnostics(uri, &doc, options, provider);
     if !diagnostics.is_empty() {
         exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
         for diagnostic in diagnostics {

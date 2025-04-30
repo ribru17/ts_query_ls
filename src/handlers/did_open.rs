@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use ropey::Rope;
 use tower_lsp::lsp_types::DidOpenTextDocumentParams;
-use tracing::info;
+use tracing::{info, warn};
 use tree_sitter::Parser;
 
 use crate::{
@@ -90,40 +90,21 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     );
 
     // Publish diagnostics
-    if let (
-        Some(DocumentData {
-            symbols_set,
-            fields_set,
-            supertype_map,
-            rope,
-            tree,
-            fields_vec: _,
-            symbols_vec: _,
-        }),
-        options,
-    ) = (
-        backend.document_map.get(uri).as_deref(),
-        backend.options.read().await,
-    ) {
-        let provider = TextProviderRope(rope);
-        backend
-            .client
-            .publish_diagnostics(
-                uri.clone(),
-                get_diagnostics(
-                    tree,
-                    rope,
-                    &provider,
-                    symbols_set,
-                    fields_set,
-                    supertype_map,
-                    &options,
-                    uri,
-                ),
-                None,
-            )
-            .await;
-    }
+    let options = backend.options.read().await;
+    let Some(doc) = &backend.document_map.get(uri) else {
+        warn!("Document for URI {uri} was lost during open");
+        return;
+    };
+    let rope = &doc.rope;
+    let provider = TextProviderRope(rope);
+    backend
+        .client
+        .publish_diagnostics(
+            uri.clone(),
+            get_diagnostics(uri, doc, &options, &provider),
+            None,
+        )
+        .await;
 }
 
 #[cfg(test)]
