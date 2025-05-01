@@ -20,13 +20,14 @@ use tower_lsp::{
     jsonrpc::Result,
     lsp_types::{
         CodeActionParams, CodeActionProviderCapability, CodeActionResponse, CompletionOptions,
-        CompletionParams, CompletionResponse, DiagnosticSeverity, DidChangeConfigurationParams,
-        DidChangeTextDocumentParams, DidOpenTextDocumentParams, DocumentFormattingParams,
-        DocumentHighlight, DocumentHighlightParams, DocumentSymbolParams, DocumentSymbolResponse,
-        ExecuteCommandOptions, ExecuteCommandParams, GotoDefinitionParams, GotoDefinitionResponse,
-        Hover, HoverParams, HoverProviderCapability, InitializeParams, InitializeResult, Location,
-        OneOf, ReferenceParams, RenameParams, SemanticTokenModifier, SemanticTokenType,
-        SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
+        CompletionParams, CompletionResponse, DiagnosticOptions, DiagnosticServerCapabilities,
+        DiagnosticSeverity, DidChangeConfigurationParams, DidChangeTextDocumentParams,
+        DidOpenTextDocumentParams, DocumentDiagnosticParams, DocumentDiagnosticReportResult,
+        DocumentFormattingParams, DocumentHighlight, DocumentHighlightParams, DocumentSymbolParams,
+        DocumentSymbolResponse, ExecuteCommandOptions, ExecuteCommandParams, GotoDefinitionParams,
+        GotoDefinitionResponse, Hover, HoverParams, HoverProviderCapability, InitializeParams,
+        InitializeResult, Location, OneOf, ReferenceParams, RenameParams, SemanticTokenModifier,
+        SemanticTokenType, SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
         SemanticTokensParams, SemanticTokensResult, SemanticTokensServerCapabilities,
         ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
         WorkspaceEdit,
@@ -47,6 +48,10 @@ static SERVER_CAPABILITIES: LazyLock<ServerCapabilities> = LazyLock::new(|| {
         text_document_sync: Some(TextDocumentSyncCapability::Kind(
             TextDocumentSyncKind::INCREMENTAL,
         )),
+        diagnostic_provider: Some(DiagnosticServerCapabilities::Options(DiagnosticOptions {
+            identifier: Some(String::from("ts_query_ls")),
+            ..Default::default()
+        })),
         references_provider: Some(OneOf::Left(true)),
         rename_provider: Some(OneOf::Left(true)),
         definition_provider: Some(OneOf::Left(true)),
@@ -194,6 +199,13 @@ impl LanguageServer for Backend {
         params: ExecuteCommandParams,
     ) -> Result<Option<serde_json::Value>> {
         execute_command::execute_command(self, params).await
+    }
+
+    async fn diagnostic(
+        &self,
+        params: DocumentDiagnosticParams,
+    ) -> Result<DocumentDiagnosticReportResult> {
+        diagnostic::diagnostic(self, params).await
     }
 }
 
