@@ -43,7 +43,7 @@ async fn check_impossible_patterns(backend: &Backend, params: ExecuteCommandPara
     let tree = &doc.tree;
     let options = &backend.options.read().await;
     let Some(lang) = util::get_language(&uri, options) else {
-        error!("Could not retrieve language for path: '{}'", uri.path());
+        warn!("Could not retrieve language for path: '{}'", uri.path());
         return;
     };
     let Ok(source) = std::fs::read_to_string(uri.path()) else {

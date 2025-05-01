@@ -316,7 +316,7 @@ pub async fn set_configuration_options(
             options.valid_predicates = parsed_options.valid_predicates;
             options.valid_directives = parsed_options.valid_directives;
         } else {
-            warn!("Unable to parse configuration settings!",);
+            warn!("Unable to parse configuration settings!");
         };
     }
 

@@ -12,6 +12,7 @@ use super::diagnostic::get_diagnostics;
 pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) {
     let uri = &params.text_document.uri;
     let Some(mut document) = backend.document_map.get_mut(uri) else {
+        warn!("No document found for URI: {uri} when handling did_change");
         return;
     };
     let rope = &mut document.rope;

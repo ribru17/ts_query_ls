@@ -13,7 +13,7 @@ use crate::{
 
 pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     let uri = &params.text_document.uri;
-    info!("ts_query_ls did_ops: {uri}");
+    info!("ts_query_ls did_open: {uri}");
     let contents = params.text_document.text;
     let rope = Rope::from_str(&contents);
     let mut parser = Parser::new();
