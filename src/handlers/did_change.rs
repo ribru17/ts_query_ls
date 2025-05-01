@@ -15,6 +15,8 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
         warn!("No document found for URI: {uri} when handling did_change");
         return;
     };
+    let version = params.text_document.version;
+    document.version = version;
     let rope = &mut document.rope;
     let mut parser = Parser::new();
     parser
@@ -81,7 +83,7 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
         .publish_diagnostics(
             uri.clone(),
             get_diagnostics(uri, document, options, provider),
-            None,
+            Some(version),
         )
         .await;
 }

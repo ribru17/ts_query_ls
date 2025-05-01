@@ -105,6 +105,7 @@ struct DocumentData {
     supertype_map: HashMap<SymbolInfo, BTreeSet<SymbolInfo>>,
     rope: Rope,
     tree: Tree,
+    version: i32,
 }
 
 struct Backend {
@@ -372,6 +373,7 @@ fn lint_file(path: &Path, uri: &Url, source: &str, options: &Options, exit_code:
         fields_set: Default::default(),
         fields_vec: Default::default(),
         supertype_map: Default::default(),
+        version: Default::default(),
     };
     let provider = &util::TextProviderRope(&doc.rope);
     let diagnostics = get_diagnostics(uri, &doc, options, provider);

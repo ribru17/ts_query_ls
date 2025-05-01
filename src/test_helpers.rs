@@ -61,6 +61,7 @@ pub mod helpers {
                         DocumentData {
                             rope: Rope::from(*source),
                             tree: parser.parse(*source, None).unwrap(),
+                            version: 0,
                             symbols_set: HashSet::from_iter(symbols.clone()),
                             symbols_vec: symbols.clone(),
                             fields_set: HashSet::from_iter(fields.iter().map(ToString::to_string)),
