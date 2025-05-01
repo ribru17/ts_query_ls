@@ -76,8 +76,7 @@ pub async fn rename(backend: &Backend, params: RenameParams) -> Result<Option<Wo
         document_changes: Some(DocumentChanges::Edits(vec![TextDocumentEdit {
             text_document: OptionalVersionedTextDocumentIdentifier {
                 uri: uri.clone(),
-                // TODO: Support versioned edits
-                version: None,
+                version: Some(doc.version),
             },
             edits: text_document_edits,
         }])),
@@ -180,7 +179,7 @@ mod test {
                 document_changes: Some(DocumentChanges::Edits(vec![TextDocumentEdit {
                     text_document: OptionalVersionedTextDocumentIdentifier {
                         uri: TEST_URI.clone(),
-                        version: None,
+                        version: Some(0),
                     },
                     edits: edits.iter().map(|e| OneOf::Left(e.into())).collect(),
                 }])),

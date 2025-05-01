@@ -76,6 +76,8 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
         }
     }
 
+    let version = params.text_document.version;
+
     backend.document_map.insert(
         uri.clone(),
         DocumentData {
@@ -86,6 +88,7 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
             fields_set,
             fields_vec,
             supertype_map,
+            version,
         },
     );
 
@@ -102,7 +105,7 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
         .publish_diagnostics(
             uri.clone(),
             get_diagnostics(uri, doc, &options, &provider),
-            None,
+            Some(version),
         )
         .await;
 }
