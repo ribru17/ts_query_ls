@@ -4,16 +4,18 @@ use std::{
     fmt::Display,
 };
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// A type specification for a predicate.
-#[derive(Clone, Debug, PartialEq, Eq, Default, JsonSchema, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct PredicateAux {
     /// A short description of the predicate (in Markdown format).
     description: String,
     /// The list of valid parameter types.
-    #[schemars(length(min = 1))]
+    #[cfg_attr(feature = "schema", schemars(length(min = 1)))]
     parameters: Vec<PredicateParameter>,
     /// Whether this predicate supports a `not-` prefixed variant. Defaults to `true`.
     #[serde(default = "default_true")]
@@ -96,7 +98,8 @@ where
 }
 
 /// Configuration options for the language server.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default, JsonSchema, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default, Clone)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Options {
     /// A list of strings representing directories to search for parsers, of the form
     /// `<lang>.(so|dll|dylib)` or `tree-sitter-<lang>.wasm`.
@@ -119,25 +122,27 @@ pub struct Options {
     pub valid_captures: HashMap<String, BTreeMap<String, String>>,
     /// A map of predicate names (sans `#` and `?`) to parameter specifications.
     #[serde(default, deserialize_with = "add_prefixes")]
-    #[schemars(schema_with = "prefixes_schema")]
+    #[cfg_attr(feature = "schema", schemars(schema_with = "prefixes_schema"))]
     pub valid_predicates: BTreeMap<String, Predicate>,
     /// A map of directive names (sans `#` and `!`) to parameter specifications.
     #[serde(default)]
     pub valid_directives: BTreeMap<String, Predicate>,
 }
 
+#[cfg(feature = "schema")]
 fn prefixes_schema(gen_: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
     let raw = <BTreeMap<String, PredicateAux>>::json_schema(gen_).into_object();
     raw.into()
 }
 
 /// A type specification for a directive.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default, JsonSchema, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default, Clone)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Predicate {
     /// A short description of the predicate (in Markdown format).
     pub description: String,
     /// The list of valid parameter types.
-    #[schemars(length(min = 1))]
+    #[cfg_attr(feature = "schema", schemars(length(min = 1)))]
     pub parameters: Vec<PredicateParameter>,
 }
 
@@ -145,7 +150,8 @@ pub struct Predicate {
 ///
 /// Parameters can be one or both of two types (a capture or a string), and can be required,
 /// optional, or "variadic" (there can be zero-to-many of them).
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, JsonSchema, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PredicateParameter {
     /// An optional description of this parameter.
     pub description: Option<String>,
@@ -159,7 +165,8 @@ pub struct PredicateParameter {
 }
 
 /// The type of the predicate parameter.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, JsonSchema, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum PredicateParameterType {
     /// Must be a capture (e.g. `@variable`).
@@ -181,7 +188,8 @@ impl Display for PredicateParameterType {
 }
 
 /// The arity of the predicate parameter.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, JsonSchema, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum PredicateParameterArity {
     /// A regular, required parameter.
