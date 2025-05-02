@@ -1,12 +1,19 @@
 use std::sync::LazyLock;
 
 use ropey::Rope;
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Url};
+use tower_lsp::{
+    jsonrpc::{Error, ErrorCode, Result},
+    lsp_types::{
+        Diagnostic, DiagnosticSeverity, DocumentDiagnosticParams, DocumentDiagnosticReport,
+        DocumentDiagnosticReportResult, FullDocumentDiagnosticReport,
+        RelatedFullDocumentDiagnosticReport, Url,
+    },
+};
 use tree_sitter::{Node, Query, QueryCursor, StreamingIterator as _, TreeCursor};
 use ts_query_ls::{Options, PredicateParameter, PredicateParameterArity, PredicateParameterType};
 
 use crate::{
-    DocumentData, QUERY_LANGUAGE, SymbolInfo,
+    Backend, DocumentData, QUERY_LANGUAGE, SymbolInfo,
     util::{CAPTURES_QUERY, NodeUtil as _, TextProviderRope, uri_to_basename},
 };
 
@@ -20,6 +27,32 @@ static DIAGNOSTICS_QUERY: LazyLock<Query> = LazyLock::new(|| {
     )
     .unwrap()
 });
+
+pub async fn diagnostic(
+    backend: &Backend,
+    params: DocumentDiagnosticParams,
+) -> Result<DocumentDiagnosticReportResult> {
+    let uri = &params.text_document.uri;
+    let Some(document) = &backend.document_map.get(uri) else {
+        return Err(Error {
+            code: ErrorCode::InternalError,
+            message: format!("Document not found for URI '{uri}'").into(),
+            data: None,
+        });
+    };
+    let options = &backend.options.read().await;
+    let rope = &document.rope;
+    let provider = &TextProviderRope(rope);
+    Ok(DocumentDiagnosticReportResult::Report(
+        DocumentDiagnosticReport::Full(RelatedFullDocumentDiagnosticReport {
+            related_documents: None,
+            full_document_diagnostic_report: FullDocumentDiagnosticReport {
+                result_id: None,
+                items: get_diagnostics(uri, document, options, provider),
+            },
+        }),
+    ))
+}
 
 pub fn get_diagnostics(
     uri: &Url,

@@ -2,12 +2,7 @@ use tower_lsp::lsp_types::{DidChangeTextDocumentParams, Position, Range};
 use tracing::warn;
 use tree_sitter::Parser;
 
-use crate::{
-    Backend, QUERY_LANGUAGE,
-    util::{TextProviderRope, lsp_textdocchange_to_ts_inputedit},
-};
-
-use super::diagnostic::get_diagnostics;
+use crate::{Backend, QUERY_LANGUAGE, util::lsp_textdocchange_to_ts_inputedit};
 
 pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) {
     let uri = &params.text_document.uri;
@@ -73,19 +68,6 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
     };
 
     document.tree = tree;
-    let document = &*document;
-    let options = &backend.options.read().await;
-    let provider = &TextProviderRope(&document.rope);
-
-    // Update diagnostics
-    backend
-        .client
-        .publish_diagnostics(
-            uri.clone(),
-            get_diagnostics(uri, document, options, provider),
-            Some(version),
-        )
-        .await;
 }
 
 #[cfg(test)]
