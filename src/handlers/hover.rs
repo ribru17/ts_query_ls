@@ -89,17 +89,10 @@ pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hove
                 range: Some(node_range),
                 contents: HoverContents::Markup(MarkupContent {
                     kind: MarkupKind::Markdown,
-                    value: String::from(
-                        r"### The `ERROR` Node
-
-When the parser encounters text it does not recognize, it represents this node
-as `(ERROR)` in the syntax tree. These error nodes can be queried just like
-normal nodes:
-
-```query
-(ERROR) @error-node
-```",
-                    ),
+                    value: String::from(include_str!(concat!(
+                        env!("CARGO_MANIFEST_DIR"),
+                        "/docs/error.md"
+                    ))),
                 }),
             }));
         }
@@ -108,19 +101,10 @@ normal nodes:
             range: Some(node_range),
             contents: HoverContents::Markup(MarkupContent {
                 kind: MarkupKind::Markdown,
-                value: String::from(
-                    r"### The `MISSING` Node
-
-If the parser is able to recover from erroneous text by inserting a missing token and then reducing, it will insert that
-missing node in the final tree so long as that tree has the lowest error cost. These missing nodes appear as seemingly normal
-nodes in the tree, but they are zero tokens wide, and are internally represented as a property of the actual terminal node
-that was inserted, instead of being its own kind of node, like the `ERROR` node. These special missing nodes can be queried
-using `(MISSING)`:
-
-```query
-(MISSING) @missing-node
-```",
-                ),
+                value: String::from(include_str!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/docs/missing.md"
+                ))),
             }),
         }));
     } else if node.kind() == "_" {
@@ -128,20 +112,10 @@ using `(MISSING)`:
             range: Some(node_range),
             contents: HoverContents::Markup(MarkupContent {
                 kind: MarkupKind::Markdown,
-                value: String::from(
-                    r"### The Wildcard Node
-
-A wildcard node is represented with an underscore (`_`), it matches any node.
-This is similar to `.` in regular expressions.
-There are two types, `(_)` will match any named node,
-and `_` will match any named or anonymous node.
-
-For example, this pattern would match any node inside a call:
-
-```query
-(call (_) @call.inner)
-```",
-                ),
+                value: String::from(include_str!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/docs/wildcard.md"
+                ))),
             }),
         }));
     } else if let Some(capture) =
@@ -163,6 +137,39 @@ For example, this pattern would match any node inside a call:
                 }),
             }));
         }
+    } else if node.kind() == "." && node_parent.is_some_and(|p| p.kind() != "predicate") {
+        return Ok(Some(Hover {
+            range: Some(node_range),
+            contents: HoverContents::Markup(MarkupContent {
+                kind: MarkupKind::Markdown,
+                value: String::from(include_str!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/docs/anchor.md"
+                ))),
+            }),
+        }));
+    } else if node.kind() == "?" || node.kind() == "*" || node.kind() == "+" {
+        return Ok(Some(Hover {
+            range: Some(node_range),
+            contents: HoverContents::Markup(MarkupContent {
+                kind: MarkupKind::Markdown,
+                value: String::from(include_str!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/docs/quantification.md"
+                ))),
+            }),
+        }));
+    } else if node.kind() == "[" || node.kind() == "]" {
+        return Ok(Some(Hover {
+            range: Some(node_range),
+            contents: HoverContents::Markup(MarkupContent {
+                kind: MarkupKind::Markdown,
+                value: String::from(include_str!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/docs/alternation.md"
+                ))),
+            }),
+        }));
     }
 
     Ok(None)
@@ -195,65 +202,44 @@ mod test {
 (MISSING supertype) @node
 
 (_) @any
-_ @any";
+_ @any
+
+(function . (identifier)?)
+
+(function (identifier)+)* @cap
+
+[ (number) (boolean) ] @const
+";
 
     #[rstest]
     #[case(SOURCE, vec!["supertype"], Position { line: 0, character: 2 }, Range::new(
         Position { line: 0, character: 1 },
         Position { line: 0, character: 6 } ),
-    r"### The `ERROR` Node
-
-When the parser encounters text it does not recognize, it represents this node
-as `(ERROR)` in the syntax tree. These error nodes can be queried just like
-normal nodes:
-
-```query
-(ERROR) @error-node
-```", Default::default())]
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/docs/error.md"
+    )), Default::default())]
     #[case(SOURCE, vec!["supertype"], Position { line: 4, character: 4 }, Range::new(
         Position { line: 4, character: 1 },
         Position { line: 4, character: 8 } ),
-    r"### The `MISSING` Node
-
-If the parser is able to recover from erroneous text by inserting a missing token and then reducing, it will insert that
-missing node in the final tree so long as that tree has the lowest error cost. These missing nodes appear as seemingly normal
-nodes in the tree, but they are zero tokens wide, and are internally represented as a property of the actual terminal node
-that was inserted, instead of being its own kind of node, like the `ERROR` node. These special missing nodes can be queried
-using `(MISSING)`:
-
-```query
-(MISSING) @missing-node
-```", Default::default())]
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/docs/missing.md"
+    )), Default::default())]
     #[case(SOURCE, vec!["supertype"], Position { line: 6, character: 1 }, Range::new(
         Position { line: 6, character: 1 },
         Position { line: 6, character: 2 } ),
-    r"### The Wildcard Node
-
-A wildcard node is represented with an underscore (`_`), it matches any node.
-This is similar to `.` in regular expressions.
-There are two types, `(_)` will match any named node,
-and `_` will match any named or anonymous node.
-
-For example, this pattern would match any node inside a call:
-
-```query
-(call (_) @call.inner)
-```", Default::default())]
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/docs/wildcard.md"
+    )), Default::default())]
     #[case(SOURCE, vec!["supertype"], Position { line: 7, character: 0 }, Range::new(
         Position { line: 7, character: 0 },
         Position { line: 7, character: 1 } ),
-    r"### The Wildcard Node
-
-A wildcard node is represented with an underscore (`_`), it matches any node.
-This is similar to `.` in regular expressions.
-There are two types, `(_)` will match any named node,
-and `_` will match any named or anonymous node.
-
-For example, this pattern would match any node inside a call:
-
-```query
-(call (_) @call.inner)
-```", Default::default())]
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/docs/wildcard.md"
+    )), Default::default())]
     #[case(SOURCE, vec!["supertype"], Position { line: 0, character: 17 }, Range::new(
         Position { line: 0, character: 16 },
         Position { line: 0, character: 25 } ),
@@ -287,6 +273,48 @@ For example, this pattern would match any node inside a call:
     r"## `@error`
 
 An error node", BTreeMap::from([(String::from("error"), String::from("An error node"))]))]
+    #[case(SOURCE, vec![], Position { line: 9, character: 10 }, Range::new(
+        Position { line: 9, character: 10 },
+        Position { line: 9, character: 11 } ),
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/docs/anchor.md"
+    )), BTreeMap::from([(String::from("error"), String::from("An error node"))]))]
+    #[case(SOURCE, vec![], Position { line: 9, character: 24 }, Range::new(
+        Position { line: 9, character: 24 },
+        Position { line: 9, character: 25 } ),
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/docs/quantification.md"
+    )), BTreeMap::from([(String::from("error"), String::from("An error node"))]))]
+    #[case(SOURCE, vec![], Position { line: 11, character: 24 }, Range::new(
+        Position { line: 11, character: 24 },
+        Position { line: 11, character: 25 } ),
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/docs/quantification.md"
+    )), BTreeMap::from([(String::from("error"), String::from("An error node"))]))]
+    #[case(SOURCE, vec![], Position { line: 11, character: 22 }, Range::new(
+        Position { line: 11, character: 22 },
+        Position { line: 11, character: 23 } ),
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/docs/quantification.md"
+    )), BTreeMap::from([(String::from("error"), String::from("An error node"))]))]
+    #[case(SOURCE, vec![], Position { line: 13, character: 0 }, Range::new(
+        Position { line: 13, character: 0 },
+        Position { line: 13, character: 1 } ),
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/docs/alternation.md"
+    )), BTreeMap::from([(String::from("error"), String::from("An error node"))]))]
+    #[case(SOURCE, vec![], Position { line: 13, character: 21 }, Range::new(
+        Position { line: 13, character: 21 },
+        Position { line: 13, character: 22 } ),
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/docs/alternation.md"
+    )), BTreeMap::from([(String::from("error"), String::from("An error node"))]))]
     #[tokio::test(flavor = "current_thread")]
     async fn hover(
         #[case] source: &str,
