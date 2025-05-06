@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::ops::Deref as _;
 use std::sync::LazyLock;
 
@@ -8,8 +8,7 @@ use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{DocumentFormattingParams, Range, TextEdit};
 use tracing::warn;
 use tree_sitter::{
-    Node, Query, QueryCursor, QueryMatch, QueryPredicateArg, StreamingIterator as _, Tree,
-    TreeCursor,
+    Node, Query, QueryCursor, QueryMatch, QueryPredicateArg, StreamingIterator as _, TreeCursor,
 };
 
 use crate::Backend;
@@ -26,9 +25,9 @@ pub async fn formatting(
         return Ok(None);
     };
     let rope = &doc.rope;
-    let tree = &doc.tree;
+    let root = &doc.tree.root_node();
 
-    if let Some(formatted_doc) = format_document(rope, tree) {
+    if let Some(formatted_doc) = format_document(rope, root) {
         Ok(Some(diff(rope.to_string().as_str(), &formatted_doc, rope)))
     } else {
         Ok(None)
@@ -115,29 +114,32 @@ fn append_lines(lines: &mut Vec<String>, lines_to_append: &[String]) {
     }
 }
 
-pub fn format_document(rope: &Rope, tree: &Tree) -> Option<String> {
-    let root = tree.root_node();
+#[derive(Default)]
+struct FormatMap {
+    ignore: HashSet<usize>,
+    indent_begin: HashSet<usize>,
+    indent_dedent: HashSet<usize>,
+    prepend_space: HashSet<usize>,
+    prepend_newline: HashSet<usize>,
+    append_space: HashSet<usize>,
+    append_newline: HashSet<usize>,
+    cancel_append: HashSet<usize>,
+    cancel_prepend: HashSet<usize>,
+    conditional_newline: HashSet<usize>,
+    lookahead_newline: HashSet<usize>,
+    comment_fix: HashSet<usize>,
+    make_pound: HashSet<usize>,
+    remove: HashSet<usize>,
+}
+
+pub fn format_document(rope: &Rope, root: &Node) -> Option<String> {
     if root.has_error() {
         return None;
     }
-    let mut map: HashMap<&str, HashMap<usize, HashSet<&str>>> = HashMap::from([
-        ("format.ignore", HashMap::new()),
-        ("format.indent.begin", HashMap::new()),
-        ("format.indent.dedent", HashMap::new()),
-        ("format.prepend-space", HashMap::new()),
-        ("format.prepend-newline", HashMap::new()),
-        ("format.append-space", HashMap::new()),
-        ("format.append-newline", HashMap::new()),
-        ("format.cancel-append", HashMap::new()),
-        ("format.cancel-prepend", HashMap::new()),
-        ("format.comment-fix", HashMap::new()),
-        ("format.make-pound", HashMap::new()),
-        ("format.remove", HashMap::new()),
-    ]);
-
+    let mut map = FormatMap::default();
     let mut cursor = QueryCursor::new();
     let provider = TextProviderRope(rope);
-    let mut matches = cursor.matches(&FORMAT_QUERY, root, &provider);
+    let mut matches = cursor.matches(&FORMAT_QUERY, *root, &provider);
 
     'matches: while let Some(match_) = matches.next() {
         for predicate in FORMAT_QUERY.general_predicates(match_.pattern_index) {
@@ -151,27 +153,30 @@ pub fn format_document(rope: &Rope, tree: &Tree) -> Option<String> {
             if name.starts_with('_') {
                 continue;
             }
-            let settings = map
-                .get_mut(name)
-                .unwrap()
-                .entry(capture.node.id())
-                .or_default();
-            for prop in FORMAT_QUERY.property_settings(match_.pattern_index) {
-                settings.insert(prop.key.deref());
-            }
+            let capture_set = match name {
+                "format.ignore" => &mut map.ignore,
+                "format.indent.begin" => &mut map.indent_begin,
+                "format.indent.dedent" => &mut map.indent_dedent,
+                "format.prepend-space" => &mut map.prepend_space,
+                "format.prepend-newline" => &mut map.prepend_newline,
+                "format.append-space" => &mut map.append_space,
+                "format.append-newline" => &mut map.append_newline,
+                "format.cancel-append" => &mut map.cancel_append,
+                "format.cancel-prepend" => &mut map.cancel_prepend,
+                "format.conditional-newline" => &mut map.conditional_newline,
+                "format.lookahead-newline" => &mut map.lookahead_newline,
+                "format.comment-fix" => &mut map.comment_fix,
+                "format.make-pound" => &mut map.make_pound,
+                "format.remove" => &mut map.remove,
+                _ => panic!("Unsupported format &mut capture"),
+            };
+            capture_set.insert(capture.node.id());
         }
     }
 
     let mut lines = vec![String::new()];
 
-    format_iter(
-        rope,
-        &tree.root_node(),
-        &mut lines,
-        &map,
-        0,
-        &mut tree.walk(),
-    );
+    format_iter(rope, root, &mut lines, &map, 0, &mut root.walk());
 
     Some(lines.join("\n") + "\n")
 }
@@ -180,7 +185,7 @@ fn format_iter<'a>(
     rope: &Rope,
     node: &Node<'a>,
     lines: &mut Vec<String>,
-    map: &HashMap<&str, HashMap<usize, HashSet<&str>>>,
+    map: &FormatMap,
     mut level: usize,
     cursor: &mut TreeCursor<'a>,
 ) {
@@ -197,7 +202,7 @@ fn format_iter<'a>(
             apply_newline = false;
             lines.push(INDENT_STR.repeat(level));
         }
-        if map.get("format.ignore").unwrap().contains_key(id) {
+        if map.ignore.contains(id) {
             let text = CRLF
                 .replace_all(child.text(rope).as_str(), "\n")
                 .trim_matches('\n')
@@ -205,17 +210,17 @@ fn format_iter<'a>(
                 .map(ToOwned::to_owned)
                 .collect::<Vec<String>>();
             append_lines(lines, &text);
-        } else if !map.get("format.remove").unwrap().contains_key(id) {
-            if !map.get("format.cancel-prepend").unwrap().contains_key(id) {
-                if map.get("format.prepend-newline").unwrap().contains_key(id) {
+        } else if !map.remove.contains(id) {
+            if !map.cancel_prepend.contains(id) {
+                if map.prepend_newline.contains(id) {
                     lines.push(INDENT_STR.repeat(level));
-                } else if let Some(md_key) = map.get("format.prepend-space").unwrap().get(id) {
+                } else if map.prepend_space.contains(id) {
                     let byte_length = child.end_byte() - child.start_byte();
                     let broader_byte_length = node.end_byte() - child.start_byte();
-                    if !md_key.contains("conditional-newline") {
+                    if !map.conditional_newline.contains(id) {
                         lines.last_mut().unwrap().push(' ');
                     } else if byte_length + 1 + lines.last().unwrap().len() > TEXT_WIDTH
-                        || (md_key.contains("lookahead-newline")
+                        || (map.lookahead_newline.contains(id)
                             && broader_byte_length + lines.last().unwrap().len() > TEXT_WIDTH)
                     {
                         lines.push(INDENT_STR.repeat(level));
@@ -224,7 +229,7 @@ fn format_iter<'a>(
                     }
                 }
             }
-            if map.get("format.comment-fix").unwrap().contains_key(id) {
+            if map.comment_fix.contains(id) {
                 let text = child.text(rope);
                 if let Some(mat) = COMMENT_PAT.captures(text.as_str()) {
                     lines
@@ -232,7 +237,7 @@ fn format_iter<'a>(
                         .unwrap()
                         .push_str([";", mat.get(1).unwrap().as_str()].concat().as_str());
                 }
-            } else if map.get("format.make-pound").unwrap().contains_key(id) {
+            } else if map.make_pound.contains(id) {
                 lines.last_mut().unwrap().push('#');
             // Stop recursively formatting on leaf nodes (or strings, which should not have their
             // inner content touched)
@@ -248,18 +253,18 @@ fn format_iter<'a>(
             } else {
                 format_iter(rope, &child, lines, map, level, cursor);
             }
-            if map.get("format.indent.begin").unwrap().contains_key(id) {
+            if map.indent_begin.contains(id) {
                 level += 1;
                 apply_newline = true;
-            } else if map.get("format.indent.dedent").unwrap().contains_key(id) {
+            } else if map.indent_dedent.contains(id) {
                 lines.last_mut().unwrap().drain(0..2);
             }
         }
-        if map.get("format.cancel-append").unwrap().contains_key(id) {
+        if map.cancel_append.contains(id) {
             apply_newline = false;
-        } else if map.get("format.append-newline").unwrap().contains_key(id) {
+        } else if map.append_newline.contains(id) {
             apply_newline = true;
-        } else if map.get("format.append-space").unwrap().contains_key(id) {
+        } else if map.append_space.contains(id) {
             lines.last_mut().unwrap().push(' ');
         }
 
