@@ -250,17 +250,14 @@
 
 (predicate
   (parameters
-    (_) @format.prepend-space)
-  (#set! conditional-newline))
+    (_) @format.prepend-space @format.conditional-newline))
 
 (predicate
   (parameters
     .
     (capture)
     .
-    (_) @format.prepend-space)
-  (#set! lookahead-newline)
-  (#set! conditional-newline))
+    (_) @format.prepend-space @format.lookahead-newline @format.conditional-newline))
 
 ; Comment related handlers
 (comment) @format.append-newline @format.comment-fix
