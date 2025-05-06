@@ -102,6 +102,14 @@ impl fmt::Display for SymbolInfo {
     }
 }
 
+#[derive(Clone)]
+pub struct LanguageData {
+    language: Language,
+    // TODO: Once most parsers are upgraded to ABI 15, just get the name from the language object
+    // itself
+    name: String,
+}
+
 struct DocumentData {
     symbols_set: HashSet<SymbolInfo>,
     symbols_vec: Vec<SymbolInfo>,
@@ -111,7 +119,7 @@ struct DocumentData {
     rope: Rope,
     tree: Tree,
     version: i32,
-    language: Option<Language>,
+    language_data: Option<LanguageData>,
 }
 
 struct Backend {

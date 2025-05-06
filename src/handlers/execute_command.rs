@@ -42,7 +42,11 @@ async fn check_impossible_patterns(backend: &Backend, params: ExecuteCommandPara
     let rope = &doc.rope;
     let tree = &doc.tree;
     let options = &backend.options.read().await;
-    let Some(lang) = util::get_language(&uri, options) else {
+    let language = (|| {
+        let name = util::get_language_name(&uri, options)?;
+        util::get_language(&name, options)
+    })();
+    let Some(lang) = language else {
         warn!("Could not retrieve language for path: '{}'", uri.path());
         return;
     };

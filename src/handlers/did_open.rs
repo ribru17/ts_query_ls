@@ -5,7 +5,10 @@ use tower_lsp::lsp_types::DidOpenTextDocumentParams;
 use tracing::info;
 use tree_sitter::Parser;
 
-use crate::{Backend, DocumentData, QUERY_LANGUAGE, SymbolInfo, util::get_language};
+use crate::{
+    Backend, DocumentData, LanguageData, QUERY_LANGUAGE, SymbolInfo,
+    util::{get_language, get_language_name},
+};
 
 pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     let uri = &params.text_document.uri;
@@ -24,21 +27,29 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     let mut fields_vec: Vec<String> = vec![];
     let mut fields_set: HashSet<String> = HashSet::new();
     let mut supertype_map: HashMap<SymbolInfo, BTreeSet<SymbolInfo>> = HashMap::new();
-    let language = get_language(uri, &*backend.options.read().await);
-    if let Some(lang) = &language {
+    let language_data = async {
+        let options = backend.options.read().await;
+        let name = get_language_name(uri, &options)?;
+        let language = get_language(&name, &options)?;
+        Some(LanguageData { name, language })
+    }
+    .await;
+
+    if let Some(LanguageData { language, name: _ }) = &language_data {
         let error_symbol = SymbolInfo {
             label: "ERROR".to_owned(),
             named: true,
         };
         symbols_set.insert(error_symbol.clone());
         symbols_vec.push(error_symbol);
-        for i in 0..lang.node_kind_count() as u16 {
-            let supertype = lang.node_kind_is_supertype(i);
-            let named = lang.node_kind_is_named(i) || supertype;
+        for i in 0..language.node_kind_count() as u16 {
+            let supertype = language.node_kind_is_supertype(i);
+            let named = language.node_kind_is_named(i) || supertype;
             let label = if named {
-                lang.node_kind_for_id(i).unwrap().to_owned()
+                language.node_kind_for_id(i).unwrap().to_owned()
             } else {
-                lang.node_kind_for_id(i)
+                language
+                    .node_kind_for_id(i)
                     .unwrap()
                     .replace('\\', r"\\")
                     .replace('"', r#"\""#)
@@ -48,24 +59,28 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
             if supertype {
                 supertype_map.insert(
                     symbol_info.clone(),
-                    lang.subtypes_for_supertype(i)
+                    language
+                        .subtypes_for_supertype(i)
                         .iter()
                         .map(|s| SymbolInfo {
-                            label: lang.node_kind_for_id(*s).unwrap().to_string(),
-                            named: lang.node_kind_is_named(*s) || lang.node_kind_is_supertype(*s),
+                            label: language.node_kind_for_id(*s).unwrap().to_string(),
+                            named: language.node_kind_is_named(*s)
+                                || language.node_kind_is_supertype(*s),
                         })
                         .collect(),
                 );
             }
-            if symbols_set.contains(&symbol_info) || !(lang.node_kind_is_visible(i) || supertype) {
+            if symbols_set.contains(&symbol_info)
+                || !(language.node_kind_is_visible(i) || supertype)
+            {
                 continue;
             }
             symbols_set.insert(symbol_info.clone());
             symbols_vec.push(symbol_info);
         }
         // Field IDs go from 1 to nfields inclusive (extra index 0 maps to NULL)
-        for i in 1..=lang.field_count() as u16 {
-            let field_name = lang.field_name_for_id(i).unwrap().to_owned();
+        for i in 1..=language.field_count() as u16 {
+            let field_name = language.field_name_for_id(i).unwrap().to_owned();
             if !fields_set.contains(&field_name) {
                 fields_set.insert(field_name.clone());
                 fields_vec.push(field_name);
@@ -86,7 +101,7 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
             fields_vec,
             supertype_map,
             version,
-            language,
+            language_data,
         },
     );
 }

@@ -11,13 +11,12 @@ use tower_lsp::{
     },
 };
 use tree_sitter::{
-    Language, Node, Query, QueryCursor, QueryError, QueryErrorKind, StreamingIterator as _,
-    TreeCursor,
+    Node, Query, QueryCursor, QueryError, QueryErrorKind, StreamingIterator as _, TreeCursor,
 };
 use ts_query_ls::{Options, PredicateParameter, PredicateParameterArity, PredicateParameterType};
 
 use crate::{
-    Backend, DocumentData, QUERY_LANGUAGE, SymbolInfo,
+    Backend, DocumentData, LanguageData, QUERY_LANGUAGE, SymbolInfo,
     util::{CAPTURES_QUERY, NodeUtil as _, TextProviderRope, uri_to_basename},
 };
 
@@ -36,27 +35,18 @@ static QUERY_STRUCTURE_RESULTS: LazyLock<DashMap<(String, String), Option<usize>
     LazyLock::new(DashMap::new);
 
 fn get_pattern_diagnostic(
-    uri: Url,
     pattern_node: &Node,
     rope: &Rope,
-    language: Language,
+    language_data: LanguageData,
 ) -> Option<usize> {
-    // Assume all sibling queries are of the same language
-    // TODO: Once many parsers have been upgraded to ABI 15, hash by language name rather than
-    // directory
-    let parent = uri
-        .to_file_path()
-        .ok()?
-        .parent()?
-        .to_string_lossy()
-        .into_owned();
+    let LanguageData { language, name } = language_data;
     // Format patterns to ignore syntactically insignificant diffs
     let pattern_text = pattern_node.text(rope);
-    if let Some(cached_diag) = QUERY_STRUCTURE_RESULTS.get(&(parent.clone(), pattern_text.clone()))
-    {
+    let pattern_key = (name, pattern_text);
+    if let Some(cached_diag) = QUERY_STRUCTURE_RESULTS.get(&pattern_key) {
         return *cached_diag.deref();
     }
-    match Query::new(&language, &pattern_text) {
+    match Query::new(&language, &pattern_key.1) {
         Err(QueryError {
             kind: QueryErrorKind::Structure,
             offset,
@@ -65,11 +55,11 @@ fn get_pattern_diagnostic(
             message: _,
         }) => {
             let offset = Some(offset);
-            QUERY_STRUCTURE_RESULTS.insert((parent, pattern_text), offset);
+            QUERY_STRUCTURE_RESULTS.insert(pattern_key, offset);
             offset
         }
         _ => {
-            QUERY_STRUCTURE_RESULTS.insert((parent, pattern_text), None);
+            QUERY_STRUCTURE_RESULTS.insert(pattern_key, None);
             None
         }
     }
@@ -293,9 +283,9 @@ pub fn get_diagnostics(
                     }
                 }
                 "definition" => {
-                    if let Some(language) = document.language.clone() {
+                    if let Some(language_data) = &document.language_data {
                         if let Some(offset) =
-                            get_pattern_diagnostic(uri.clone(), &capture.node, rope, language)
+                            get_pattern_diagnostic(&capture.node, rope, language_data.clone())
                         {
                             let true_offset = offset + capture.node.start_byte();
                             diagnostics.push(Diagnostic {
