@@ -2,6 +2,9 @@
 
 (MISSING) @missing
 
+(program
+  (definition) @definition)
+
 (anonymous_node
   (string
     (string_content) @node.anon))

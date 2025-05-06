@@ -37,6 +37,7 @@ pub(super) fn lint_file(
         fields_vec: Default::default(),
         supertype_map: Default::default(),
         version: Default::default(),
+        language: Default::default(),
     };
     let provider = &util::TextProviderRope(&doc.rope);
     let diagnostics = get_diagnostics(uri, &doc, options, provider);

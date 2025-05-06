@@ -24,7 +24,8 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     let mut fields_vec: Vec<String> = vec![];
     let mut fields_set: HashSet<String> = HashSet::new();
     let mut supertype_map: HashMap<SymbolInfo, BTreeSet<SymbolInfo>> = HashMap::new();
-    if let Some(lang) = get_language(uri, &*backend.options.read().await) {
+    let language = get_language(uri, &*backend.options.read().await);
+    if let Some(lang) = &language {
         let error_symbol = SymbolInfo {
             label: "ERROR".to_owned(),
             named: true,
@@ -85,6 +86,7 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
             fields_vec,
             supertype_map,
             version,
+            language,
         },
     );
 }

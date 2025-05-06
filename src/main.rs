@@ -111,6 +111,7 @@ struct DocumentData {
     rope: Rope,
     tree: Tree,
     version: i32,
+    language: Option<Language>,
 }
 
 struct Backend {

@@ -1,5 +1,6 @@
-use std::sync::LazyLock;
+use std::{ops::Deref, sync::LazyLock};
 
+use dashmap::DashMap;
 use ropey::Rope;
 use tower_lsp::{
     jsonrpc::{Error, ErrorCode, Result},
@@ -9,7 +10,10 @@ use tower_lsp::{
         RelatedFullDocumentDiagnosticReport, Url,
     },
 };
-use tree_sitter::{Node, Query, QueryCursor, StreamingIterator as _, TreeCursor};
+use tree_sitter::{
+    Language, Node, Query, QueryCursor, QueryError, QueryErrorKind, StreamingIterator as _,
+    TreeCursor,
+};
 use ts_query_ls::{Options, PredicateParameter, PredicateParameterArity, PredicateParameterType};
 
 use crate::{
@@ -27,6 +31,49 @@ static DIAGNOSTICS_QUERY: LazyLock<Query> = LazyLock::new(|| {
     )
     .unwrap()
 });
+
+static QUERY_STRUCTURE_RESULTS: LazyLock<DashMap<(String, String), Option<usize>>> =
+    LazyLock::new(DashMap::new);
+
+fn get_pattern_diagnostic(
+    uri: Url,
+    pattern_node: &Node,
+    rope: &Rope,
+    language: Language,
+) -> Option<usize> {
+    // Assume all sibling queries are of the same language
+    // TODO: Once many parsers have been upgraded to ABI 15, hash by language name rather than
+    // directory
+    let parent = uri
+        .to_file_path()
+        .ok()?
+        .parent()?
+        .to_string_lossy()
+        .into_owned();
+    // Format patterns to ignore syntactically insignificant diffs
+    let pattern_text = pattern_node.text(rope);
+    if let Some(cached_diag) = QUERY_STRUCTURE_RESULTS.get(&(parent.clone(), pattern_text.clone()))
+    {
+        return *cached_diag.deref();
+    }
+    match Query::new(&language, &pattern_text) {
+        Err(QueryError {
+            kind: QueryErrorKind::Structure,
+            offset,
+            row: _,
+            column: _,
+            message: _,
+        }) => {
+            let offset = Some(offset);
+            QUERY_STRUCTURE_RESULTS.insert((parent, pattern_text), offset);
+            offset
+        }
+        _ => {
+            QUERY_STRUCTURE_RESULTS.insert((parent, pattern_text), None);
+            None
+        }
+    }
+}
 
 pub async fn diagnostic(
     backend: &Backend,
@@ -243,6 +290,25 @@ pub fn get_diagnostics(
                             range,
                             ..Default::default()
                         });
+                    }
+                }
+                "definition" => {
+                    if let Some(language) = document.language.clone() {
+                        if let Some(offset) =
+                            get_pattern_diagnostic(uri.clone(), &capture.node, rope, language)
+                        {
+                            let true_offset = offset + capture.node.start_byte();
+                            diagnostics.push(Diagnostic {
+                                message: String::from("Invalid pattern structure"),
+                                severity,
+                                range: tree
+                                    .root_node()
+                                    .named_descendant_for_byte_range(true_offset, true_offset)
+                                    .map(|node| node.lsp_range(rope))
+                                    .unwrap_or_default(),
+                                ..Default::default()
+                            });
+                        }
                     }
                 }
                 _ => {}
