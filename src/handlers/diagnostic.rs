@@ -1,5 +1,6 @@
-use std::sync::LazyLock;
+use std::{ops::Deref, sync::LazyLock};
 
+use dashmap::DashMap;
 use ropey::Rope;
 use tower_lsp::{
     jsonrpc::{Error, ErrorCode, Result},
@@ -9,11 +10,13 @@ use tower_lsp::{
         RelatedFullDocumentDiagnosticReport, Url,
     },
 };
-use tree_sitter::{Node, Query, QueryCursor, StreamingIterator as _, TreeCursor};
+use tree_sitter::{
+    Node, Query, QueryCursor, QueryError, QueryErrorKind, StreamingIterator as _, TreeCursor,
+};
 use ts_query_ls::{Options, PredicateParameter, PredicateParameterArity, PredicateParameterType};
 
 use crate::{
-    Backend, DocumentData, QUERY_LANGUAGE, SymbolInfo,
+    Backend, DocumentData, LanguageData, QUERY_LANGUAGE, SymbolInfo,
     util::{CAPTURES_QUERY, NodeUtil as _, TextProviderRope, uri_to_basename},
 };
 
@@ -27,6 +30,40 @@ static DIAGNOSTICS_QUERY: LazyLock<Query> = LazyLock::new(|| {
     )
     .unwrap()
 });
+
+static QUERY_STRUCTURE_RESULTS: LazyLock<DashMap<(String, String), Option<usize>>> =
+    LazyLock::new(DashMap::new);
+
+fn get_pattern_diagnostic(
+    pattern_node: &Node,
+    rope: &Rope,
+    language_data: LanguageData,
+) -> Option<usize> {
+    let LanguageData { language, name } = language_data;
+    // Format patterns to ignore syntactically insignificant diffs
+    let pattern_text = pattern_node.text(rope);
+    let pattern_key = (name, pattern_text);
+    if let Some(cached_diag) = QUERY_STRUCTURE_RESULTS.get(&pattern_key) {
+        return *cached_diag.deref();
+    }
+    match Query::new(&language, &pattern_key.1) {
+        Err(QueryError {
+            kind: QueryErrorKind::Structure,
+            offset,
+            row: _,
+            column: _,
+            message: _,
+        }) => {
+            let offset = Some(offset);
+            QUERY_STRUCTURE_RESULTS.insert(pattern_key, offset);
+            offset
+        }
+        _ => {
+            QUERY_STRUCTURE_RESULTS.insert(pattern_key, None);
+            None
+        }
+    }
+}
 
 pub async fn diagnostic(
     backend: &Backend,
@@ -243,6 +280,25 @@ pub fn get_diagnostics(
                             range,
                             ..Default::default()
                         });
+                    }
+                }
+                "definition" => {
+                    if let Some(language_data) = &document.language_data {
+                        if let Some(offset) =
+                            get_pattern_diagnostic(&capture.node, rope, language_data.clone())
+                        {
+                            let true_offset = offset + capture.node.start_byte();
+                            diagnostics.push(Diagnostic {
+                                message: String::from("Invalid pattern structure"),
+                                severity,
+                                range: tree
+                                    .root_node()
+                                    .named_descendant_for_byte_range(true_offset, true_offset)
+                                    .map(|node| node.lsp_range(rope))
+                                    .unwrap_or_default(),
+                                ..Default::default()
+                            });
+                        }
                     }
                 }
                 _ => {}

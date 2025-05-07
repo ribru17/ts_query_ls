@@ -181,7 +181,8 @@ pub fn lsp_textdocchange_to_ts_inputedit(
 
 const DYLIB_EXTENSIONS: [&str; 3] = [".so", ".dll", ".dylib"];
 
-pub fn get_language(uri: &Url, options: &Options) -> Option<Language> {
+/// Get the language name associated with the given URI, after aliases.
+pub fn get_language_name(uri: &Url, options: &Options) -> Option<String> {
     let mut language_retrieval_regexes: Vec<Regex> = options
         .language_retrieval_patterns
         .clone()
@@ -197,28 +198,24 @@ pub fn get_language(uri: &Url, options: &Options) -> Option<Language> {
             break;
         }
     }
-    let lang = captures
-        .and_then(|captures| captures.get(1))
-        .and_then(|cap| {
-            let cap_str = cap.as_str();
-            get_language_object(
-                options
-                    .parser_aliases
-                    .get(cap_str)
-                    .unwrap_or(&cap_str.to_owned())
-                    .as_str(),
-                &options.parser_install_directories,
-                &ENGINE,
-            )
-        });
-    lang
+    let raw_name = captures
+        .and_then(|caps| caps.get(1))
+        .map(|cap| cap.as_str().to_owned())?;
+    Some(
+        options
+            .parser_aliases
+            .get(&raw_name)
+            .cloned()
+            .unwrap_or(raw_name),
+    )
 }
 
-pub fn get_language_object(
-    name: &str,
-    directories: &Vec<String>,
-    engine: &Engine,
-) -> Option<Language> {
+/// Get the TSLanguage object for a given name and configuration.
+pub fn get_language(name: &str, options: &Options) -> Option<Language> {
+    get_language_object(name, &options.parser_install_directories, &ENGINE)
+}
+
+fn get_language_object(name: &str, directories: &Vec<String>, engine: &Engine) -> Option<Language> {
     let name = name.replace('-', "_");
     let language_fn_name = format!("tree_sitter_{name}");
 
