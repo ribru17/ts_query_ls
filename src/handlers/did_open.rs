@@ -5,7 +5,10 @@ use tower_lsp::lsp_types::DidOpenTextDocumentParams;
 use tracing::info;
 use tree_sitter::Parser;
 
-use crate::{Backend, DocumentData, QUERY_LANGUAGE, SymbolInfo, util::get_language};
+use crate::{
+    Backend, DocumentData, QUERY_LANGUAGE, SymbolInfo,
+    util::{get_language, get_language_name},
+};
 
 pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     let uri = &params.text_document.uri;
@@ -24,7 +27,9 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     let mut fields_vec: Vec<String> = vec![];
     let mut fields_set: HashSet<String> = HashSet::new();
     let mut supertype_map: HashMap<SymbolInfo, BTreeSet<SymbolInfo>> = HashMap::new();
-    if let Some(lang) = get_language(uri, &*backend.options.read().await) {
+    let options = backend.options.read().await;
+    let language_name = get_language_name(uri, &options);
+    if let Some(lang) = language_name.and_then(|name| get_language(&name, &options)) {
         let error_symbol = SymbolInfo {
             label: "ERROR".to_owned(),
             named: true,

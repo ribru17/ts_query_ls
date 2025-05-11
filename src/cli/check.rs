@@ -23,7 +23,8 @@ pub fn check_directories(directories: &[PathBuf], config: String, format: bool, 
     };
     scm_files.par_iter().for_each(|path| {
         let uri = Url::from_file_path(path.canonicalize().unwrap()).unwrap();
-        if let Some(lang) = util::get_language(&uri, &options) {
+        let language_name = util::get_language_name(&uri, &options);
+        if let Some(lang) = language_name.and_then(|name| util::get_language(&name, &options)) {
             if let Ok(source) = fs::read_to_string(path) {
                 if let Err(err) = Query::new(&lang, source.as_str()) {
                     match err.kind {
