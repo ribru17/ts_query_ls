@@ -86,7 +86,19 @@ async fn check_impossible_patterns(backend: &Backend, params: ExecuteCommandPara
         }
     }
     let provider = &TextProviderRope(rope);
-    diagnostics.append(&mut get_diagnostics(&uri, doc, options, provider));
+    let language_data = doc
+        .language_name
+        .as_ref()
+        .and_then(|name| backend.language_map.get(name))
+        .as_deref()
+        .cloned();
+    diagnostics.append(&mut get_diagnostics(
+        &uri,
+        doc,
+        language_data,
+        options,
+        provider,
+    ));
 
     backend
         .client

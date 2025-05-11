@@ -20,12 +20,15 @@ pub mod helpers {
         },
     };
 
-    use crate::{Backend, DocumentData, Options, QUERY_LANGUAGE, SymbolInfo};
+    use crate::{
+        Backend, DocumentData, LanguageData, Options, QUERY_LANGUAGE, SymbolInfo,
+        util::get_language_name,
+    };
 
     pub static TEST_URI: LazyLock<Url> =
-        LazyLock::new(|| Url::parse("file:///tmp/test.scm").unwrap());
+        LazyLock::new(|| Url::parse("file:///tmp/queries/js/test.scm").unwrap());
     pub static TEST_URI_2: LazyLock<Url> =
-        LazyLock::new(|| Url::parse("file:///tmp/injections/test.scm").unwrap());
+        LazyLock::new(|| Url::parse("file:///tmp/queries/css/test.scm").unwrap());
     pub const SIMPLE_FILE: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/queries/example_test_files/simple.scm"
@@ -51,17 +54,26 @@ pub mod helpers {
         parser
             .set_language(&QUERY_LANGUAGE)
             .expect("Error loading Query grammar");
-        let options = Arc::new(tokio::sync::RwLock::new(options.clone()));
+        let arced_options = Arc::new(tokio::sync::RwLock::new(options.clone()));
         let (mut service, _socket) = LspService::build(|client| Backend {
             client,
-            document_map: DashMap::from_iter(documents.iter().map(
-                |(uri, source, symbols, fields, supertypes)| {
+            document_map: DashMap::from_iter(documents.iter().map(|(uri, source, _, _, _)| {
+                (
+                    uri.clone(),
+                    DocumentData {
+                        rope: Rope::from(*source),
+                        tree: parser.parse(*source, None).unwrap(),
+                        version: 0,
+                        language_name: get_language_name(uri, options),
+                    },
+                )
+            })),
+            language_map: DashMap::from_iter(documents.iter().map(
+                |(uri, _, symbols, fields, supertypes)| {
+                    let language_name = get_language_name(uri, options).unwrap();
                     (
-                        uri.clone(),
-                        DocumentData {
-                            rope: Rope::from(*source),
-                            tree: parser.parse(*source, None).unwrap(),
-                            version: 0,
+                        language_name,
+                        LanguageData {
                             symbols_set: HashSet::from_iter(symbols.clone()),
                             symbols_vec: symbols.clone(),
                             fields_set: HashSet::from_iter(fields.iter().map(ToString::to_string)),
@@ -84,12 +96,13 @@ pub mod helpers {
                                     ]),
                                 )
                             })),
-                        },
+                        }
+                        .into(),
                     )
                 },
             )),
             workspace_uris: Default::default(),
-            options,
+            options: arced_options,
         })
         .finish();
 
@@ -205,6 +218,7 @@ mod test {
         test_helpers::helpers::{
             COMPLEX_FILE, SIMPLE_FILE, TEST_URI, TEST_URI_2, initialize_server,
         },
+        util::get_language_name,
     };
 
     use super::helpers::Document;
@@ -258,20 +272,22 @@ mod test {
                     .unwrap(),
                 (*source).to_string()
             );
-            assert!(doc.symbols_vec.len() == symbols.len());
-            assert!(doc.symbols_set.len() == symbols.len());
+            let language_name = get_language_name(uri, options).unwrap();
+            let language_data = backend.language_map.get(&language_name).unwrap();
+            assert!(language_data.symbols_vec.len() == symbols.len());
+            assert!(language_data.symbols_set.len() == symbols.len());
             for symbol in symbols {
-                assert!(doc.symbols_vec.contains(symbol));
-                assert!(doc.symbols_set.contains(symbol));
+                assert!(language_data.symbols_vec.contains(symbol));
+                assert!(language_data.symbols_set.contains(symbol));
             }
-            assert!(doc.fields_vec.len() == fields.len());
-            assert!(doc.fields_set.len() == fields.len());
+            assert!(language_data.fields_vec.len() == fields.len());
+            assert!(language_data.fields_set.len() == fields.len());
             for field in fields {
-                assert!(doc.fields_vec.contains(&field.to_string()));
-                assert!(doc.fields_set.contains(*field));
+                assert!(language_data.fields_vec.contains(&field.to_string()));
+                assert!(language_data.fields_set.contains(*field));
             }
             for supertype in supertypes {
-                assert!(doc.supertype_map.contains_key(&SymbolInfo {
+                assert!(language_data.supertype_map.contains_key(&SymbolInfo {
                     named: true,
                     label: String::from(*supertype)
                 }))

@@ -1,4 +1,4 @@
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 use ropey::Rope;
 use tower_lsp::{
@@ -13,7 +13,7 @@ use tree_sitter::{Node, Query, QueryCursor, StreamingIterator as _, TreeCursor};
 use ts_query_ls::{Options, PredicateParameter, PredicateParameterArity, PredicateParameterType};
 
 use crate::{
-    Backend, DocumentData, QUERY_LANGUAGE, SymbolInfo,
+    Backend, DocumentData, LanguageData, QUERY_LANGUAGE, SymbolInfo,
     util::{CAPTURES_QUERY, NodeUtil as _, TextProviderRope, uri_to_basename},
 };
 
@@ -41,6 +41,12 @@ pub async fn diagnostic(
         });
     };
     let options = &backend.options.read().await;
+    let language_data = document
+        .language_name
+        .as_ref()
+        .and_then(|name| backend.language_map.get(name))
+        .as_deref()
+        .cloned();
     let rope = &document.rope;
     let provider = &TextProviderRope(rope);
     Ok(DocumentDiagnosticReportResult::Report(
@@ -48,7 +54,7 @@ pub async fn diagnostic(
             related_documents: None,
             full_document_diagnostic_report: FullDocumentDiagnosticReport {
                 result_id: None,
-                items: get_diagnostics(uri, document, options, provider),
+                items: get_diagnostics(uri, document, language_data, options, provider),
             },
         }),
     ))
@@ -57,6 +63,7 @@ pub async fn diagnostic(
 pub fn get_diagnostics(
     uri: &Url,
     document: &DocumentData,
+    language_data: Option<Arc<LanguageData>>,
     options: &Options,
     provider: &TextProviderRope,
 ) -> Vec<Diagnostic> {
@@ -67,14 +74,13 @@ pub fn get_diagnostics(
     let valid_directives = &options.valid_directives;
     let tree = &document.tree;
     let rope = &document.rope;
-    let symbols = &document.symbols_set;
-    let fields = &document.fields_set;
-    let supertypes = &document.supertype_map;
+    let symbols = language_data.as_deref().map(|ld| &ld.symbols_set);
+    let fields = language_data.as_deref().map(|ld| &ld.fields_set);
+    let supertypes = language_data.as_deref().map(|ld| &ld.supertype_map);
     let mut cursor = QueryCursor::new();
     let mut tree_cursor = tree.root_node().walk();
     let mut matches = cursor.matches(&DIAGNOSTICS_QUERY, tree.root_node(), provider);
     let mut diagnostics = vec![];
-    let has_language_info = !symbols.is_empty();
     while let Some(match_) = matches.next() {
         for capture in match_.captures {
             let capture_name = DIAGNOSTICS_QUERY.capture_names()[capture.index as usize];
@@ -83,9 +89,10 @@ pub fn get_diagnostics(
             let range = capture.node.lsp_range(rope);
             match capture_name {
                 capture_name if capture_name.starts_with("node.") => {
-                    if !has_language_info {
-                        continue;
-                    }
+                    let symbols = match symbols {
+                        Some(symbols) => symbols,
+                        None => continue,
+                    };
                     let sym = SymbolInfo {
                         label: capture_text.clone(),
                         named: capture_name == "node.named",
@@ -100,9 +107,14 @@ pub fn get_diagnostics(
                     }
                 }
                 "supertype" => {
-                    if !has_language_info {
-                        continue;
-                    }
+                    let supertypes = match supertypes {
+                        Some(supertypes) => supertypes,
+                        None => continue,
+                    };
+                    let symbols = match symbols {
+                        Some(symbols) => symbols,
+                        None => continue,
+                    };
                     let supertype_text = capture_text;
                     let sym = SymbolInfo {
                         label: supertype_text.clone(),
@@ -143,9 +155,10 @@ pub fn get_diagnostics(
                     }
                 }
                 "field" => {
-                    if !has_language_info {
-                        continue;
-                    }
+                    let fields = match fields {
+                        Some(fields) => fields,
+                        None => continue,
+                    };
                     let field = capture_text;
                     if !fields.contains(&field) {
                         diagnostics.push(Diagnostic {
@@ -817,11 +830,18 @@ mod test {
         )
         .await;
         let doc = &service.inner().document_map.get(&TEST_URI).unwrap();
+        let language_name = doc.language_name.clone().unwrap();
+        let language_data = service
+            .inner()
+            .language_map
+            .get(&language_name)
+            .as_deref()
+            .cloned();
         let rope = &doc.rope;
         let provider = &TextProviderRope(rope);
 
         // Act
-        let diagnostics = get_diagnostics(&TEST_URI, doc, options, provider);
+        let diagnostics = get_diagnostics(&TEST_URI, doc, language_data, options, provider);
 
         // Assert
         assert_eq!(diagnostics, expected_diagnostics)

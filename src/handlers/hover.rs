@@ -21,7 +21,11 @@ pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hove
 
     let tree = &doc.tree;
     let rope = &doc.rope;
-    let supertypes = &doc.supertype_map;
+    let language_data = doc
+        .language_name
+        .as_ref()
+        .and_then(|name| backend.language_map.get(name));
+    let supertypes = language_data.as_ref().map(|ld| &ld.supertype_map);
 
     let Some(node) = tree
         .root_node()
@@ -70,12 +74,14 @@ pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hove
             }
             return Ok(None);
         }
-        if let Some(subtypes) = supertypes.get(&sym).and_then(|subtypes| {
-            (subtypes.iter().fold(
-                format!("Subtypes of `({node_text})`:\n\n```query"),
-                |acc, subtype| format!("{acc}\n{}", subtype),
-            ) + "\n```")
-                .into()
+        if let Some(subtypes) = supertypes.and_then(|supertypes| {
+            supertypes.get(&sym).and_then(|subtypes| {
+                (subtypes.iter().fold(
+                    format!("Subtypes of `({node_text})`:\n\n```query"),
+                    |acc, subtype| format!("{acc}\n{}", subtype),
+                ) + "\n```")
+                    .into()
+            })
         }) {
             return Ok(Some(Hover {
                 range: Some(node_range),

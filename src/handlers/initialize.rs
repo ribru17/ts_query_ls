@@ -66,6 +66,7 @@ mod test {
         let (mut service, _socket) = LspService::build(|client| Backend {
             client,
             document_map: Default::default(),
+            language_map: Default::default(),
             workspace_uris: Default::default(),
             options: Default::default(),
         })
