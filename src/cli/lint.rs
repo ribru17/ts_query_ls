@@ -9,7 +9,11 @@ use ropey::Rope;
 use tower_lsp::lsp_types::{DiagnosticSeverity, Url};
 use ts_query_ls::Options;
 
-use crate::{DocumentData, QUERY_LANGUAGE, handlers::diagnostic::get_diagnostics, util};
+use crate::{
+    DocumentData, QUERY_LANGUAGE,
+    handlers::diagnostic::get_diagnostics,
+    util::{self, get_language_name},
+};
 
 use super::get_scm_files;
 
@@ -26,20 +30,17 @@ pub(super) fn lint_file(
         .expect("Error loading Query grammar");
     let tree = parser.parse(source, None).unwrap();
     let rope = Rope::from(source);
+    let language_name = get_language_name(uri, options);
     let doc = DocumentData {
         tree,
         rope,
-        // The query construction already validates node names, fields, supertypes,
-        // etc.
-        symbols_set: Default::default(),
-        symbols_vec: Default::default(),
-        fields_set: Default::default(),
-        fields_vec: Default::default(),
-        supertype_map: Default::default(),
+        language_name,
         version: Default::default(),
     };
     let provider = &util::TextProviderRope(&doc.rope);
-    let diagnostics = get_diagnostics(uri, &doc, options, provider);
+    // The query construction already validates node names, fields, supertypes,
+    // etc.
+    let diagnostics = get_diagnostics(uri, &doc, None, options, provider);
     if !diagnostics.is_empty() {
         exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
         for diagnostic in diagnostics {

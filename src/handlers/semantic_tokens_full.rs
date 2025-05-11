@@ -32,7 +32,11 @@ pub async fn semantic_tokens_full(
     let mut tokens = Vec::new();
     let tree = &doc.tree;
     let rope = &doc.rope;
-    let supertypes = &doc.supertype_map;
+    let language_data = doc
+        .language_name
+        .as_ref()
+        .and_then(|name| backend.language_map.get(name));
+    let supertypes = language_data.as_ref().map(|ld| &ld.supertype_map);
     let query = &SEM_TOK_QUERY;
     let mut cursor = QueryCursor::new();
     let provider = TextProviderRope(rope);
@@ -63,9 +67,11 @@ pub async fn semantic_tokens_full(
                 });
                 prev_line = start_row;
                 prev_col = start_col;
-            } else if supertypes.contains_key(&SymbolInfo {
-                label: node_text,
-                named: true,
+            } else if supertypes.is_some_and(|supertypes| {
+                supertypes.contains_key(&SymbolInfo {
+                    label: node_text,
+                    named: true,
+                })
             }) {
                 tokens.push(SemanticToken {
                     delta_line,

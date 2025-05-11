@@ -28,6 +28,10 @@ pub async fn completion(
     };
     let rope = &doc.rope;
     let tree = &doc.tree;
+    let language_data = doc
+        .language_name
+        .as_ref()
+        .and_then(|name| backend.language_map.get(name));
 
     let mut position = params.text_document_position.position;
     if position.character > 0 {
@@ -57,7 +61,7 @@ pub async fn completion(
     {
         let response = || {
             let supertype = current_node.prev_named_sibling()?;
-            let supertypes = &doc.supertype_map;
+            let supertypes = &language_data?.supertype_map;
             let subtypes = supertypes.get(&SymbolInfo {
                 label: supertype.text(rope),
                 named: true,
@@ -155,43 +159,46 @@ pub async fn completion(
     let in_predicate = node_is_or_has_ancestor(root, current_node, "predicate");
     let in_missing = node_is_or_has_ancestor(root, current_node, "missing_node");
     if !in_capture && !in_predicate {
-        let in_anon = node_is_or_has_ancestor(root, current_node, "string") && !in_predicate;
-        let top_level = current_node.kind() == "program";
-        if !top_level {
-            let symbols = &doc.symbols_vec;
-            let supertypes = &doc.supertype_map;
-            for symbol in symbols.iter() {
-                if (in_anon && !symbol.named) || (!in_anon && symbol.named) {
-                    completion_items.push(CompletionItem {
-                        label: symbol.label.clone(),
-                        kind: if symbol.named {
-                            if !supertypes.contains_key(symbol) {
-                                Some(CompletionItemKind::CLASS)
+        if let Some(language_data) = language_data {
+            let symbols = &language_data.symbols_vec;
+            let supertypes = &language_data.supertype_map;
+            let fields = &language_data.fields_vec;
+            let in_anon = node_is_or_has_ancestor(root, current_node, "string") && !in_predicate;
+            let top_level = current_node.kind() == "program";
+            if !top_level {
+                for symbol in symbols.iter() {
+                    if (in_anon && !symbol.named) || (!in_anon && symbol.named) {
+                        completion_items.push(CompletionItem {
+                            label: symbol.label.clone(),
+                            kind: if symbol.named {
+                                if !supertypes.contains_key(symbol) {
+                                    Some(CompletionItemKind::CLASS)
+                                } else {
+                                    Some(CompletionItemKind::INTERFACE)
+                                }
                             } else {
-                                Some(CompletionItemKind::INTERFACE)
-                            }
-                        } else {
-                            Some(CompletionItemKind::CONSTANT)
-                        },
+                                Some(CompletionItemKind::CONSTANT)
+                            },
+                            ..Default::default()
+                        });
+                    }
+                }
+            }
+            if !in_missing && !in_anon {
+                if !top_level {
+                    completion_items.push(CompletionItem {
+                        label: String::from("MISSING"),
+                        kind: Some(CompletionItemKind::KEYWORD),
                         ..Default::default()
                     });
                 }
-            }
-        }
-        if !in_missing && !in_anon {
-            if !top_level {
-                completion_items.push(CompletionItem {
-                    label: String::from("MISSING"),
-                    kind: Some(CompletionItemKind::KEYWORD),
-                    ..Default::default()
-                });
-            }
-            for field in doc.fields_vec.iter() {
-                completion_items.push(CompletionItem {
-                    label: format!("{field}: "),
-                    kind: Some(CompletionItemKind::FIELD),
-                    ..Default::default()
-                });
+                for field in fields {
+                    completion_items.push(CompletionItem {
+                        label: format!("{field}: "),
+                        kind: Some(CompletionItemKind::FIELD),
+                        ..Default::default()
+                    });
+                }
             }
         }
     }

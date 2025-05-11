@@ -89,7 +89,7 @@ static SERVER_CAPABILITIES: LazyLock<ServerCapabilities> = LazyLock::new(|| {
 static ENGINE: LazyLock<Engine> = LazyLock::new(Engine::default);
 static QUERY_LANGUAGE: LazyLock<Language> = LazyLock::new(|| tree_sitter_query::LANGUAGE.into());
 
-#[derive(PartialEq, Eq, Hash, Clone, PartialOrd, Ord)]
+#[derive(PartialEq, Eq, Hash, Clone, PartialOrd, Ord, Debug)]
 struct SymbolInfo {
     label: String,
     named: bool,
@@ -102,20 +102,27 @@ impl fmt::Display for SymbolInfo {
     }
 }
 
+#[derive(Clone)]
 struct DocumentData {
+    rope: Rope,
+    tree: Tree,
+    version: i32,
+    language_name: Option<String>,
+}
+
+#[derive(Default, Debug)]
+struct LanguageData {
     symbols_set: HashSet<SymbolInfo>,
     symbols_vec: Vec<SymbolInfo>,
     fields_set: HashSet<String>,
     fields_vec: Vec<String>,
     supertype_map: HashMap<SymbolInfo, BTreeSet<SymbolInfo>>,
-    rope: Rope,
-    tree: Tree,
-    version: i32,
 }
 
 struct Backend {
     client: Client,
     document_map: DashMap<Url, DocumentData>,
+    language_map: DashMap<String, Arc<LanguageData>>,
     options: Arc<tokio::sync::RwLock<Options>>,
     workspace_uris: Arc<RwLock<Vec<Url>>>,
 }
@@ -317,6 +324,7 @@ async fn main() {
         Backend {
             client,
             document_map: Default::default(),
+            language_map: Default::default(),
             workspace_uris: Default::default(),
             options,
         }
