@@ -10,9 +10,7 @@ use serde_json::Value;
 use streaming_iterator::StreamingIterator;
 use tower_lsp::lsp_types::{Position, Range, TextDocumentContentChangeEvent, Url};
 use tracing::warn;
-use tree_sitter::{
-    InputEdit, Language, Node, Point, Query, QueryCursor, TextProvider, WasmStore, wasmtime::Engine,
-};
+use tree_sitter::{InputEdit, Language, Node, Point, Query, QueryCursor, TextProvider, WasmStore};
 
 use crate::{Backend, ENGINE, Options, QUERY_LANGUAGE};
 
@@ -181,7 +179,7 @@ pub fn lsp_textdocchange_to_ts_inputedit(
 
 const DYLIB_EXTENSIONS: [&str; 3] = [".so", ".dll", ".dylib"];
 
-pub fn get_language(uri: &Url, options: &Options) -> Option<Language> {
+pub fn get_language_name(uri: &Url, options: &Options) -> Option<String> {
     let mut language_retrieval_regexes: Vec<Regex> = options
         .language_retrieval_patterns
         .clone()
@@ -197,28 +195,19 @@ pub fn get_language(uri: &Url, options: &Options) -> Option<Language> {
             break;
         }
     }
-    let lang = captures
+    captures
         .and_then(|captures| captures.get(1))
-        .and_then(|cap| {
-            let cap_str = cap.as_str();
-            get_language_object(
-                options
-                    .parser_aliases
-                    .get(cap_str)
-                    .unwrap_or(&cap_str.to_owned())
-                    .as_str(),
-                &options.parser_install_directories,
-                &ENGINE,
-            )
-        });
-    lang
+        .map(|capture| {
+            options
+                .parser_aliases
+                .get(capture.as_str())
+                .cloned()
+                .unwrap_or(capture.as_str().to_owned())
+        })
 }
 
-pub fn get_language_object(
-    name: &str,
-    directories: &Vec<String>,
-    engine: &Engine,
-) -> Option<Language> {
+pub fn get_language(name: &str, options: &Options) -> Option<Language> {
+    let directories = &options.parser_install_directories;
     let name = name.replace('-', "_");
     let language_fn_name = format!("tree_sitter_{name}");
 
@@ -238,18 +227,18 @@ pub fn get_language_object(
                 return Some(language);
             }
         }
-        if let Some(lang) = get_language_object_wasm(name.as_str(), directory, engine) {
+        if let Some(lang) = get_language_object_wasm(name.as_str(), directory) {
             return Some(lang);
         }
     }
     None
 }
 
-fn get_language_object_wasm(name: &str, directory: &String, engine: &Engine) -> Option<Language> {
+fn get_language_object_wasm(name: &str, directory: &String) -> Option<Language> {
     let object_name = format!("tree-sitter-{name}.wasm");
     // NOTE: If WasmStore could be passed around threads safely, we could just create one global
     // store and put all of the WASM modules in there.
-    let mut language_store = WasmStore::new(engine).ok()?;
+    let mut language_store = WasmStore::new(&ENGINE).ok()?;
     let library_path = Path::new(directory).join(&object_name);
     if let Ok(wasm) = fs::read(library_path) {
         return language_store.load_language(name, &wasm).ok();
