@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use ropey::Rope;
 use tower_lsp::lsp_types::DidOpenTextDocumentParams;
 use tracing::info;
-use tree_sitter::Parser;
+use tree_sitter::{Language, Parser};
 
 use crate::{
     Backend, DocumentData, LanguageData, QUERY_LANGUAGE, SymbolInfo,
@@ -36,12 +36,6 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
         },
     );
 
-    // Initialize language info
-    let mut symbols_vec: Vec<SymbolInfo> = vec![];
-    let mut symbols_set: HashSet<SymbolInfo> = HashSet::new();
-    let mut fields_vec: Vec<String> = vec![];
-    let mut fields_set: HashSet<String> = HashSet::new();
-    let mut supertype_map: HashMap<SymbolInfo, BTreeSet<SymbolInfo>> = HashMap::new();
     let language_name = match language_name {
         Some(name) => name,
         None => return,
@@ -52,6 +46,19 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     let Some(lang) = get_language(&language_name, &options) else {
         return;
     };
+    let language_data = init_language_data(lang);
+    backend
+        .language_map
+        .insert(language_name, language_data.into());
+}
+
+pub fn init_language_data(lang: Language) -> LanguageData {
+    let mut symbols_vec: Vec<SymbolInfo> = vec![];
+    let mut symbols_set: HashSet<SymbolInfo> = HashSet::new();
+    let mut fields_vec: Vec<String> = vec![];
+    let mut fields_set: HashSet<String> = HashSet::new();
+    let mut supertype_map: HashMap<SymbolInfo, BTreeSet<SymbolInfo>> = HashMap::new();
+
     let error_symbol = SymbolInfo {
         label: "ERROR".to_owned(),
         named: true,
@@ -97,17 +104,14 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
             fields_vec.push(field_name);
         }
     }
-    let language_data = LanguageData {
+    LanguageData {
         fields_set,
         fields_vec,
         symbols_vec,
         symbols_set,
         supertype_map,
         language: Some(lang),
-    };
-    backend
-        .language_map
-        .insert(language_name, language_data.into());
+    }
 }
 
 #[cfg(test)]
