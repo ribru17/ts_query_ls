@@ -1,4 +1,3 @@
-pub mod code_action;
 pub mod completion;
 pub mod diagnostic;
 pub mod did_change;
@@ -6,7 +5,6 @@ pub mod did_change_configuration;
 pub mod did_open;
 pub mod document_highlight;
 pub mod document_symbol;
-pub mod execute_command;
 pub mod formatting;
 pub mod goto_definition;
 pub mod hover;

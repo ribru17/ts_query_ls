@@ -56,7 +56,7 @@ pub mod helpers {
             .expect("Error loading Query grammar");
         let arced_options = Arc::new(tokio::sync::RwLock::new(options.clone()));
         let (mut service, _socket) = LspService::build(|client| Backend {
-            client,
+            _client: client,
             document_map: DashMap::from_iter(documents.iter().map(|(uri, source, _, _, _)| {
                 (
                     uri.clone(),
@@ -74,6 +74,7 @@ pub mod helpers {
                     (
                         language_name,
                         LanguageData {
+                            language: None,
                             symbols_set: HashSet::from_iter(symbols.clone()),
                             symbols_vec: symbols.clone(),
                             fields_set: HashSet::from_iter(fields.iter().map(ToString::to_string)),

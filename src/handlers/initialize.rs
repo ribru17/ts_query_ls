@@ -64,7 +64,7 @@ mod test {
     async fn server_initialize() {
         // Arrange
         let (mut service, _socket) = LspService::build(|client| Backend {
-            client,
+            _client: client,
             document_map: Default::default(),
             language_map: Default::default(),
             workspace_uris: Default::default(),
