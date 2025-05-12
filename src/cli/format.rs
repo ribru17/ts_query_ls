@@ -6,7 +6,6 @@ use std::{
 
 use futures::future::join_all;
 use ropey::Rope;
-use tokio::task::spawn_blocking;
 
 use crate::{QUERY_LANGUAGE, handlers::formatting};
 
@@ -21,16 +20,16 @@ pub async fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
     let scm_files = get_scm_files(directories);
     let exit_code = Arc::new(AtomicI32::new(0));
 
-    let tasks = scm_files.into_iter().filter_map(|path| {
+    let tasks = scm_files.into_iter().map(|path| {
         let exit_code = exit_code.clone();
-        if let Ok(contents) = fs::read_to_string(&path) {
-            let mut parser = tree_sitter::Parser::new();
-            parser
-                .set_language(&QUERY_LANGUAGE)
-                .expect("Error loading Query grammar");
-            let tree = parser.parse(contents.as_str(), None).unwrap();
-            let rope = Rope::from(contents.as_str());
-            return Some(spawn_blocking(move || {
+        tokio::spawn(async move {
+            if let Ok(contents) = fs::read_to_string(&path) {
+                let mut parser = tree_sitter::Parser::new();
+                parser
+                    .set_language(&QUERY_LANGUAGE)
+                    .expect("Error loading Query grammar");
+                let tree = parser.parse(contents.as_str(), None).unwrap();
+                let rope = Rope::from(contents.as_str());
                 if let Some(formatted) = formatting::format_document(&rope, &tree.root_node()) {
                     if check {
                         let edits = formatting::diff(&contents, &formatted, &rope);
@@ -46,12 +45,11 @@ pub async fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
                         eprint!("Failed to write to {:?}", path.canonicalize().unwrap())
                     }
                 }
-            }));
-        } else {
-            eprintln!("Failed to read {:?}", path.canonicalize().unwrap());
-            exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
-        }
-        None
+            } else {
+                eprintln!("Failed to read {:?}", path.canonicalize().unwrap());
+                exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        })
     });
     join_all(tasks).await;
     exit_code.load(std::sync::atomic::Ordering::Relaxed)
