@@ -73,10 +73,10 @@ mod test {
             for message in messages {
                 assert!(string_output.contains(message));
             }
+            assert_eq!(output.status.code(), Some(1));
         } else {
-            let string_output = String::from_utf8(output.stderr.clone()).unwrap();
-            println!("{string_output}");
             assert!(output.stderr.is_empty());
+            assert_eq!(output.status.code(), Some(0));
         }
     }
 }

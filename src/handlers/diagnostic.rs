@@ -1,4 +1,7 @@
-use std::sync::{Arc, LazyLock};
+use std::{
+    ops::Deref,
+    sync::{Arc, LazyLock},
+};
 
 use ropey::Rope;
 use tower_lsp::{
@@ -40,7 +43,6 @@ pub async fn diagnostic(
             data: None,
         });
     };
-    let options = &backend.options.read().await;
     let language_data = document
         .language_name
         .as_ref()
@@ -52,18 +54,25 @@ pub async fn diagnostic(
             related_documents: None,
             full_document_diagnostic_report: FullDocumentDiagnosticReport {
                 result_id: None,
-                items: get_diagnostics(uri, document, language_data, options),
+                items: get_diagnostics(
+                    uri,
+                    document.deref().clone(),
+                    language_data,
+                    backend.options.clone(),
+                )
+                .await,
             },
         }),
     ))
 }
 
-pub fn get_diagnostics(
+pub async fn get_diagnostics(
     uri: &Url,
-    document: &DocumentData,
+    document: DocumentData,
     language_data: Option<Arc<LanguageData>>,
-    options: &Options,
+    options_arc: Arc<tokio::sync::RwLock<Options>>,
 ) -> Vec<Diagnostic> {
+    let options = options_arc.read().await;
     let valid_captures = options
         .valid_captures
         .get(&uri_to_basename(uri).unwrap_or_default());
@@ -340,10 +349,10 @@ fn validate_predicate<'a>(
     }
 }
 
-// TODO: Handle many more cases
 #[cfg(test)]
 mod test {
     use std::collections::{BTreeMap, HashMap};
+    use std::sync::Arc;
 
     use pretty_assertions::assert_eq;
     use rstest::rstest;
@@ -365,7 +374,7 @@ mod test {
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
-        &Options {
+        Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([
                     (String::from("variable"), String::default()),
@@ -411,7 +420,7 @@ mod test {
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
-        &Options {
+        Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([
                     (String::from("variable"), String::default()),
@@ -441,7 +450,7 @@ mod test {
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
-        &Options {
+        Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([
                     (String::from("variable"), String::default()),
@@ -457,7 +466,7 @@ mod test {
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
-        &Options {
+        Options {
             valid_predicates: BTreeMap::from([(String::from("eq"), Predicate {
                 description: String::from("Checks for equality"),
                 parameters: vec![PredicateParameter {
@@ -482,7 +491,7 @@ mod test {
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
-        &Options {
+        Options {
             valid_predicates: BTreeMap::from([(String::from("eq"), Predicate {
                 description: String::from("Checks for equality"),
                 parameters: vec![PredicateParameter {
@@ -520,7 +529,7 @@ mod test {
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
-        &Options {
+        Options {
             valid_predicates: BTreeMap::from([(String::from("eq"), Predicate {
                 description: String::from("Checks for equality"),
                 parameters: vec![PredicateParameter {
@@ -558,7 +567,7 @@ mod test {
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
-        &Options {
+        Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
                 description: String::from("Checks for equality"),
@@ -584,7 +593,7 @@ mod test {
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
-        &Options {
+        Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
                 description: String::from("Checks for equality"),
@@ -625,7 +634,7 @@ mod test {
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
-        &Options {
+        Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
                 description: String::from("Checks for equality"),
@@ -651,7 +660,7 @@ mod test {
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
-        &Options {
+        Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
                 description: String::from("Checks for equality"),
@@ -677,7 +686,7 @@ mod test {
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
-        &Options {
+        Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
                 description: String::from("Checks for equality"),
@@ -703,7 +712,7 @@ mod test {
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
-        &Options {
+        Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
                 description: String::from("Checks for equality"),
@@ -729,7 +738,7 @@ mod test {
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
-        &Options {
+        Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
                 description: String::from("Checks for equality"),
@@ -770,7 +779,7 @@ mod test {
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
-        &Options {
+        Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
                 description: String::from("Checks for equality"),
@@ -811,7 +820,7 @@ mod test {
         #[case] symbols: &[SymbolInfo],
         #[case] fields: &[&str],
         #[case] supertypes: &[&str],
-        #[case] options: &Options,
+        #[case] options: Options,
         #[case] expected_diagnostics: &[Diagnostic],
     ) {
         // Arrange
@@ -826,7 +835,7 @@ mod test {
             &Default::default(),
         )
         .await;
-        let doc = &service.inner().document_map.get(&TEST_URI).unwrap();
+        let doc = service.inner().document_map.get(&TEST_URI).unwrap();
         let language_name = doc.language_name.clone().unwrap();
         let language_data = service
             .inner()
@@ -836,7 +845,13 @@ mod test {
             .cloned();
 
         // Act
-        let diagnostics = get_diagnostics(&TEST_URI, doc, language_data, options);
+        let diagnostics = get_diagnostics(
+            &TEST_URI,
+            doc.clone(),
+            language_data,
+            Arc::new(options.clone().into()),
+        )
+        .await;
 
         // Assert
         assert_eq!(diagnostics, expected_diagnostics)

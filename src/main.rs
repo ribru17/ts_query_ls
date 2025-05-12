@@ -292,7 +292,7 @@ async fn main() {
     let args = Arguments::parse();
     match args.commands {
         Some(Commands::Format { directories, check }) => {
-            std::process::exit(format_directories(&directories, check));
+            std::process::exit(format_directories(&directories, check).await);
         }
         Some(Commands::Check {
             directories,
@@ -301,14 +301,14 @@ async fn main() {
             lint,
         }) => {
             let config_str = get_config_str(config);
-            std::process::exit(check_directories(&directories, config_str, format, lint));
+            std::process::exit(check_directories(&directories, config_str, format, lint).await);
         }
         Some(Commands::Lint {
             directories,
             config,
         }) => {
             let config_str = get_config_str(config);
-            std::process::exit(lint_directories(&directories, config_str))
+            std::process::exit(lint_directories(&directories, config_str).await)
         }
         None => {}
     }
@@ -316,7 +316,7 @@ async fn main() {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
-    let options = Arc::new(tokio::sync::RwLock::new(Options::default()));
+    let options = Arc::new(Options::default().into());
     let (service, socket) = LspService::build(|client| {
         let lsp_layer = LspLogLayer::new(client.clone());
         tracing_subscriber::registry().with(lsp_layer).init();
