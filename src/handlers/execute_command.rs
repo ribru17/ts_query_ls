@@ -9,7 +9,7 @@ use tree_sitter::{Point, Query, QueryError, QueryErrorKind};
 use crate::{
     Backend,
     handlers::diagnostic::get_diagnostics,
-    util::{self, NodeUtil as _, TextProviderRope},
+    util::{self, NodeUtil as _},
 };
 
 pub async fn execute_command(
@@ -85,20 +85,13 @@ async fn check_impossible_patterns(backend: &Backend, params: ExecuteCommandPara
             }
         }
     }
-    let provider = &TextProviderRope(rope);
     let language_data = doc
         .language_name
         .as_ref()
         .and_then(|name| backend.language_map.get(name))
         .as_deref()
         .cloned();
-    diagnostics.append(&mut get_diagnostics(
-        &uri,
-        doc,
-        language_data,
-        options,
-        provider,
-    ));
+    diagnostics.append(&mut get_diagnostics(&uri, doc, language_data, options));
 
     backend
         .client

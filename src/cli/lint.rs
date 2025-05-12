@@ -10,9 +10,7 @@ use tower_lsp::lsp_types::{DiagnosticSeverity, Url};
 use ts_query_ls::Options;
 
 use crate::{
-    DocumentData, QUERY_LANGUAGE,
-    handlers::diagnostic::get_diagnostics,
-    util::{self, get_language_name},
+    DocumentData, QUERY_LANGUAGE, handlers::diagnostic::get_diagnostics, util::get_language_name,
 };
 
 use super::get_scm_files;
@@ -37,10 +35,9 @@ pub(super) fn lint_file(
         language_name,
         version: Default::default(),
     };
-    let provider = &util::TextProviderRope(&doc.rope);
     // The query construction already validates node names, fields, supertypes,
     // etc.
-    let diagnostics = get_diagnostics(uri, &doc, None, options, provider);
+    let diagnostics = get_diagnostics(uri, &doc, None, options);
     if !diagnostics.is_empty() {
         exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
         for diagnostic in diagnostics {

@@ -47,14 +47,12 @@ pub async fn diagnostic(
         .and_then(|name| backend.language_map.get(name))
         .as_deref()
         .cloned();
-    let rope = &document.rope;
-    let provider = &TextProviderRope(rope);
     Ok(DocumentDiagnosticReportResult::Report(
         DocumentDiagnosticReport::Full(RelatedFullDocumentDiagnosticReport {
             related_documents: None,
             full_document_diagnostic_report: FullDocumentDiagnosticReport {
                 result_id: None,
-                items: get_diagnostics(uri, document, language_data, options, provider),
+                items: get_diagnostics(uri, document, language_data, options),
             },
         }),
     ))
@@ -65,7 +63,6 @@ pub fn get_diagnostics(
     document: &DocumentData,
     language_data: Option<Arc<LanguageData>>,
     options: &Options,
-    provider: &TextProviderRope,
 ) -> Vec<Diagnostic> {
     let valid_captures = options
         .valid_captures
@@ -74,6 +71,7 @@ pub fn get_diagnostics(
     let valid_directives = &options.valid_directives;
     let tree = &document.tree;
     let rope = &document.rope;
+    let provider = &TextProviderRope(rope);
     let symbols = language_data.as_deref().map(|ld| &ld.symbols_set);
     let fields = language_data.as_deref().map(|ld| &ld.fields_set);
     let supertypes = language_data.as_deref().map(|ld| &ld.supertype_map);
@@ -354,7 +352,6 @@ mod test {
         Options, Predicate, PredicateParameter, PredicateParameterArity, PredicateParameterType,
     };
 
-    use crate::util::TextProviderRope;
     use crate::{
         SymbolInfo,
         handlers::diagnostic::get_diagnostics,
@@ -837,11 +834,9 @@ mod test {
             .get(&language_name)
             .as_deref()
             .cloned();
-        let rope = &doc.rope;
-        let provider = &TextProviderRope(rope);
 
         // Act
-        let diagnostics = get_diagnostics(&TEST_URI, doc, language_data, options, provider);
+        let diagnostics = get_diagnostics(&TEST_URI, doc, language_data, options);
 
         // Assert
         assert_eq!(diagnostics, expected_diagnostics)
