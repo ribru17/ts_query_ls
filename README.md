@@ -219,8 +219,9 @@ command also accepts a `--format` (`-f`) flag which instructs it to also check
 formatting for the given directories. If no directories are specified to be
 checked, then the command will search for all queries in the current directory.
 
-> **NOTE:** This command will _not_ perform linting (checking capture names,
-> predicate signatures, etc.) unless passed the `--lint` flag.
+> **NOTE:** This command performs a superset of the work done by the lint
+> command; it reads the query's language to validate query structure, node
+> names, etc.
 
 ```sh
 # use this command for the full documentation

@@ -223,9 +223,9 @@ enum Commands {
         #[arg(long, short)]
         check: bool,
     },
-    /// Check the query files in the given directories for errors. This will only check for query
-    /// parsing errors. Pass the `--lint` flag to also check for lint warnings. See the `--lint`
-    /// flag description for more details.
+    /// Check the query files in the given directories for errors. This command performs a superset
+    /// of the work done by the lint command; it reads the query's language to validate query
+    /// structure, node names, etc.
     Check {
         /// List of directories to check
         directories: Vec<PathBuf>,
@@ -237,11 +237,6 @@ enum Commands {
         /// Check for valid formatting
         #[arg(long, short)]
         format: bool,
-
-        /// Check for lint warnings in addition to query errors. This catches things like invalid
-        /// capture names or predicate signatures (as defined by the configuration options).
-        #[arg(long, short)]
-        lint: bool,
     },
     /// Lint the query files in the given directories for errors. This differs from `check` because
     /// it does not perform a full semantic analysis (e.g. analyzing for impossible patterns), but
@@ -283,10 +278,9 @@ async fn main() {
             directories,
             config,
             format,
-            lint,
         }) => {
             let config_str = get_config_str(config);
-            std::process::exit(check_directories(&directories, config_str, format, lint).await);
+            std::process::exit(check_directories(&directories, config_str, format).await);
         }
         Some(Commands::Lint {
             directories,

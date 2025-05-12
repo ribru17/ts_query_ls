@@ -10,7 +10,8 @@ use tower_lsp::lsp_types::{DiagnosticSeverity, Url};
 use ts_query_ls::Options;
 
 use crate::{
-    DocumentData, QUERY_LANGUAGE, handlers::diagnostic::get_diagnostics, util::get_language_name,
+    DocumentData, LanguageData, QUERY_LANGUAGE, handlers::diagnostic::get_diagnostics,
+    util::get_language_name,
 };
 
 use super::get_scm_files;
@@ -20,6 +21,7 @@ pub(super) async fn lint_file(
     uri: &Url,
     source: &str,
     options: Arc<tokio::sync::RwLock<Options>>,
+    language_data: Option<Arc<LanguageData>>,
     exit_code: &AtomicI32,
 ) {
     let mut parser = tree_sitter::Parser::new();
@@ -37,7 +39,7 @@ pub(super) async fn lint_file(
     };
     // The query construction already validates node names, fields, supertypes,
     // etc.
-    let diagnostics = get_diagnostics(uri, doc, None, options, false).await;
+    let diagnostics = get_diagnostics(uri, doc, language_data, options, false).await;
     if !diagnostics.is_empty() {
         exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
         for diagnostic in diagnostics {
@@ -82,7 +84,7 @@ pub async fn lint_directories(directories: &[PathBuf], config: String) -> i32 {
         let options = options.clone();
         if let Ok(source) = fs::read_to_string(&path) {
             Some(tokio::spawn(async move {
-                lint_file(&path, &uri, &source, options, &exit_code).await;
+                lint_file(&path, &uri, &source, options, None, &exit_code).await;
             }))
         } else {
             eprintln!("Failed to read {:?}", path.canonicalize().unwrap());
