@@ -103,6 +103,7 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
         symbols_vec,
         symbols_set,
         supertype_map,
+        language: Some(lang),
     };
     backend
         .language_map

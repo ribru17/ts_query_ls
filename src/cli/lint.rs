@@ -37,7 +37,7 @@ pub(super) async fn lint_file(
     };
     // The query construction already validates node names, fields, supertypes,
     // etc.
-    let diagnostics = get_diagnostics(uri, doc, None, options).await;
+    let diagnostics = get_diagnostics(uri, doc, None, options, false).await;
     if !diagnostics.is_empty() {
         exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
         for diagnostic in diagnostics {

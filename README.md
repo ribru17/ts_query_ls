@@ -211,10 +211,6 @@ ts_query_ls check ./queries --config \
 '{"parser_install_directories": ["/home/jdoe/Documents/parsers/"]}'
 ```
 
-Note that unlike the live server diagnostics, the `check` command runs a full
-query scan to check for things like impossible query patterns. This will catch
-any errors that prevent a query from compiling.
-
 The command can accept a list of directories to search for queries, as well as a
 flag to pass JSON configuration to the server (needed to detect parser
 locations). If no configuration flag is passed, the command will attempt to read
@@ -262,10 +258,14 @@ ts_query_ls lint --help
 - [x] Diagnostics for unrecognized nodes
 - [x] Diagnostics for referencing undefined capture groups in predicates
 - [x] Diagnostics for incorrect syntax
-- [ ] Diagnostics for impossible patterns
-  - Currently not possible without a full (sometimes expensive) run of the query
-    file. This should either be implemented as a user command, or core methods
-    should be exposed to gather pattern information more efficiently
+- [x] Diagnostics for impossible patterns
+  - ~~Currently not possible without a full (sometimes expensive) run of the
+    query file. This should either be implemented as a user command, or core
+    methods should be exposed to gather pattern information more efficiently~~
+  - For now, this has been made possible due to caching and spawning query scans
+    on a separate, blocking thread. Ideally in the future the kinks of query
+    creation will be ironed out so query creation will be quicker, and this
+    logic can be simplified
 - [x] Recognize parsers built for `WASM`
 - [x] Document formatting compatible with the `nvim-treesitter` formatter
 - [x] Code cleanup

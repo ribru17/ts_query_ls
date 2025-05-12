@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
+use dashmap::DashMap;
 use ropey::Rope;
 use tower_lsp::{
     jsonrpc::{Error, ErrorCode, Result},
@@ -12,7 +13,10 @@ use tower_lsp::{
         RelatedFullDocumentDiagnosticReport, Url,
     },
 };
-use tree_sitter::{Node, Query, QueryCursor, StreamingIterator as _, TreeCursor};
+use tree_sitter::{
+    Language, Node, Query, QueryCursor, QueryError, QueryErrorKind, StreamingIterator as _,
+    TreeCursor,
+};
 use ts_query_ls::{Options, PredicateParameter, PredicateParameterArity, PredicateParameterType};
 
 use crate::{
@@ -30,13 +34,15 @@ static DIAGNOSTICS_QUERY: LazyLock<Query> = LazyLock::new(|| {
     )
     .unwrap()
 });
+static DEFINITIONS_QUERY: LazyLock<Query> =
+    LazyLock::new(|| Query::new(&QUERY_LANGUAGE, "(program (definition) @def)").unwrap());
 
 pub async fn diagnostic(
     backend: &Backend,
     params: DocumentDiagnosticParams,
 ) -> Result<DocumentDiagnosticReportResult> {
     let uri = &params.text_document.uri;
-    let Some(document) = &backend.document_map.get(uri) else {
+    let Some(document) = backend.document_map.get(uri).as_deref().cloned() else {
         return Err(Error {
             code: ErrorCode::InternalError,
             message: format!("Document not found for URI '{uri}'").into(),
@@ -54,16 +60,41 @@ pub async fn diagnostic(
             related_documents: None,
             full_document_diagnostic_report: FullDocumentDiagnosticReport {
                 result_id: None,
-                items: get_diagnostics(
-                    uri,
-                    document.deref().clone(),
-                    language_data,
-                    backend.options.clone(),
-                )
-                .await,
+                items: get_diagnostics(uri, document, language_data, backend.options.clone(), true)
+                    .await,
             },
         }),
     ))
+}
+
+static QUERY_SCAN_CACHE: LazyLock<DashMap<(String, String), Option<usize>>> =
+    LazyLock::new(DashMap::new);
+
+fn get_pattern_diagnostic_cached(
+    pattern_node: Node,
+    rope: &Rope,
+    language_name: String,
+    language: Language,
+) -> Option<usize> {
+    let pattern_text = pattern_node.text(rope);
+    let pattern_key = (language_name, pattern_text);
+    if let Some(cached_diag) = QUERY_SCAN_CACHE.get(&pattern_key) {
+        return *cached_diag.deref();
+    }
+    let byte_offset = get_pattern_diagnostic(&pattern_key.1, language);
+    QUERY_SCAN_CACHE.insert(pattern_key, byte_offset);
+    byte_offset
+}
+
+fn get_pattern_diagnostic(pattern_text: &str, language: Language) -> Option<usize> {
+    match Query::new(&language, pattern_text) {
+        Err(QueryError {
+            kind: QueryErrorKind::Structure,
+            offset,
+            ..
+        }) => Some(offset),
+        _ => None,
+    }
 }
 
 pub async fn get_diagnostics(
@@ -71,28 +102,82 @@ pub async fn get_diagnostics(
     document: DocumentData,
     language_data: Option<Arc<LanguageData>>,
     options_arc: Arc<tokio::sync::RwLock<Options>>,
+    cache: bool,
 ) -> Vec<Diagnostic> {
+    let tree = document.tree.clone();
+    let rope = document.rope.clone();
+    let error_severity = Some(DiagnosticSeverity::ERROR);
+    let ld = language_data.clone();
+
+    // Separately iterate over pattern definitions since this step can be costly and we want to
+    // wrap in `spawn_blocking`. We can't merge this with the main iteration loop because it would
+    // cause a race condition, due to holding the `options` lock while `await`ing.
+    let handle = tokio::task::spawn_blocking(move || {
+        let provider = TextProviderRope(&rope);
+        let mut cursor = QueryCursor::new();
+        let mut matches = cursor.matches(&DEFINITIONS_QUERY, tree.root_node(), &provider);
+        let mut diagnostics = Vec::new();
+        let Some(language_name) = document.language_name else {
+            return diagnostics;
+        };
+        let Some(LanguageData {
+            language: Some(language),
+            ..
+        }) = ld.as_deref()
+        else {
+            return diagnostics;
+        };
+        while let Some(match_) = matches.next() {
+            for capture in match_.captures {
+                if let Some(offset) = if cache {
+                    get_pattern_diagnostic_cached(
+                        capture.node,
+                        &rope,
+                        language_name.clone(),
+                        language.clone(),
+                    )
+                } else {
+                    get_pattern_diagnostic(&capture.node.text(&rope), language.clone())
+                } {
+                    let true_offset = offset + capture.node.start_byte();
+                    diagnostics.push(Diagnostic {
+                        message: String::from("Invalid pattern structure"),
+                        severity: error_severity,
+                        range: tree
+                            .root_node()
+                            .named_descendant_for_byte_range(true_offset, true_offset)
+                            .map(|node| node.lsp_range(&rope))
+                            .unwrap_or_default(),
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+        diagnostics
+    })
+    .await;
+
+    let mut diagnostics = handle.unwrap_or_default();
+
     let options = options_arc.read().await;
     let valid_captures = options
         .valid_captures
         .get(&uri_to_basename(uri).unwrap_or_default());
+    let rope = &document.rope;
+    let tree = &document.tree;
     let valid_predicates = &options.valid_predicates;
     let valid_directives = &options.valid_directives;
-    let tree = &document.tree;
-    let rope = &document.rope;
-    let provider = &TextProviderRope(rope);
     let symbols = language_data.as_deref().map(|ld| &ld.symbols_set);
     let fields = language_data.as_deref().map(|ld| &ld.fields_set);
     let supertypes = language_data.as_deref().map(|ld| &ld.supertype_map);
     let mut cursor = QueryCursor::new();
     let mut tree_cursor = tree.root_node().walk();
+    let provider = &TextProviderRope(rope);
     let mut matches = cursor.matches(&DIAGNOSTICS_QUERY, tree.root_node(), provider);
-    let mut diagnostics = vec![];
     while let Some(match_) = matches.next() {
         for capture in match_.captures {
             let capture_name = DIAGNOSTICS_QUERY.capture_names()[capture.index as usize];
             let capture_text = capture.node.text(rope);
-            let severity = Some(DiagnosticSeverity::ERROR);
             let range = capture.node.lsp_range(rope);
             match capture_name {
                 capture_name if capture_name.starts_with("node.") => {
@@ -107,7 +192,7 @@ pub async fn get_diagnostics(
                     if !symbols.contains(&sym) {
                         diagnostics.push(Diagnostic {
                             message: format!("Invalid node type: \"{capture_text}\""),
-                            severity,
+                            severity: error_severity,
                             range,
                             ..Default::default()
                         });
@@ -140,14 +225,14 @@ pub async fn get_diagnostics(
                         if !subtypes.is_empty() && !subtypes.contains(&subtype_sym) {
                             diagnostics.push(Diagnostic {
                                 message: format!("Node \"{subtype_text}\" is not a subtype of \"{supertype_text}\""),
-                                severity,
+                                severity: error_severity,
                                 range,
                                 ..Default::default()
                             });
                         } else if subtypes.is_empty() && !symbols.contains(&subtype_sym) {
                             diagnostics.push(Diagnostic {
                                 message: format!("Invalid node type: \"{subtype_text}\""),
-                                severity,
+                                severity: error_severity,
                                 range,
                                 ..Default::default()
                             });
@@ -155,7 +240,7 @@ pub async fn get_diagnostics(
                     } else {
                         diagnostics.push(Diagnostic {
                             message: format!("Node \"{supertype_text}\" is not a supertype"),
-                            severity,
+                            severity: error_severity,
                             range,
                             ..Default::default()
                         });
@@ -170,7 +255,7 @@ pub async fn get_diagnostics(
                     if !fields.contains(&field) {
                         diagnostics.push(Diagnostic {
                             message: format!("Invalid field name: \"{field}\""),
-                            severity,
+                            severity: error_severity,
                             range,
                             ..Default::default()
                         });
@@ -178,13 +263,13 @@ pub async fn get_diagnostics(
                 }
                 "error" => diagnostics.push(Diagnostic {
                     message: "Invalid syntax".to_owned(),
-                    severity,
+                    severity: error_severity,
                     range,
                     ..Default::default()
                 }),
                 "missing" => diagnostics.push(Diagnostic {
                     message: format!("Missing \"{}\"", capture.node.kind()),
-                    severity,
+                    severity: error_severity,
                     range,
                     ..Default::default()
                 }),
@@ -220,7 +305,7 @@ pub async fn get_diagnostics(
                         if !valid {
                             diagnostics.push(Diagnostic {
                                 message: format!("Undeclared capture: \"{capture_text}\""),
-                                severity,
+                                severity: error_severity,
                                 range,
                                 ..Default::default()
                             });
@@ -850,6 +935,7 @@ mod test {
             doc.clone(),
             language_data,
             Arc::new(options.clone().into()),
+            false,
         )
         .await;
 
