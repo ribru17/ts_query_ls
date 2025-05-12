@@ -9,7 +9,7 @@ use tree_sitter::{Point, Query, QueryError, QueryErrorKind};
 use crate::{
     Backend,
     handlers::diagnostic::get_diagnostics,
-    util::{self, NodeUtil as _, TextProviderRope},
+    util::{self, NodeUtil as _},
 };
 
 pub async fn execute_command(
@@ -35,18 +35,19 @@ async fn check_impossible_patterns(backend: &Backend, params: ExecuteCommandPara
         }
     };
 
-    let Some(doc) = &backend.document_map.get(&uri) else {
+    let Some(doc) = backend.document_map.get(&uri) else {
         warn!("No document built for URI '{uri}' when executing check impossible patterns command");
         return;
     };
     let rope = &doc.rope;
     let tree = &doc.tree;
-    let options = &backend.options.read().await;
-    let language_name = util::get_language_name(&uri, options);
-    let Some(lang) = language_name.and_then(|name| util::get_language(&name, options)) else {
+    let options = backend.options.read().await;
+    let language_name = util::get_language_name(&uri, &options);
+    let Some(lang) = language_name.and_then(|name| util::get_language(&name, &options)) else {
         warn!("Could not retrieve language for path: '{}'", uri.path());
         return;
     };
+    drop(options);
     let Ok(source) = std::fs::read_to_string(uri.path()) else {
         error!("Failed to read file: '{}'", uri.path());
         return;
@@ -85,20 +86,15 @@ async fn check_impossible_patterns(backend: &Backend, params: ExecuteCommandPara
             }
         }
     }
-    let provider = &TextProviderRope(rope);
     let language_data = doc
         .language_name
         .as_ref()
         .and_then(|name| backend.language_map.get(name))
         .as_deref()
         .cloned();
-    diagnostics.append(&mut get_diagnostics(
-        &uri,
-        doc,
-        language_data,
-        options,
-        provider,
-    ));
+    diagnostics.append(
+        &mut get_diagnostics(&uri, doc.clone(), language_data, backend.options.clone()).await,
+    );
 
     backend
         .client

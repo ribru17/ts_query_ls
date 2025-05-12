@@ -1,6 +1,10 @@
-use std::{env, fs, path::PathBuf, sync::atomic::AtomicI32};
+use std::{
+    env, fs,
+    path::PathBuf,
+    sync::{Arc, atomic::AtomicI32},
+};
 
-use rayon::iter::{IntoParallelRefIterator as _, ParallelIterator as _};
+use futures::future::join_all;
 use tower_lsp::lsp_types::Url;
 use tree_sitter::{Query, QueryErrorKind};
 use ts_query_ls::Options;
@@ -9,23 +13,32 @@ use crate::util;
 
 use super::{format::format_directories, get_scm_files, lint::lint_file};
 
-pub fn check_directories(directories: &[PathBuf], config: String, format: bool, lint: bool) -> i32 {
+pub async fn check_directories(
+    directories: &[PathBuf],
+    config: String,
+    format: bool,
+    lint: bool,
+) -> i32 {
     let Ok(options) = serde_json::from_str::<Options>(&config) else {
         eprintln!("Could not parse the provided configuration");
         return 1;
     };
-    let exit_code = AtomicI32::new(0);
+    let options_arc: Arc<tokio::sync::RwLock<Options>> = Arc::new(options.clone().into());
+
+    let exit_code = Arc::new(AtomicI32::new(0));
     // If directories are not specified, check all files in the current directory
     let scm_files = if directories.is_empty() {
         get_scm_files(&[env::current_dir().expect("Failed to get current directory")])
     } else {
         get_scm_files(directories)
     };
-    scm_files.par_iter().for_each(|path| {
+    let tasks = scm_files.into_iter().filter_map(|path| {
+        let options_arc = options_arc.clone();
+        let exit_code = exit_code.clone();
         let uri = Url::from_file_path(path.canonicalize().unwrap()).unwrap();
         let language_name = util::get_language_name(&uri, &options);
         if let Some(lang) = language_name.and_then(|name| util::get_language(&name, &options)) {
-            if let Ok(source) = fs::read_to_string(path) {
+            if let Ok(source) = fs::read_to_string(&path) {
                 if let Err(err) = Query::new(&lang, source.as_str()) {
                     match err.kind {
                         QueryErrorKind::Predicate => {
@@ -38,7 +51,9 @@ pub fn check_directories(directories: &[PathBuf], config: String, format: bool, 
                     }
                 }
                 if lint {
-                    lint_file(path, &uri, &source, &options, &exit_code);
+                    return Some(tokio::spawn(async move {
+                        lint_file(&path, &uri, &source, options_arc.clone(), &exit_code).await;
+                    }));
                 }
             } else {
                 eprintln!("Failed to read {:?}", path.canonicalize().unwrap());
@@ -51,8 +66,10 @@ pub fn check_directories(directories: &[PathBuf], config: String, format: bool, 
                 path.canonicalize().unwrap()
             )
         };
+        None
     });
-    if format && format_directories(directories, true) != 0 {
+    join_all(tasks).await;
+    if format && format_directories(directories, true).await != 0 {
         exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
     }
     exit_code.load(std::sync::atomic::Ordering::Relaxed)

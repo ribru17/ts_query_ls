@@ -86,12 +86,14 @@ mod test {
         // Assert
         if valid {
             assert!(output.stderr.is_empty());
+            assert_eq!(output.status.code(), Some(0));
         } else {
             assert!(
                 String::from_utf8(output.stderr)
                     .unwrap()
                     .contains("Improper formatting detected for")
-            )
+            );
+            assert_eq!(output.status.code(), Some(1));
         }
     }
 }
