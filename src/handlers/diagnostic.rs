@@ -324,9 +324,12 @@ pub async fn get_diagnostics(
                                 .is_some_and(|c| !c.contains_key(&String::from(suffix)))
                         {
                             diagnostics.push(Diagnostic {
-                                message: format!("Unsupported capture name \"{capture_text}\", consider prefixing with '_'"),
+                                message: format!(
+                                    "Unsupported capture name \"{capture_text}\" (fix available)"
+                                ),
                                 severity: Some(DiagnosticSeverity::WARNING),
                                 range,
+                                data: serde_json::to_value(CodeActions::PrefixUnderscore).ok(),
                                 ..Default::default()
                             });
                         }
@@ -365,7 +368,7 @@ pub async fn get_diagnostics(
                             message: String::from("Unnecessary escape sequence (fix available)"),
                             severity: Some(DiagnosticSeverity::WARNING),
                             range,
-                            data: serde_json::to_value(CodeActions::RemoveBackslash as u8).ok(),
+                            data: serde_json::to_value(CodeActions::RemoveBackslash).ok(),
                             ..Default::default()
                         });
                     }
@@ -490,6 +493,7 @@ mod test {
         Options, Predicate, PredicateParameter, PredicateParameterArity, PredicateParameterType,
     };
 
+    use crate::handlers::code_action::CodeActions;
     use crate::{
         SymbolInfo,
         handlers::diagnostic::get_diagnostics,
@@ -523,7 +527,8 @@ mod test {
                 },
             },
             severity: Some(DiagnosticSeverity::WARNING),
-            message: String::from("Unsupported capture name \"@constant\", consider prefixing with '_'"),
+            message: String::from("Unsupported capture name \"@constant\" (fix available)"),
+            data: Some(serde_json::to_value(CodeActions::PrefixUnderscore).unwrap()),
             ..Default::default()
         }, Diagnostic {
             range: Range {
@@ -965,7 +970,7 @@ mod test {
             },
             severity: Some(DiagnosticSeverity::WARNING),
             message: String::from("Unnecessary escape sequence (fix available)"),
-            data: Some(serde_json::to_value(0).unwrap()),
+            data: Some(serde_json::to_value(CodeActions::RemoveBackslash).unwrap()),
             ..Default::default()
         }],
     )]

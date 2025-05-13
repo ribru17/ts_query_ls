@@ -8,14 +8,22 @@ use tower_lsp::{
         Diagnostic, Position, Range, TextEdit, Url, WorkspaceEdit,
     },
 };
+use tree_sitter::QueryCursor;
 
-use crate::Backend;
+use crate::{
+    Backend,
+    util::{
+        CAPTURES_QUERY, NodeUtil, TextProviderRope, ToTsPoint, get_current_capture_node,
+        get_references,
+    },
+};
 
 #[repr(u8)]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(into = "u8", try_from = "u8")]
 pub enum CodeActions {
     RemoveBackslash,
+    PrefixUnderscore,
 }
 
 impl From<CodeActions> for u8 {
@@ -30,12 +38,17 @@ impl TryFrom<u8> for CodeActions {
     fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
         match value {
             0 => Ok(CodeActions::RemoveBackslash),
+            1 => Ok(CodeActions::PrefixUnderscore),
             _ => Err("Invalid value"),
         }
     }
 }
 
-fn diag_to_code_action(diagnostic: Diagnostic, uri: &Url) -> Option<CodeActionOrCommand> {
+fn diag_to_code_action(
+    backend: &Backend,
+    diagnostic: Diagnostic,
+    uri: &Url,
+) -> Option<CodeActionOrCommand> {
     match serde_json::from_value::<CodeActions>(diagnostic.data.clone()?) {
         Ok(CodeActions::RemoveBackslash) => Some(CodeActionOrCommand::CodeAction(CodeAction {
             title: String::from("Remove unnecessary backslash"),
@@ -60,12 +73,52 @@ fn diag_to_code_action(diagnostic: Diagnostic, uri: &Url) -> Option<CodeActionOr
             diagnostics: Some(vec![diagnostic]),
             ..Default::default()
         })),
+        Ok(CodeActions::PrefixUnderscore) => {
+            let tree = backend.document_map.get(uri)?.tree.clone();
+            let root = tree.root_node();
+            let rope = backend.document_map.get(uri)?.rope.clone();
+            let current_node =
+                get_current_capture_node(root, diagnostic.range.start.to_ts_point(&rope))?;
+            let mut cursor = QueryCursor::new();
+            let provider = TextProviderRope(&rope);
+            let refs = get_references(
+                &root,
+                &current_node,
+                &CAPTURES_QUERY,
+                &mut cursor,
+                &provider,
+                &rope,
+            );
+            let edits = refs
+                .into_iter()
+                .map(|node| {
+                    let mut range = node.lsp_range(&rope);
+                    range.start.character += 1;
+                    range.end.character = range.start.character;
+                    TextEdit {
+                        new_text: String::from("_"),
+                        range,
+                    }
+                })
+                .collect();
+            Some(CodeActionOrCommand::CodeAction(CodeAction {
+                title: String::from("Prefix capture name with underscore"),
+                kind: Some(CodeActionKind::QUICKFIX),
+                is_preferred: Some(true),
+                edit: Some(WorkspaceEdit {
+                    changes: Some(HashMap::from([(uri.clone(), edits)])),
+                    ..Default::default()
+                }),
+                diagnostics: Some(vec![diagnostic]),
+                ..Default::default()
+            }))
+        }
         _ => None,
     }
 }
 
 pub async fn code_action(
-    _backend: &Backend,
+    backend: &Backend,
     params: CodeActionParams,
 ) -> Result<Option<CodeActionResponse>> {
     let uri = &params.text_document.uri;
@@ -73,7 +126,7 @@ pub async fn code_action(
 
     let actions: Vec<CodeActionOrCommand> = diagnostics
         .into_iter()
-        .filter_map(|diagnostic| diag_to_code_action(diagnostic, uri))
+        .filter_map(|diagnostic| diag_to_code_action(backend, diagnostic, uri))
         .collect();
 
     if actions.is_empty() {
@@ -132,6 +185,40 @@ mod test {
                         new_text: String::from("")
                     }]
             )])),
+            ..Default::default()
+        }),
+        ..Default::default()
+    })])]
+    #[case(r#"((comment) @jsdoc_comment
+  (#lua-match? @jsdoc_comment ".*"))"#, Default::default(), Position::new(0, 15), CodeActionContext {
+        diagnostics: vec![Diagnostic {
+            message: String::from("bad cap"),
+            range: Range::new(Position::new(0, 11), Position::new(0, 24)),
+            data: Some(serde_json::to_value(CodeActions::PrefixUnderscore).unwrap()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    }, &[CodeActionOrCommand::CodeAction(CodeAction {
+        title: String::from("Prefix capture name with underscore"),
+        kind: Some(CodeActionKind::QUICKFIX),
+        is_preferred: Some(true),
+        diagnostics: Some(vec![Diagnostic {
+            message: String::from("bad cap"),
+            range: Range::new(Position::new(0, 11), Position::new(0, 24)),
+            data: Some(serde_json::to_value(CodeActions::PrefixUnderscore).unwrap()),
+            ..Default::default()
+        }]),
+        edit: Some(WorkspaceEdit {
+            changes: Some(HashMap::from([(
+                TEST_URI.clone(),
+                    vec![TextEdit {
+                        range: Range::new(Position::new(0, 12), Position::new(0, 12)),
+                        new_text: String::from("_")
+                    }, TextEdit {
+                        range: Range::new(Position::new(1, 16), Position::new(1, 16)),
+                        new_text: String::from("_")
+                    }]
+            ), ])),
             ..Default::default()
         }),
         ..Default::default()
