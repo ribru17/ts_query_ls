@@ -185,9 +185,15 @@ pub async fn get_diagnostics(
                         Some(symbols) => symbols,
                         None => continue,
                     };
+                    let named = capture_name == "node.named";
+                    let capture_text = if named {
+                        capture_text
+                    } else {
+                        remove_unnecessary_escapes(&capture_text)
+                    };
                     let sym = SymbolInfo {
                         label: capture_text.clone(),
-                        named: capture_name == "node.named",
+                        named,
                     };
                     if !symbols.contains(&sym) {
                         diagnostics.push(Diagnostic {
@@ -350,11 +356,46 @@ pub async fn get_diagnostics(
                         });
                     }
                 }
+                "escape" => match capture_text.chars().nth(1) {
+                    None | Some('"' | '\\' | 'n' | 'r' | 't' | '0') => {}
+                    _ => {
+                        diagnostics.push(Diagnostic {
+                            message: String::from("Unnecessary escape sequence (remove `\\`)"),
+                            severity: Some(DiagnosticSeverity::WARNING),
+                            range,
+                            ..Default::default()
+                        });
+                    }
+                },
                 _ => {}
             }
         }
     }
     diagnostics
+}
+
+fn remove_unnecessary_escapes(input: &str) -> String {
+    let mut result = String::new();
+    let mut chars = input.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some(char @ ('\"' | '\\' | 'n' | 'r' | 't' | '0')) => {
+                    result.push('\\');
+                    result.push(char);
+                }
+                Some(char) => {
+                    result.push(char);
+                }
+                None => {}
+            }
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
 }
 
 fn validate_predicate<'a>(
@@ -898,6 +939,31 @@ mod test {
                 data: None,
             },
         ]
+    )]
+    #[case(
+        r#""\p" @_cap  "\\" @_anothercap "#,
+        &[
+            SymbolInfo { label: String::from(r"\\"), named: false },
+            SymbolInfo { label: String::from("p"), named: false }
+        ],
+        &[],
+        &[],
+        Options::default(),
+        &[Diagnostic {
+            range: Range {
+                start: Position {
+                    line: 0,
+                    character: 1,
+                },
+                end: Position {
+                    line: 0,
+                    character: 3,
+                },
+            },
+            severity: Some(DiagnosticSeverity::WARNING),
+            message: String::from("Unnecessary escape sequence (remove `\\`)"),
+            ..Default::default()
+        }],
     )]
     #[tokio::test(flavor = "current_thread")]
     async fn server_diagnostics(

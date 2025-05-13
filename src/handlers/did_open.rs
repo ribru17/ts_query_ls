@@ -76,6 +76,9 @@ pub fn init_language_data(lang: Language) -> LanguageData {
                 .replace('\\', r"\\")
                 .replace('"', r#"\""#)
                 .replace('\n', r"\n")
+                .replace('\r', r"\r")
+                .replace('\t', r"\t")
+                .replace('\0', r"\0")
         };
         let symbol_info = SymbolInfo { label, named };
         if supertype {
