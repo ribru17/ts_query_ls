@@ -18,17 +18,18 @@ use tower_lsp::{
     Client, LanguageServer, LspService, Server,
     jsonrpc::Result,
     lsp_types::{
-        CompletionOptions, CompletionParams, CompletionResponse, DiagnosticOptions,
-        DiagnosticServerCapabilities, DidChangeConfigurationParams, DidChangeTextDocumentParams,
-        DidOpenTextDocumentParams, DocumentDiagnosticParams, DocumentDiagnosticReportResult,
-        DocumentFormattingParams, DocumentHighlight, DocumentHighlightParams, DocumentSymbolParams,
-        DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams,
-        HoverProviderCapability, InitializeParams, InitializeResult, Location, OneOf,
-        ReferenceParams, RenameParams, SemanticTokenModifier, SemanticTokenType,
-        SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
-        SemanticTokensParams, SemanticTokensResult, SemanticTokensServerCapabilities,
-        ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
-        WorkspaceEdit,
+        CodeActionKind, CodeActionOptions, CodeActionParams, CodeActionProviderCapability,
+        CodeActionResponse, CompletionOptions, CompletionParams, CompletionResponse,
+        DiagnosticOptions, DiagnosticServerCapabilities, DidChangeConfigurationParams,
+        DidChangeTextDocumentParams, DidOpenTextDocumentParams, DocumentDiagnosticParams,
+        DocumentDiagnosticReportResult, DocumentFormattingParams, DocumentHighlight,
+        DocumentHighlightParams, DocumentSymbolParams, DocumentSymbolResponse,
+        GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams, HoverProviderCapability,
+        InitializeParams, InitializeResult, Location, OneOf, ReferenceParams, RenameParams,
+        SemanticTokenModifier, SemanticTokenType, SemanticTokensFullOptions, SemanticTokensLegend,
+        SemanticTokensOptions, SemanticTokensParams, SemanticTokensResult,
+        SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentSyncCapability,
+        TextDocumentSyncKind, TextEdit, Url, WorkspaceEdit,
     },
 };
 use tree_sitter::{Language, Tree, wasmtime::Engine};
@@ -49,6 +50,10 @@ static SERVER_CAPABILITIES: LazyLock<ServerCapabilities> = LazyLock::new(|| {
         )),
         diagnostic_provider: Some(DiagnosticServerCapabilities::Options(DiagnosticOptions {
             identifier: Some(String::from("ts_query_ls")),
+            ..Default::default()
+        })),
+        code_action_provider: Some(CodeActionProviderCapability::Options(CodeActionOptions {
+            code_action_kinds: Some(vec![CodeActionKind::QUICKFIX]),
             ..Default::default()
         })),
         references_provider: Some(OneOf::Left(true)),
@@ -198,6 +203,10 @@ impl LanguageServer for Backend {
         params: DocumentDiagnosticParams,
     ) -> Result<DocumentDiagnosticReportResult> {
         diagnostic::diagnostic(self, params).await
+    }
+
+    async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
+        code_action::code_action(self, params).await
     }
 }
 

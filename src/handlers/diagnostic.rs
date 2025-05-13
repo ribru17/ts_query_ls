@@ -24,6 +24,8 @@ use crate::{
     util::{CAPTURES_QUERY, NodeUtil as _, TextProviderRope, uri_to_basename},
 };
 
+use super::code_action::CodeActions;
+
 static DIAGNOSTICS_QUERY: LazyLock<Query> = LazyLock::new(|| {
     Query::new(
         &QUERY_LANGUAGE,
@@ -360,9 +362,10 @@ pub async fn get_diagnostics(
                     None | Some('"' | '\\' | 'n' | 'r' | 't' | '0') => {}
                     _ => {
                         diagnostics.push(Diagnostic {
-                            message: String::from("Unnecessary escape sequence (remove `\\`)"),
+                            message: String::from("Unnecessary escape sequence (fix available)"),
                             severity: Some(DiagnosticSeverity::WARNING),
                             range,
+                            data: serde_json::to_value(CodeActions::RemoveBackslash as u8).ok(),
                             ..Default::default()
                         });
                     }
@@ -961,7 +964,8 @@ mod test {
                 },
             },
             severity: Some(DiagnosticSeverity::WARNING),
-            message: String::from("Unnecessary escape sequence (remove `\\`)"),
+            message: String::from("Unnecessary escape sequence (fix available)"),
+            data: Some(serde_json::to_value(0).unwrap()),
             ..Default::default()
         }],
     )]
