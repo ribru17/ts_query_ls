@@ -35,3 +35,5 @@
   name: (identifier) @directive
   (predicate_type) @_type
   (#eq? @_type "!"))
+
+(escape_sequence) @escape
