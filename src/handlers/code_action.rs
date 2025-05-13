@@ -1,0 +1,183 @@
+use std::{collections::HashMap, vec};
+
+use serde::{Deserialize, Serialize};
+use tower_lsp::{
+    jsonrpc::Result,
+    lsp_types::{
+        CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, CodeActionResponse,
+        Diagnostic, Position, Range, TextEdit, Url, WorkspaceEdit,
+    },
+};
+
+use crate::Backend;
+
+#[repr(u8)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(into = "u8", try_from = "u8")]
+pub enum CodeActions {
+    RemoveBackslash,
+}
+
+impl From<CodeActions> for u8 {
+    fn from(e: CodeActions) -> Self {
+        e as u8
+    }
+}
+
+impl TryFrom<u8> for CodeActions {
+    type Error = &'static str;
+
+    fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
+        match value {
+            0 => Ok(CodeActions::RemoveBackslash),
+            _ => Err("Invalid value"),
+        }
+    }
+}
+
+fn diag_to_code_action(diagnostic: Diagnostic, uri: &Url) -> Option<CodeActionOrCommand> {
+    match serde_json::from_value::<CodeActions>(diagnostic.data.clone()?) {
+        Ok(CodeActions::RemoveBackslash) => Some(CodeActionOrCommand::CodeAction(CodeAction {
+            title: String::from("Remove unnecessary backslash"),
+            kind: Some(CodeActionKind::QUICKFIX),
+            is_preferred: Some(true),
+            edit: Some(WorkspaceEdit {
+                changes: Some(HashMap::from([(
+                    uri.clone(),
+                    vec![TextEdit {
+                        new_text: String::from(""),
+                        range: Range::new(
+                            diagnostic.range.start,
+                            Position::new(
+                                diagnostic.range.start.line,
+                                diagnostic.range.start.character + 1,
+                            ),
+                        ),
+                    }],
+                )])),
+                ..Default::default()
+            }),
+            diagnostics: Some(vec![diagnostic]),
+            ..Default::default()
+        })),
+        _ => None,
+    }
+}
+
+pub async fn code_action(
+    _backend: &Backend,
+    params: CodeActionParams,
+) -> Result<Option<CodeActionResponse>> {
+    let uri = &params.text_document.uri;
+    let diagnostics = params.context.diagnostics;
+
+    let actions: Vec<CodeActionOrCommand> = diagnostics
+        .into_iter()
+        .filter_map(|diagnostic| diag_to_code_action(diagnostic, uri))
+        .collect();
+
+    if actions.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(actions))
+    }
+}
+#[cfg(test)]
+mod test {
+    use std::collections::HashMap;
+
+    use pretty_assertions::assert_eq;
+    use rstest::rstest;
+    use tower::{Service, ServiceExt};
+    use tower_lsp::lsp_types::{
+        CodeAction, CodeActionContext, CodeActionKind, Diagnostic, Position, Range,
+        TextDocumentIdentifier, TextEdit, WorkspaceEdit,
+    };
+    use tower_lsp::lsp_types::{
+        CodeActionOrCommand, CodeActionParams, PartialResultParams, WorkDoneProgressParams,
+        request::CodeActionRequest,
+    };
+    use ts_query_ls::Options;
+
+    use crate::handlers::code_action::CodeActions;
+    use crate::test_helpers::helpers::{TEST_URI, initialize_server};
+    use crate::test_helpers::helpers::{
+        lsp_request_to_jsonrpc_request, lsp_response_to_jsonrpc_response,
+    };
+
+    #[rstest]
+    #[case(r#""\p" @_somecap"#, Default::default(), Position::new(0, 2), CodeActionContext {
+        diagnostics: vec![Diagnostic {
+            message: String::from("bad escape"),
+            range: Range::new(Position::new(0, 1), Position::new(0, 3)),
+            data: Some(serde_json::to_value(CodeActions::RemoveBackslash).unwrap()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    }, &[CodeActionOrCommand::CodeAction(CodeAction {
+        title: String::from("Remove unnecessary backslash"),
+        kind: Some(CodeActionKind::QUICKFIX),
+        is_preferred: Some(true),
+        diagnostics: Some(vec![Diagnostic {
+            message: String::from("bad escape"),
+            range: Range::new(Position::new(0, 1), Position::new(0, 3)),
+            data: Some(serde_json::to_value(CodeActions::RemoveBackslash).unwrap()),
+            ..Default::default()
+        }]),
+        edit: Some(WorkspaceEdit {
+            changes: Some(HashMap::from([(
+                TEST_URI.clone(),
+                    vec![TextEdit {
+                        range: Range::new(Position::new(0, 1), Position::new(0, 2)),
+                        new_text: String::from("")
+                    }]
+            )])),
+            ..Default::default()
+        }),
+        ..Default::default()
+    })])]
+    #[tokio::test(flavor = "current_thread")]
+    async fn server_code_action(
+        #[case] source: &str,
+        #[case] options: Options,
+        #[case] cursor: Position,
+        #[case] context: CodeActionContext,
+        #[case] expected_code_actions: &[CodeActionOrCommand],
+    ) {
+        // Arrange
+        let mut service = initialize_server(
+            &[(TEST_URI.clone(), source, Vec::new(), Vec::new(), Vec::new())],
+            &options,
+        )
+        .await;
+
+        // Act
+        let code_actions = service
+            .ready()
+            .await
+            .unwrap()
+            .call(lsp_request_to_jsonrpc_request::<CodeActionRequest>(
+                CodeActionParams {
+                    context,
+                    range: Range::new(cursor, cursor),
+                    text_document: TextDocumentIdentifier {
+                        uri: TEST_URI.clone(),
+                    },
+                    work_done_progress_params: WorkDoneProgressParams::default(),
+                    partial_result_params: PartialResultParams::default(),
+                },
+            ))
+            .await
+            .map_err(|e| format!("textDocument/codeAction call returned error: {e}"))
+            .unwrap();
+
+        // Assert
+        let expected_code_actions = Some(expected_code_actions.to_vec());
+        assert_eq!(
+            code_actions,
+            Some(lsp_response_to_jsonrpc_response::<CodeActionRequest>(
+                expected_code_actions
+            ))
+        )
+    }
+}
