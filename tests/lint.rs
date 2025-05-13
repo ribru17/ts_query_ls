@@ -40,7 +40,7 @@ mod test {
     #[rstest]
     #[case(
         concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/after_trailing_whitespace.scm"),
-        Some(["Unsupported capture name \"@cap\", consider prefixing with '_'"].as_slice())
+        Some(["Unsupported capture name \"@cap\" (fix available)"].as_slice())
     )]
     #[case(
         concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_predicates.scm"),
