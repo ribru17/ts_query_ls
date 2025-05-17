@@ -133,6 +133,25 @@ pub fn node_is_or_has_ancestor(root: Node, node: Node, kind: &str) -> bool {
     false
 }
 
+pub fn edit_rope(rope: &mut Rope, range: Range, new_text: &str) {
+    let start_row_char_idx = rope.line_to_char(range.start.line as usize);
+    let start_row_cu = rope.char_to_utf16_cu(start_row_char_idx);
+    let start_col_char_idx =
+        rope.utf16_cu_to_char(start_row_cu + range.start.character as usize) - start_row_char_idx;
+    let end_row_char_idx = rope.line_to_char(range.end.line as usize);
+    let end_row_cu = rope.char_to_utf16_cu(end_row_char_idx);
+    let end_col_char_idx =
+        rope.utf16_cu_to_char(end_row_cu + range.end.character as usize) - end_row_char_idx;
+
+    let start_char_idx = start_row_char_idx + start_col_char_idx;
+    let end_char_idx = end_row_char_idx + end_col_char_idx;
+    rope.remove(start_char_idx..end_char_idx);
+
+    if !new_text.is_empty() {
+        rope.insert(start_char_idx, new_text);
+    }
+}
+
 pub fn lsp_textdocchange_to_ts_inputedit(
     rope: &Rope,
     change: &TextDocumentContentChangeEvent,

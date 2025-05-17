@@ -246,6 +246,10 @@ enum Commands {
         /// Check for valid formatting
         #[arg(long, short)]
         format: bool,
+
+        /// Apply fixes to diagnostics that have them
+        #[arg(long, short)]
+        fix: bool,
     },
     /// Lint the query files in the given directories for errors. This differs from `check` because
     /// it does not perform a full semantic analysis (e.g. analyzing for impossible patterns), but
@@ -258,6 +262,10 @@ enum Commands {
         /// String representing server's JSON configuration
         #[arg(long, short)]
         config: Option<String>,
+
+        /// Apply fixes to diagnostics that have them
+        #[arg(long, short)]
+        fix: bool,
     },
 }
 
@@ -287,16 +295,18 @@ async fn main() {
             directories,
             config,
             format,
+            fix,
         }) => {
             let config_str = get_config_str(config);
-            std::process::exit(check_directories(&directories, config_str, format).await);
+            std::process::exit(check_directories(&directories, config_str, format, fix).await);
         }
         Some(Commands::Lint {
             directories,
             config,
+            fix,
         }) => {
             let config_str = get_config_str(config);
-            std::process::exit(lint_directories(&directories, config_str).await)
+            std::process::exit(lint_directories(&directories, config_str, fix).await)
         }
         None => {}
     }
