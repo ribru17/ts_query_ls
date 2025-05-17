@@ -2,7 +2,10 @@ use tower_lsp::lsp_types::{DidChangeTextDocumentParams, Position, Range};
 use tracing::warn;
 use tree_sitter::Parser;
 
-use crate::{Backend, QUERY_LANGUAGE, util::lsp_textdocchange_to_ts_inputedit};
+use crate::{
+    Backend, QUERY_LANGUAGE,
+    util::{edit_rope, lsp_textdocchange_to_ts_inputedit},
+};
 
 pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) {
     let uri = &params.text_document.uri;
@@ -20,14 +23,13 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
 
     let mut edits = vec![];
     for change in &params.content_changes {
-        let text = change.text.as_str();
-        let text_bytes = text.as_bytes();
-        let text_end_byte_idx = text_bytes.len();
+        let new_text = change.text.as_str();
 
         let range = if let Some(range) = change.range {
             range
         } else {
             let start_line_idx = rope.byte_to_line(0);
+            let text_end_byte_idx = new_text.len();
             let end_line_idx = rope.byte_to_line(text_end_byte_idx);
 
             let start = Position::new(start_line_idx as u32, 0);
@@ -36,24 +38,7 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
         };
 
         edits.push(lsp_textdocchange_to_ts_inputedit(rope, change).unwrap());
-
-        let start_row_char_idx = rope.line_to_char(range.start.line as usize);
-        let start_row_cu = rope.char_to_utf16_cu(start_row_char_idx);
-        let start_col_char_idx = rope
-            .utf16_cu_to_char(start_row_cu + range.start.character as usize)
-            - start_row_char_idx;
-        let end_row_char_idx = rope.line_to_char(range.end.line as usize);
-        let end_row_cu = rope.char_to_utf16_cu(end_row_char_idx);
-        let end_col_char_idx =
-            rope.utf16_cu_to_char(end_row_cu + range.end.character as usize) - end_row_char_idx;
-
-        let start_char_idx = start_row_char_idx + start_col_char_idx;
-        let end_char_idx = end_row_char_idx + end_col_char_idx;
-        rope.remove(start_char_idx..end_char_idx);
-
-        if !change.text.is_empty() {
-            rope.insert(start_char_idx, text);
-        }
+        edit_rope(rope, range, new_text);
     }
     let contents = rope.to_string();
     let mut old_tree = document.tree.clone();

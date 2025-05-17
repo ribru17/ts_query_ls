@@ -1,5 +1,6 @@
 use std::{collections::HashMap, vec};
 
+use ropey::Rope;
 use serde::{Deserialize, Serialize};
 use tower_lsp::{
     jsonrpc::Result,
@@ -8,7 +9,7 @@ use tower_lsp::{
         Diagnostic, Position, Range, TextEdit, Url, WorkspaceEdit,
     },
 };
-use tree_sitter::QueryCursor;
+use tree_sitter::{QueryCursor, Tree};
 
 use crate::{
     Backend,
@@ -44,8 +45,9 @@ impl TryFrom<u8> for CodeActions {
     }
 }
 
-fn diag_to_code_action(
-    backend: &Backend,
+pub fn diag_to_code_action(
+    tree: &Tree,
+    rope: &Rope,
     diagnostic: Diagnostic,
     uri: &Url,
 ) -> Option<CodeActionOrCommand> {
@@ -74,25 +76,23 @@ fn diag_to_code_action(
             ..Default::default()
         })),
         Ok(CodeActions::PrefixUnderscore) => {
-            let tree = backend.document_map.get(uri)?.tree.clone();
             let root = tree.root_node();
-            let rope = backend.document_map.get(uri)?.rope.clone();
             let current_node =
-                get_current_capture_node(root, diagnostic.range.start.to_ts_point(&rope))?;
+                get_current_capture_node(root, diagnostic.range.start.to_ts_point(rope))?;
             let mut cursor = QueryCursor::new();
-            let provider = TextProviderRope(&rope);
+            let provider = TextProviderRope(rope);
             let refs = get_references(
                 &root,
                 &current_node,
                 &CAPTURES_QUERY,
                 &mut cursor,
                 &provider,
-                &rope,
+                rope,
             );
             let edits = refs
                 .into_iter()
                 .map(|node| {
-                    let mut range = node.lsp_range(&rope);
+                    let mut range = node.lsp_range(rope);
                     range.start.character += 1;
                     range.end.character = range.start.character;
                     TextEdit {
@@ -113,7 +113,7 @@ fn diag_to_code_action(
                 ..Default::default()
             }))
         }
-        _ => None,
+        Err(_) => None,
     }
 }
 
@@ -123,10 +123,13 @@ pub async fn code_action(
 ) -> Result<Option<CodeActionResponse>> {
     let uri = &params.text_document.uri;
     let diagnostics = params.context.diagnostics;
+    let Some(doc) = backend.document_map.get(uri) else {
+        return Ok(None);
+    };
 
     let actions: Vec<CodeActionOrCommand> = diagnostics
         .into_iter()
-        .filter_map(|diagnostic| diag_to_code_action(backend, diagnostic, uri))
+        .filter_map(|diagnostic| diag_to_code_action(&doc.tree, &doc.rope, diagnostic, uri))
         .collect();
 
     if actions.is_empty() {

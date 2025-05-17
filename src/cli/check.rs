@@ -15,7 +15,12 @@ use super::{format::format_directories, get_scm_files, lint::lint_file};
 
 static LANGUAGE_CACHE: LazyLock<DashMap<String, Arc<LanguageData>>> = LazyLock::new(DashMap::new);
 
-pub async fn check_directories(directories: &[PathBuf], config: String, format: bool) -> i32 {
+pub async fn check_directories(
+    directories: &[PathBuf],
+    config: String,
+    format: bool,
+    fix: bool,
+) -> i32 {
     let Ok(options) = serde_json::from_str::<Options>(&config) else {
         eprintln!("Could not parse the provided configuration");
         return 1;
@@ -47,6 +52,7 @@ pub async fn check_directories(directories: &[PathBuf], config: String, format: 
                         &uri,
                         &source,
                         options_arc.clone(),
+                        fix,
                         Some(lang),
                         &exit_code,
                     )

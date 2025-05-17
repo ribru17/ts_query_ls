@@ -216,7 +216,8 @@ flag to pass JSON configuration to the server (needed to detect parser
 locations). If no configuration flag is passed, the command will attempt to read
 it from the `.tsqueryrc.json` configuration file in the current directory. The
 command also accepts a `--format` (`-f`) flag which instructs it to also check
-formatting for the given directories. If no directories are specified to be
+formatting for the given directories. Quick fixes can be applied to supported
+diagnostics by passing the `--fix` flag. If no directories are specified to be
 checked, then the command will search for all queries in the current directory.
 
 > **NOTE:** This command performs a superset of the work done by the lint
@@ -235,7 +236,8 @@ the underlying parser objects. The following command will lint the `queries`
 directory, meaning it will scan it for invalid capture names or invalid
 predicate signatures, as defined by the configuration. Configuration can be
 passed in via the `--config` flag, or it will be read from the current directory
-if no flag is passed.
+if no flag is passed. Quick fixes can be applied to supported diagnostics by
+passing the `--fix` flag.
 
 ```sh
 ts_query_ls lint ./queries
