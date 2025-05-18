@@ -514,13 +514,13 @@ mod test {
 
     use pretty_assertions::assert_eq;
     use rstest::rstest;
-    use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, Position, Range};
+    use tower_lsp::lsp_types::{Diagnostic, DiagnosticTag, Position, Range};
     use ts_query_ls::{
         Options, Predicate, PredicateParameter, PredicateParameterArity, PredicateParameterType,
     };
 
     use crate::handlers::code_action::CodeActions;
-    use crate::handlers::diagnostic::WARNING_SEVERITY;
+    use crate::handlers::diagnostic::{ERROR_SEVERITY, WARNING_SEVERITY};
     use crate::{
         SymbolInfo,
         handlers::diagnostic::get_diagnostics,
@@ -553,7 +553,7 @@ mod test {
                     character: 23,
                 },
             },
-            severity: Some(DiagnosticSeverity::WARNING),
+            severity: WARNING_SEVERITY,
             message: String::from("Unsupported capture name \"@constant\" (fix available)"),
             data: Some(serde_json::to_value(CodeActions::PrefixUnderscore).unwrap()),
             ..Default::default()
@@ -568,7 +568,7 @@ mod test {
                     character: 14,
                 },
             },
-            severity: Some(DiagnosticSeverity::ERROR),
+            severity: ERROR_SEVERITY,
             message: String::from("Undeclared capture: \"@cons\""),
             ..Default::default()
         }],
@@ -600,7 +600,7 @@ mod test {
                     character: 13,
                 },
             },
-            severity: Some(DiagnosticSeverity::ERROR),
+            severity: ERROR_SEVERITY,
             message: String::from("Invalid node type: \"identifierr\""),
             ..Default::default()
         }],
@@ -674,7 +674,7 @@ mod test {
                 start: Position { line: 1, character: 0 },
                 end: Position { line: 1, character: 24 },
             },
-            severity: Some(DiagnosticSeverity::WARNING),
+            severity: WARNING_SEVERITY,
             code: None,
             code_description: None,
             source: None,
@@ -712,7 +712,7 @@ mod test {
                 start: Position { line: 1, character: 31 },
                 end: Position { line: 1, character: 48 },
             },
-            severity: Some(DiagnosticSeverity::WARNING),
+            severity: WARNING_SEVERITY,
             code: None,
             code_description: None,
             source: None,
@@ -778,7 +778,7 @@ mod test {
                     start: Position { line: 1, character: 45, },
                     end: Position { line: 1, character: 62, },
                 },
-                severity: Some(DiagnosticSeverity::WARNING),
+                severity: WARNING_SEVERITY,
                 code: None,
                 code_description: None,
                 source: None,
@@ -923,7 +923,7 @@ mod test {
                     start: Position { line: 1, character: 32, },
                     end: Position { line: 1, character: 38, },
                 },
-                severity: Some(DiagnosticSeverity::WARNING),
+                severity: WARNING_SEVERITY,
                 code: None,
                 code_description: None,
                 source: None,
@@ -964,7 +964,7 @@ mod test {
                     start: Position { line: 1, character: 2, },
                     end: Position { line: 1, character: 6, },
                 },
-                severity: Some(DiagnosticSeverity::WARNING),
+                severity: WARNING_SEVERITY,
                 code: None,
                 code_description: None,
                 source: None,
@@ -1016,6 +1016,46 @@ mod test {
             message: String::from("This pattern has no captures, and will not be processed"),
             data: Some(serde_json::to_value(CodeActions::Remove).unwrap()),
             tags: Some(vec![DiagnosticTag::UNNECESSARY]),
+            ..Default::default()
+        }],
+    )]
+    #[case(
+        r#"(identifier name: (identifier) @capture)  (identifier asdf: (identifier) @capture)"#,
+        &[SymbolInfo { label: String::from(r"identifier"), named: true }],
+        &["name"],
+        &[],
+        Options {
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([(String::from("capture"), String::default())]))]),
+            ..Default::default()
+        },
+        &[Diagnostic {
+            range: Range {
+                start: Position::new(0, 54),
+                end: Position::new(0, 58),
+            },
+            severity: ERROR_SEVERITY,
+            message: String::from("Invalid field name: \"asdf\""),
+            ..Default::default()
+        }],
+    )]
+    #[case(
+        r#"(identifier !asdf) @capture"#,
+        &[SymbolInfo { label: String::from(r"identifier"), named: true }],
+        &["name"],
+        &[],
+        Options {
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([(String::from("capture"), String::default())]))]),
+            ..Default::default()
+        },
+        &[Diagnostic {
+            range: Range {
+                start: Position::new(0, 13),
+                end: Position::new(0, 17),
+            },
+            severity: ERROR_SEVERITY,
+            message: String::from("Invalid field name: \"asdf\""),
             ..Default::default()
         }],
     )]

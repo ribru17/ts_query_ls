@@ -24,6 +24,9 @@
 (field_definition
   name: (identifier) @field)
 
+(negated_field
+  (identifier) @field)
+
 (capture) @capture
 
 (predicate
