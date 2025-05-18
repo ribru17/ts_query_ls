@@ -48,7 +48,7 @@ mod test {
     )]
     #[case(
         concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_missing.scm"),
-        None
+        Some(["This pattern has no captures, and will not be processed"].as_slice())
     )]
     #[case(
         concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_syntax_error.scm"),
