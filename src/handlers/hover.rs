@@ -74,20 +74,20 @@ pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hove
             }
             return Ok(None);
         }
-        if let Some(subtypes) = supertypes.and_then(|supertypes| {
-            supertypes.get(&sym).and_then(|subtypes| {
-                (subtypes.iter().fold(
+        if let Some(subtypes) = supertypes.and_then(|supertypes| supertypes.get(&sym)) {
+            let value = if subtypes.is_empty() {
+                String::from("Subtypes could not be determined (parser ABI < 15)")
+            } else {
+                subtypes.iter().fold(
                     format!("Subtypes of `({node_text})`:\n\n```query"),
                     |acc, subtype| format!("{acc}\n{}", subtype),
-                ) + "\n```")
-                    .into()
-            })
-        }) {
+                ) + "\n```"
+            };
             return Ok(Some(Hover {
                 range: Some(node_range),
                 contents: HoverContents::Markup(MarkupContent {
                     kind: MarkupKind::Markdown,
-                    value: subtypes,
+                    value,
                 }),
             }));
         } else if node_text == "ERROR" {
