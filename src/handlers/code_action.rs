@@ -25,6 +25,7 @@ use crate::{
 pub enum CodeActions {
     RemoveBackslash,
     PrefixUnderscore,
+    Remove,
 }
 
 impl From<CodeActions> for u8 {
@@ -40,6 +41,7 @@ impl TryFrom<u8> for CodeActions {
         match value {
             0 => Ok(CodeActions::RemoveBackslash),
             1 => Ok(CodeActions::PrefixUnderscore),
+            2 => Ok(CodeActions::Remove),
             _ => Err("Invalid value"),
         }
     }
@@ -113,6 +115,23 @@ pub fn diag_to_code_action(
                 ..Default::default()
             }))
         }
+        Ok(CodeActions::Remove) => Some(CodeActionOrCommand::CodeAction(CodeAction {
+            title: String::from("Remove pattern"),
+            kind: Some(CodeActionKind::QUICKFIX),
+            is_preferred: Some(true),
+            edit: Some(WorkspaceEdit {
+                changes: Some(HashMap::from([(
+                    uri.clone(),
+                    vec![TextEdit {
+                        new_text: String::from(""),
+                        range: diagnostic.range,
+                    }],
+                )])),
+                ..Default::default()
+            }),
+            diagnostics: Some(vec![diagnostic]),
+            ..Default::default()
+        })),
         Err(_) => None,
     }
 }

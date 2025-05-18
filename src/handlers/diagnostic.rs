@@ -8,8 +8,8 @@ use ropey::Rope;
 use tower_lsp::{
     jsonrpc::{Error, ErrorCode, Result},
     lsp_types::{
-        Diagnostic, DiagnosticSeverity, DocumentDiagnosticParams, DocumentDiagnosticReport,
-        DocumentDiagnosticReportResult, FullDocumentDiagnosticReport,
+        Diagnostic, DiagnosticSeverity, DiagnosticTag, DocumentDiagnosticParams,
+        DocumentDiagnosticReport, DocumentDiagnosticReportResult, FullDocumentDiagnosticReport,
         RelatedFullDocumentDiagnosticReport, Url,
     },
 };
@@ -99,6 +99,9 @@ fn get_pattern_diagnostic(pattern_text: &str, language: Language) -> Option<usiz
     }
 }
 
+const ERROR_SEVERITY: Option<DiagnosticSeverity> = Some(DiagnosticSeverity::ERROR);
+const WARNING_SEVERITY: Option<DiagnosticSeverity> = Some(DiagnosticSeverity::WARNING);
+
 pub async fn get_diagnostics(
     uri: &Url,
     document: DocumentData,
@@ -108,7 +111,6 @@ pub async fn get_diagnostics(
 ) -> Vec<Diagnostic> {
     let tree = document.tree.clone();
     let rope = document.rope.clone();
-    let error_severity = Some(DiagnosticSeverity::ERROR);
     let ld = language_data.clone();
 
     // Separately iterate over pattern definitions since this step can be costly and we want to
@@ -144,7 +146,7 @@ pub async fn get_diagnostics(
                     let true_offset = offset + capture.node.start_byte();
                     diagnostics.push(Diagnostic {
                         message: String::from("Invalid pattern structure"),
-                        severity: error_severity,
+                        severity: ERROR_SEVERITY,
                         range: tree
                             .root_node()
                             .named_descendant_for_byte_range(true_offset, true_offset)
@@ -167,6 +169,30 @@ pub async fn get_diagnostics(
         .get(&uri_to_basename(uri).unwrap_or_default());
     let rope = &document.rope;
     let tree = &document.tree;
+
+    let provider = TextProviderRope(rope);
+    let mut cursor = QueryCursor::new();
+    let mut matches = cursor.matches(&DEFINITIONS_QUERY, tree.root_node(), &provider);
+    while let Some(match_) = matches.next() {
+        for capture in match_.captures {
+            let mut cursor = QueryCursor::new();
+            let query = &CAPTURES_QUERY;
+            let mut matches = cursor.matches(query, capture.node, &provider);
+            if matches.next().is_none() {
+                diagnostics.push(Diagnostic {
+                    message: String::from(
+                        "This pattern has no captures, and will not be processed",
+                    ),
+                    range: capture.node.lsp_range(rope),
+                    severity: WARNING_SEVERITY,
+                    tags: Some(vec![DiagnosticTag::UNNECESSARY]),
+                    data: serde_json::to_value(CodeActions::Remove).ok(),
+                    ..Default::default()
+                });
+            }
+        }
+    }
+
     let valid_predicates = &options.valid_predicates;
     let valid_directives = &options.valid_directives;
     let symbols = language_data.as_deref().map(|ld| &ld.symbols_set);
@@ -200,7 +226,7 @@ pub async fn get_diagnostics(
                     if !symbols.contains(&sym) {
                         diagnostics.push(Diagnostic {
                             message: format!("Invalid node type: \"{capture_text}\""),
-                            severity: error_severity,
+                            severity: ERROR_SEVERITY,
                             range,
                             ..Default::default()
                         });
@@ -233,14 +259,14 @@ pub async fn get_diagnostics(
                         if !subtypes.is_empty() && !subtypes.contains(&subtype_sym) {
                             diagnostics.push(Diagnostic {
                                 message: format!("Node \"{subtype_text}\" is not a subtype of \"{supertype_text}\""),
-                                severity: error_severity,
+                                severity: ERROR_SEVERITY,
                                 range,
                                 ..Default::default()
                             });
                         } else if subtypes.is_empty() && !symbols.contains(&subtype_sym) {
                             diagnostics.push(Diagnostic {
                                 message: format!("Invalid node type: \"{subtype_text}\""),
-                                severity: error_severity,
+                                severity: ERROR_SEVERITY,
                                 range,
                                 ..Default::default()
                             });
@@ -248,7 +274,7 @@ pub async fn get_diagnostics(
                     } else {
                         diagnostics.push(Diagnostic {
                             message: format!("Node \"{supertype_text}\" is not a supertype"),
-                            severity: error_severity,
+                            severity: ERROR_SEVERITY,
                             range,
                             ..Default::default()
                         });
@@ -263,7 +289,7 @@ pub async fn get_diagnostics(
                     if !fields.contains(&field) {
                         diagnostics.push(Diagnostic {
                             message: format!("Invalid field name: \"{field}\""),
-                            severity: error_severity,
+                            severity: ERROR_SEVERITY,
                             range,
                             ..Default::default()
                         });
@@ -271,13 +297,13 @@ pub async fn get_diagnostics(
                 }
                 "error" => diagnostics.push(Diagnostic {
                     message: "Invalid syntax".to_owned(),
-                    severity: error_severity,
+                    severity: ERROR_SEVERITY,
                     range,
                     ..Default::default()
                 }),
                 "missing" => diagnostics.push(Diagnostic {
                     message: format!("Missing \"{}\"", capture.node.kind()),
-                    severity: error_severity,
+                    severity: ERROR_SEVERITY,
                     range,
                     ..Default::default()
                 }),
@@ -313,7 +339,7 @@ pub async fn get_diagnostics(
                         if !valid {
                             diagnostics.push(Diagnostic {
                                 message: format!("Undeclared capture: \"{capture_text}\""),
-                                severity: error_severity,
+                                severity: ERROR_SEVERITY,
                                 range,
                                 ..Default::default()
                             });
@@ -327,7 +353,7 @@ pub async fn get_diagnostics(
                                 message: format!(
                                     "Unsupported capture name \"{capture_text}\" (fix available)"
                                 ),
-                                severity: Some(DiagnosticSeverity::WARNING),
+                                severity: WARNING_SEVERITY,
                                 range,
                                 data: serde_json::to_value(CodeActions::PrefixUnderscore).ok(),
                                 ..Default::default()
@@ -355,7 +381,7 @@ pub async fn get_diagnostics(
                     } else {
                         diagnostics.push(Diagnostic {
                             message: format!("Unrecognized {capture_name} \"{capture_text}\""),
-                            severity: Some(DiagnosticSeverity::WARNING),
+                            severity: WARNING_SEVERITY,
                             range,
                             ..Default::default()
                         });
@@ -366,7 +392,7 @@ pub async fn get_diagnostics(
                     _ => {
                         diagnostics.push(Diagnostic {
                             message: String::from("Unnecessary escape sequence (fix available)"),
-                            severity: Some(DiagnosticSeverity::WARNING),
+                            severity: WARNING_SEVERITY,
                             range,
                             data: serde_json::to_value(CodeActions::RemoveBackslash).ok(),
                             ..Default::default()
@@ -418,7 +444,7 @@ fn validate_predicate<'a>(
         None => {
             diagnostics.push(Diagnostic {
                 message: String::from("Parameter specification must not be empty"),
-                severity: Some(DiagnosticSeverity::WARNING),
+                severity: WARNING_SEVERITY,
                 range: params_node.lsp_range(rope),
                 ..Default::default()
             });
@@ -438,7 +464,7 @@ fn validate_predicate<'a>(
                 param_spec.type_,
                 if is_capture { "capture" } else { "string" }
             ),
-            severity: Some(DiagnosticSeverity::WARNING),
+            severity: WARNING_SEVERITY,
             range: param.lsp_range(rope),
             ..Default::default()
         };
@@ -458,7 +484,7 @@ fn validate_predicate<'a>(
         } else if prev_param_spec.arity != PredicateParameterArity::Variadic {
             diagnostics.push(Diagnostic {
                 message: format!("Unexpected parameter: \"{}\"", param.text(rope),),
-                severity: Some(DiagnosticSeverity::WARNING),
+                severity: WARNING_SEVERITY,
                 range: param.lsp_range(rope),
                 ..Default::default()
             });
@@ -474,7 +500,7 @@ fn validate_predicate<'a>(
     {
         diagnostics.push(Diagnostic {
             message: format!("Missing parameter of type \"{}\"", type_),
-            severity: Some(DiagnosticSeverity::WARNING),
+            severity: WARNING_SEVERITY,
             range: predicate_node.parent().unwrap().lsp_range(rope),
             ..Default::default()
         });
@@ -488,12 +514,13 @@ mod test {
 
     use pretty_assertions::assert_eq;
     use rstest::rstest;
-    use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
+    use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, Position, Range};
     use ts_query_ls::{
         Options, Predicate, PredicateParameter, PredicateParameterArity, PredicateParameterType,
     };
 
     use crate::handlers::code_action::CodeActions;
+    use crate::handlers::diagnostic::WARNING_SEVERITY;
     use crate::{
         SymbolInfo,
         handlers::diagnostic::get_diagnostics,
@@ -968,9 +995,27 @@ mod test {
                     character: 3,
                 },
             },
-            severity: Some(DiagnosticSeverity::WARNING),
+            severity: WARNING_SEVERITY,
             message: String::from("Unnecessary escape sequence (fix available)"),
             data: Some(serde_json::to_value(CodeActions::RemoveBackslash).unwrap()),
+            ..Default::default()
+        }],
+    )]
+    #[case(
+        r#"(identifier (identifier) (#set! foo bar))"#,
+        &[SymbolInfo { label: String::from(r"identifier"), named: true }],
+        &[],
+        &[],
+        Options::default(),
+        &[Diagnostic {
+            range: Range {
+                start: Position::new(0, 0),
+                end: Position::new(0, 41),
+            },
+            severity: WARNING_SEVERITY,
+            message: String::from("This pattern has no captures, and will not be processed"),
+            data: Some(serde_json::to_value(CodeActions::Remove).unwrap()),
+            tags: Some(vec![DiagnosticTag::UNNECESSARY]),
             ..Default::default()
         }],
     )]
