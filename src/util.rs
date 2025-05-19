@@ -370,7 +370,7 @@ pub fn capture_at_pos<'t>(
     let mut innermost_capture = None;
     while let Some(match_) = matches.next() {
         for capture in match_.captures {
-            if capture.node.start_position() > point || capture.node.end_position() < point {
+            if capture.node.start_position() > point || capture.node.end_position() <= point {
                 continue;
             }
             innermost_capture = Some(*capture)

@@ -23,6 +23,7 @@ static HOVER_QUERY: LazyLock<Query> = LazyLock::new(|| {
     .unwrap()
 });
 
+/// Create a static hashmap from doc name to doc file (found in "docs/<name>.md")
 macro_rules! include_docs_map {
     ($($name:literal),* $(,)?) => {
         LazyLock::new(|| {
@@ -40,6 +41,7 @@ static DOCS: LazyLock<HashMap<&'static str, &'static str>> = include_docs_map!(
     "quantifier",
     "alternation",
     "error",
+    "negation",
 );
 
 pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hover>> {
@@ -68,13 +70,16 @@ pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hove
     let range = Some(capture.node.lsp_range(rope));
 
     Ok(match capture_name {
-        "missing" | "wildcard" | "anchor" | "quantifier" | "alternation" | "error" => Some(Hover {
-            range,
-            contents: HoverContents::Markup(MarkupContent {
-                kind: MarkupKind::Markdown,
-                value: DOCS.get(capture_name).unwrap().to_string(),
-            }),
-        }),
+        doc_name if DOCS.contains_key(capture_name) => {
+            let value = DOCS.get(doc_name).unwrap().to_string();
+            Some(Hover {
+                range,
+                contents: HoverContents::Markup(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value,
+                }),
+            })
+        }
         "capture" => {
             let options = backend.options.read().await;
             if let Some(description) = uri_to_basename(uri).and_then(|base| {
@@ -125,12 +130,11 @@ pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hove
                 .node
                 .parent()
                 .expect("Should be children of the `(predicate)` node");
-            let predicate_name = parent
-                .named_child(0)
-                .expect("Should have a `name: (identifier)` child");
-            let predicate_type = parent
-                .named_child(1)
-                .expect("Should have a `(predicate_type)` child");
+            let (Some(predicate_name), Some(predicate_type)) =
+                (parent.named_child(0), parent.named_child(1))
+            else {
+                return Ok(None);
+            };
             let validator = if predicate_type.text(rope) == "?" {
                 &options.valid_predicates
             } else {
@@ -167,7 +171,9 @@ pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hove
 mod test {
     use std::collections::{BTreeMap, HashMap};
 
-    use ts_query_ls::Options;
+    use ts_query_ls::{
+        Options, Predicate, PredicateParameter, PredicateParameterArity, PredicateParameterType,
+    };
 
     use pretty_assertions::assert_eq;
     use rstest::rstest;
@@ -199,6 +205,10 @@ _ @any
 [ (number) (boolean) ] @const
 
 ((number) @const (.set! foo bar))
+
+(identifier !fieldname)
+
+((number) @const (#eq? @const self))
 ";
 
     #[rstest]
@@ -305,8 +315,35 @@ An error node", BTreeMap::from([(String::from("error"), String::from("An error n
         env!("CARGO_MANIFEST_DIR"),
         "/docs/alternation.md"
     )), BTreeMap::from([(String::from("error"), String::from("An error node"))]))]
-    #[case(SOURCE, vec![], Position { line: 15, character: 18 }, Range::default(),
-    "", BTreeMap::default())]
+    #[case(SOURCE, vec![], Position { line: 15, character: 18 }, Range {
+        start: Position::new(15, 18),
+        end: Position::new(15, 23)
+    },
+    "Set a property\n\n---\n\n## Parameters:\n\n- Type: `string` (required)\n  - A property\n", BTreeMap::default())]
+    #[case(SOURCE, vec![], Position { line: 15, character: 22 }, Range {
+        start: Position::new(15, 18),
+        end: Position::new(15, 23)
+    },
+    "Set a property\n\n---\n\n## Parameters:\n\n- Type: `string` (required)\n  - A property\n", BTreeMap::default())]
+    #[case(SOURCE, vec![], Position { line: 15, character: 23 }, Range::default(), "", BTreeMap::default())]
+    #[case(SOURCE, vec![], Position { line: 15, character: 21 }, Range {
+        start: Position::new(15, 18),
+        end: Position::new(15, 23)
+    },
+    "Set a property\n\n---\n\n## Parameters:\n\n- Type: `string` (required)\n  - A property\n", BTreeMap::default())]
+    #[case(SOURCE, vec![], Position { line: 17, character: 12 }, Range {
+        start: Position::new(17, 12),
+        end: Position::new(17, 13),
+    },
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/docs/negation.md"
+    )), BTreeMap::default())]
+    #[case(SOURCE, vec![], Position { line: 19, character: 18 }, Range {
+        start: Position::new(19, 18),
+        end: Position::new(19, 22)
+    },
+    "Check for equality\n\n---\n\n## Parameters:\n\n- Type: `capture` (required)\n  - A capture\n- Type: `string` (required)\n  - A string\n", BTreeMap::default())]
     #[tokio::test(flavor = "current_thread")]
     async fn hover(
         #[case] source: &str,
@@ -321,6 +358,35 @@ An error node", BTreeMap::from([(String::from("error"), String::from("An error n
             &[(TEST_URI.clone(), source, Vec::new(), Vec::new(), supertypes)],
             &Options {
                 valid_captures: HashMap::from([(String::from("test"), captures)]),
+                valid_predicates: BTreeMap::from([(
+                    String::from("eq"),
+                    Predicate {
+                        description: String::from("Check for equality"),
+                        parameters: vec![
+                            PredicateParameter {
+                                description: Some(String::from("A capture")),
+                                type_: PredicateParameterType::Capture,
+                                arity: PredicateParameterArity::Required,
+                            },
+                            PredicateParameter {
+                                description: Some(String::from("A string")),
+                                type_: PredicateParameterType::String,
+                                arity: PredicateParameterArity::Required,
+                            },
+                        ],
+                    },
+                )]),
+                valid_directives: BTreeMap::from([(
+                    String::from("set"),
+                    Predicate {
+                        description: String::from("Set a property"),
+                        parameters: vec![PredicateParameter {
+                            description: Some(String::from("A property")),
+                            type_: PredicateParameterType::String,
+                            arity: PredicateParameterArity::Required,
+                        }],
+                    },
+                )]),
                 ..Default::default()
             },
         )

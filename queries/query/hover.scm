@@ -21,6 +21,9 @@
   "]"
 ] @alternation
 
+(negated_field
+  "!" @negation)
+
 (definition/named_node) @capture
 
 (named_node
