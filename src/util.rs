@@ -10,7 +10,10 @@ use serde_json::Value;
 use streaming_iterator::StreamingIterator;
 use tower_lsp::lsp_types::{Position, Range, TextDocumentContentChangeEvent, Url};
 use tracing::warn;
-use tree_sitter::{InputEdit, Language, Node, Point, Query, QueryCursor, TextProvider, WasmStore};
+use tree_sitter::{
+    InputEdit, Language, Node, Point, Query, QueryCapture, QueryCursor, TextProvider, Tree,
+    WasmStore,
+};
 
 use crate::{Backend, ENGINE, Options, QUERY_LANGUAGE};
 
@@ -347,4 +350,32 @@ pub fn uri_to_basename(uri: &Url) -> Option<String> {
         path.file_stem()
             .map(|os_str| os_str.to_string_lossy().into_owned())
     })
+}
+
+/// Return the innermost capture at the given position, if any.
+pub fn capture_at_pos<'t>(
+    tree: &'t Tree,
+    rope: &Rope,
+    query: &Query,
+    point: Point,
+) -> Option<QueryCapture<'t>> {
+    let provider = TextProviderRope(rope);
+    let mut cursor = QueryCursor::new();
+    let mut p2 = point;
+    p2.column += 1;
+
+    cursor.set_point_range(point..p2);
+    let mut matches = cursor.matches(query, tree.root_node(), &provider);
+
+    let mut innermost_capture = None;
+    while let Some(match_) = matches.next() {
+        for capture in match_.captures {
+            if capture.node.start_position() > point || capture.node.end_position() <= point {
+                continue;
+            }
+            innermost_capture = Some(*capture)
+        }
+    }
+
+    innermost_capture
 }

@@ -11,3 +11,12 @@ special missing nodes can be queried using `(MISSING)`:
 ```query
 (MISSING) @missing-node
 ```
+
+This is useful when attempting to detect all syntax errors in a given parse
+tree, since these missing node are not captured by `(ERROR)` queries. Specific
+missing node types can also be queried:
+
+```query
+(MISSING identifier) @missing-identifier
+(MISSING ";") @missing-semicolon
+```
