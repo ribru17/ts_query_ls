@@ -62,7 +62,7 @@ static SERVER_CAPABILITIES: LazyLock<ServerCapabilities> = LazyLock::new(|| {
         document_formatting_provider: Some(OneOf::Left(true)),
         completion_provider: Some(CompletionOptions {
             trigger_characters: Some(
-                ["@", "\"", "\\", "(", "/", ".", "#"]
+                ["@", "\"", "\\", "(", "/", ".", "#", "!"]
                     .map(ToOwned::to_owned)
                     .into(),
             ),

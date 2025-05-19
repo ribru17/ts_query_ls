@@ -151,9 +151,10 @@ pub async fn completion(
     let mut completion_items = vec![];
 
     // Node and field name completions
-    let cursor_after_at_sign = lsp_position_to_byte_offset(position, rope)
-        .and_then(|b| rope.try_byte_to_char(b))
-        .is_ok_and(|c| rope.char(c) == '@');
+    let char_idx =
+        lsp_position_to_byte_offset(position, rope).and_then(|b| rope.try_byte_to_char(b));
+    let cursor_after_at_sign = char_idx.is_ok_and(|c| rope.char(c) == '@');
+    let cursor_after_exclamation_point = char_idx.is_ok_and(|c| rope.char(c) == '!');
     let root = tree.root_node();
     let in_capture = cursor_after_at_sign || node_is_or_has_ancestor(root, current_node, "capture");
     let in_predicate = node_is_or_has_ancestor(root, current_node, "predicate");
@@ -165,6 +166,23 @@ pub async fn completion(
             let fields = &language_data.fields_vec;
             let in_anon = node_is_or_has_ancestor(root, current_node, "string") && !in_predicate;
             let top_level = current_node.kind() == "program";
+            let in_negated_field = current_node.kind() == "negated_field"
+                || cursor_after_exclamation_point
+                || (current_node.kind() == "identifier"
+                    && current_node
+                        .parent()
+                        .is_some_and(|p| p.kind() == "negated_field"));
+
+            if in_negated_field {
+                for field in fields.clone() {
+                    completion_items.push(CompletionItem {
+                        label: field,
+                        kind: Some(CompletionItemKind::FIELD),
+                        ..Default::default()
+                    });
+                }
+                return Ok(Some(CompletionResponse::Array(completion_items)));
+            }
             if !top_level {
                 for symbol in symbols.iter() {
                     if (in_anon && !symbol.named) || (!in_anon && symbol.named) {
@@ -540,6 +558,50 @@ mod test {
                 text_edit: Some(CompletionTextEdit::Edit(TextEdit {
                     range: Range { start: Position { line: 0, character: 24 }, end: Position { line: 0, character: 25 } },
                     new_text: String::from("#set! ${1:text} ${2:text}") })),
+                ..Default::default()
+            },
+        ]
+    )]
+    #[case(
+        r"((constant ! ) @constant)",
+        Position { line: 0, character: 12 },
+        &[SymbolInfo { label: String::from("constant"), named: true }],
+        &["operator", "name"],
+        &["supertype"],
+        &Options { valid_captures: HashMap::from([(String::from("test"),
+            BTreeMap::from([(String::from("constant"), String::from("a constant"))]))]),
+            ..Default::default() },
+        &[
+            CompletionItem {
+                label: String::from("operator"),
+                kind: Some(CompletionItemKind::FIELD),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("name"),
+                kind: Some(CompletionItemKind::FIELD),
+                ..Default::default()
+            },
+        ]
+    )]
+    #[case(
+        r"((constant !oper ) @constant)",
+        Position { line: 0, character: 16 },
+        &[SymbolInfo { label: String::from("constant"), named: true }],
+        &["operator", "name"],
+        &["supertype"],
+        &Options { valid_captures: HashMap::from([(String::from("test"),
+            BTreeMap::from([(String::from("constant"), String::from("a constant"))]))]),
+            ..Default::default() },
+        &[
+            CompletionItem {
+                label: String::from("operator"),
+                kind: Some(CompletionItemKind::FIELD),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("name"),
+                kind: Some(CompletionItemKind::FIELD),
                 ..Default::default()
             },
         ]
