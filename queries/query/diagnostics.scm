@@ -2,9 +2,17 @@
 
 (MISSING) @missing
 
+(capture) @capture
+
+(escape_sequence) @escape
+
 (anonymous_node
   (string
     (string_content) @node.anon))
+
+(parameters
+  (string
+    (string_content) @string))
 
 (named_node
   .
@@ -27,8 +35,6 @@
 (negated_field
   (identifier) @field)
 
-(capture) @capture
-
 (predicate
   name: (identifier) @predicate
   (predicate_type) @_type
@@ -38,5 +44,3 @@
   name: (identifier) @directive
   (predicate_type) @_type
   (#eq? @_type "!"))
-
-(escape_sequence) @escape
