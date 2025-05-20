@@ -38,6 +38,28 @@ static DIAGNOSTICS_QUERY: LazyLock<Query> = LazyLock::new(|| {
 });
 static DEFINITIONS_QUERY: LazyLock<Query> =
     LazyLock::new(|| Query::new(&QUERY_LANGUAGE, "(program (definition) @def)").unwrap());
+static CAPTURE_DEFINITIONS_QUERY: LazyLock<Query> = LazyLock::new(|| {
+    Query::new(
+        &QUERY_LANGUAGE,
+        "
+(named_node
+  (capture) @capture.definition)
+
+(list
+  (capture) @capture.definition)
+
+(anonymous_node
+  (capture) @capture.definition)
+
+(grouping
+  (capture) @capture.definition)
+
+(missing_node
+  (capture) @capture.definition)
+",
+    )
+    .unwrap()
+});
 
 pub async fn diagnostic(
     backend: &Backend,
@@ -170,35 +192,13 @@ pub async fn get_diagnostics(
     let rope = &document.rope;
     let tree = &document.tree;
 
-    let provider = TextProviderRope(rope);
-    let mut cursor = QueryCursor::new();
-    let mut matches = cursor.matches(&DEFINITIONS_QUERY, tree.root_node(), &provider);
-    while let Some(match_) = matches.next() {
-        for capture in match_.captures {
-            let mut cursor = QueryCursor::new();
-            let query = &CAPTURES_QUERY;
-            let mut matches = cursor.matches(query, capture.node, &provider);
-            if matches.next().is_none() {
-                diagnostics.push(Diagnostic {
-                    message: String::from(
-                        "This pattern has no captures, and will not be processed",
-                    ),
-                    range: capture.node.lsp_range(rope),
-                    severity: WARNING_SEVERITY,
-                    tags: Some(vec![DiagnosticTag::UNNECESSARY]),
-                    data: serde_json::to_value(CodeActions::Remove).ok(),
-                    ..Default::default()
-                });
-            }
-        }
-    }
-
     let valid_predicates = &options.valid_predicates;
     let valid_directives = &options.valid_directives;
     let symbols = language_data.as_deref().map(|ld| &ld.symbols_set);
     let fields = language_data.as_deref().map(|ld| &ld.fields_set);
     let supertypes = language_data.as_deref().map(|ld| &ld.supertype_map);
     let mut cursor = QueryCursor::new();
+    let mut helper_cursor = QueryCursor::new();
     let mut tree_cursor = tree.root_node().walk();
     let provider = &TextProviderRope(rope);
     let mut matches = cursor.matches(&DIAGNOSTICS_QUERY, tree.root_node(), provider);
@@ -307,44 +307,34 @@ pub async fn get_diagnostics(
                     range,
                     ..Default::default()
                 }),
-                "capture" => {
-                    if capture
-                        .node
-                        .parent()
-                        .is_some_and(|p| p.kind() == "parameters")
-                    {
-                        let mut cursor = QueryCursor::new();
-                        let query = &CAPTURES_QUERY;
-                        let mut matches = cursor.matches(
-                            query,
-                            tree.root_node()
-                                .child_with_descendant(capture.node)
-                                .unwrap(),
-                            provider,
-                        );
-                        let mut valid = false;
-                        // NOTE: Find a simpler way to do this?
-                        'outer: while let Some(m) = matches.next() {
-                            for cap in m.captures {
-                                if let Some(parent) = cap.node.parent() {
-                                    if parent.kind() != "parameters"
-                                        && cap.node.text(rope) == capture_text
-                                    {
-                                        valid = true;
-                                        break 'outer;
-                                    }
-                                }
+                "capture.reference" => {
+                    let mut matches = helper_cursor.matches(
+                        &CAPTURE_DEFINITIONS_QUERY,
+                        tree.root_node()
+                            .child_with_descendant(capture.node)
+                            .unwrap(),
+                        provider,
+                    );
+                    let mut valid = false;
+                    'outer: while let Some(m) = matches.next() {
+                        for cap in m.captures {
+                            if cap.node.text(rope) == capture_text {
+                                valid = true;
+                                break 'outer;
                             }
                         }
-                        if !valid {
-                            diagnostics.push(Diagnostic {
-                                message: format!("Undeclared capture: \"{capture_text}\""),
-                                severity: ERROR_SEVERITY,
-                                range,
-                                ..Default::default()
-                            });
-                        }
-                    } else if let Some(suffix) = capture_text.strip_prefix("@") {
+                    }
+                    if !valid {
+                        diagnostics.push(Diagnostic {
+                            message: format!("Undeclared capture: \"{capture_text}\""),
+                            severity: ERROR_SEVERITY,
+                            range,
+                            ..Default::default()
+                        });
+                    }
+                }
+                "capture.definition" => {
+                    if let Some(suffix) = capture_text.strip_prefix("@") {
                         if !suffix.starts_with('_')
                             && valid_captures
                                 .is_some_and(|c| !c.contains_key(&String::from(suffix)))
@@ -399,6 +389,22 @@ pub async fn get_diagnostics(
                         });
                     }
                 },
+                "pattern" => {
+                    let mut matches =
+                        helper_cursor.matches(&CAPTURES_QUERY, capture.node, provider);
+                    if matches.next().is_none() {
+                        diagnostics.push(Diagnostic {
+                            message: String::from(
+                                "This pattern has no captures, and will not be processed",
+                            ),
+                            range,
+                            severity: WARNING_SEVERITY,
+                            tags: Some(vec![DiagnosticTag::UNNECESSARY]),
+                            data: serde_json::to_value(CodeActions::Remove).ok(),
+                            ..Default::default()
+                        });
+                    }
+                }
                 _ => {}
             }
         }
@@ -570,6 +576,103 @@ mod test {
             },
             severity: ERROR_SEVERITY,
             message: String::from("Undeclared capture: \"@cons\""),
+            ..Default::default()
+        }],
+    )]
+    #[case(
+        r#"("*" @constant
+(#match? @constant "^[A-Z][A-Z\\d_]*$"))"#,
+        &[SymbolInfo { label: String::from("*"), named: false }],
+        &["operator"],
+        &["supertype"],
+        Options {
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([
+                    (String::from("variable"), String::default()),
+                    (String::from("variable.parameter"), String::default()),
+                ]))]),
+            ..Default::default()
+        },
+        &[Diagnostic {
+            range: Range {
+                start: Position::new(0, 5),
+                end: Position::new(0, 14),
+            },
+            severity: WARNING_SEVERITY,
+            message: String::from("Unsupported capture name \"@constant\" (fix available)"),
+            data: Some(serde_json::to_value(CodeActions::PrefixUnderscore).unwrap()),
+            ..Default::default()
+        }],
+    )]
+    #[case(
+        r#"(MISSING "*") @keyword"#,
+        &[SymbolInfo { label: String::from("*"), named: false }],
+        &["operator"],
+        &["supertype"],
+        Options {
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([
+                    (String::from("variable"), String::default()),
+                    (String::from("variable.parameter"), String::default()),
+                ]))]),
+            ..Default::default()
+        },
+        &[Diagnostic {
+            range: Range {
+                start: Position::new(0, 14),
+                end: Position::new(0, 22),
+            },
+            severity: WARNING_SEVERITY,
+            message: String::from("Unsupported capture name \"@keyword\" (fix available)"),
+            data: Some(serde_json::to_value(CodeActions::PrefixUnderscore).unwrap()),
+            ..Default::default()
+        }],
+    )]
+    #[case(
+        r#"[ "*" ] @keyword"#,
+        &[SymbolInfo { label: String::from("*"), named: false }],
+        &["operator"],
+        &["supertype"],
+        Options {
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([
+                    (String::from("variable"), String::default()),
+                    (String::from("variable.parameter"), String::default()),
+                ]))]),
+            ..Default::default()
+        },
+        &[Diagnostic {
+            range: Range {
+                start: Position::new(0, 8),
+                end: Position::new(0, 16),
+            },
+            severity: WARNING_SEVERITY,
+            message: String::from("Unsupported capture name \"@keyword\" (fix available)"),
+            data: Some(serde_json::to_value(CodeActions::PrefixUnderscore).unwrap()),
+            ..Default::default()
+        }],
+    )]
+    #[case(
+        r#"("*") @keyword"#,
+        &[SymbolInfo { label: String::from("*"), named: false }],
+        &["operator"],
+        &["supertype"],
+        Options {
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([
+                    (String::from("variable"), String::default()),
+                    (String::from("variable.parameter"), String::default()),
+                ]))]),
+            ..Default::default()
+        },
+        &[Diagnostic {
+            range: Range {
+                start: Position::new(0, 6),
+                end: Position::new(0, 14),
+            },
+            severity: WARNING_SEVERITY,
+            message: String::from("Unsupported capture name \"@keyword\" (fix available)"),
+            data: Some(serde_json::to_value(CodeActions::PrefixUnderscore).unwrap()),
             ..Default::default()
         }],
     )]
