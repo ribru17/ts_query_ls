@@ -4,6 +4,7 @@ use std::{
 };
 
 use dashmap::DashMap;
+use regex::Regex;
 use ropey::Rope;
 use tower_lsp::{
     jsonrpc::{Error, ErrorCode, Result},
@@ -38,6 +39,8 @@ static DIAGNOSTICS_QUERY: LazyLock<Query> = LazyLock::new(|| {
 });
 static DEFINITIONS_QUERY: LazyLock<Query> =
     LazyLock::new(|| Query::new(&QUERY_LANGUAGE, "(program (definition) @def)").unwrap());
+static IDENTIFIER_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9_-][a-zA-Z0-9_.-]*$").unwrap());
 
 pub async fn diagnostic(
     backend: &Backend,
@@ -399,6 +402,26 @@ pub async fn get_diagnostics(
                         });
                     }
                 },
+                "string" => {
+                    let mut range = range;
+                    range.start.character -= 1;
+                    range.end.character += 1;
+
+                    // String contains escape sequences
+                    if capture.node.named_child_count() > 0
+                        || !IDENTIFIER_REGEX.is_match(&capture_text)
+                    {
+                        continue;
+                    }
+
+                    diagnostics.push(Diagnostic {
+                        message: String::from("Unnecessary quotations (fix available)"),
+                        range,
+                        severity: WARNING_SEVERITY,
+                        data: serde_json::to_value(CodeActions::Trim).ok(),
+                        ..Default::default()
+                    });
+                }
                 _ => {}
             }
         }
@@ -623,7 +646,7 @@ mod test {
     )]
     #[case(
         r#"((identifier) @variable.builtin
-(#eq? @variable.builtin "self"))"#,
+(#eq? @variable.builtin self))"#,
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
@@ -686,7 +709,7 @@ mod test {
     )]
     #[case(
         r#"((identifier) @variable.builtin
-(#eq? @variable.builtin "self" @variable.builtin))"#,
+(#eq? @variable.builtin self @variable.builtin))"#,
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
@@ -709,8 +732,8 @@ mod test {
         },
         &[Diagnostic {
             range: Range {
-                start: Position { line: 1, character: 31 },
-                end: Position { line: 1, character: 48 },
+                start: Position { line: 1, character: 29 },
+                end: Position { line: 1, character: 46 },
             },
             severity: WARNING_SEVERITY,
             code: None,
@@ -724,7 +747,7 @@ mod test {
     )]
     #[case(
         r#"((identifier) @variable.builtin
-(#set! @variable.builtin "self" "asdf" "bar"))"#,
+(#set! @variable.builtin self asdf bar))"#,
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
@@ -750,7 +773,46 @@ mod test {
     )]
     #[case(
         r#"((identifier) @variable.builtin
-(#set! @variable.builtin "self" "asdf" "bar" @variable.builtin))"#,
+(#set! @variable.builtin self asdf "bar"))"#,
+        &[SymbolInfo { label: String::from("identifier"), named: true }],
+        &["operator"],
+        &["supertype"],
+        Options {
+            valid_predicates: Default::default(),
+            valid_directives: BTreeMap::from([(String::from("set"), Predicate {
+                description: String::from("Checks for equality"),
+                parameters: vec![PredicateParameter {
+                    type_: PredicateParameterType::Capture,
+                    arity: PredicateParameterArity::Required,
+                    description: None,
+                }, PredicateParameter {
+                    type_: PredicateParameterType::String,
+                    arity: PredicateParameterArity::Variadic,
+                    description: None,
+                }],
+            })]),
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([(String::from("variable.builtin"), String::default())]))]),
+            ..Default::default()
+        },
+        &[Diagnostic {
+            range: Range {
+                start: Position { line: 1, character: 35, },
+                end: Position { line: 1, character: 40, },
+            },
+            severity: WARNING_SEVERITY,
+            code: None,
+            code_description: None,
+            source: None,
+            message: String::from("Unnecessary quotations (fix available)"),
+            related_information: None,
+            tags: None,
+            data: Some(serde_json::to_value(CodeActions::Trim).unwrap()),
+        }],
+    )]
+    #[case(
+        r#"((identifier) @variable.builtin
+(#set! @variable.builtin self asdf bar @variable.builtin))"#,
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
@@ -775,8 +837,8 @@ mod test {
         &[
             Diagnostic {
                 range: Range {
-                    start: Position { line: 1, character: 45, },
-                    end: Position { line: 1, character: 62, },
+                    start: Position { line: 1, character: 39, },
+                    end: Position { line: 1, character: 56, },
                 },
                 severity: WARNING_SEVERITY,
                 code: None,
@@ -791,7 +853,7 @@ mod test {
     )]
     #[case(
         r#"((identifier) @variable.builtin
-(#set! @variable.builtin "self" "asdf" "bar" @variable.builtin))"#,
+(#set! @variable.builtin self asdf bar @variable.builtin))"#,
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
@@ -869,7 +931,7 @@ mod test {
     )]
     #[case(
         r#"((identifier) @variable.builtin
-(#set! @variable.builtin "self"))"#,
+(#set! @variable.builtin self))"#,
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
@@ -895,7 +957,7 @@ mod test {
     )]
     #[case(
         r#"((identifier) @variable.builtin
-(#set! @variable.builtin "self" "asdf"))"#,
+(#set! @variable.builtin self asdf))"#,
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
@@ -920,14 +982,14 @@ mod test {
         &[
             Diagnostic {
                 range: Range {
-                    start: Position { line: 1, character: 32, },
-                    end: Position { line: 1, character: 38, },
+                    start: Position { line: 1, character: 30, },
+                    end: Position { line: 1, character: 34, },
                 },
                 severity: WARNING_SEVERITY,
                 code: None,
                 code_description: None,
                 source: None,
-                message: String::from("Unexpected parameter: \"\"asdf\"\""),
+                message: String::from("Unexpected parameter: \"asdf\""),
                 related_information: None,
                 tags: None,
                 data: None,
@@ -936,7 +998,7 @@ mod test {
     )]
     #[case(
         r#"((identifier) @variable.builtin
-(#sett! @variable.builtin "self" "asdf" "bar" @variable.builtin))"#,
+(#sett! @variable.builtin self asdf bar @variable.builtin))"#,
         &[SymbolInfo { label: String::from("identifier"), named: true }],
         &["operator"],
         &["supertype"],
