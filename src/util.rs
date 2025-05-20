@@ -326,6 +326,7 @@ pub async fn set_configuration_options(
             options.valid_captures = parsed_options.valid_captures;
             options.valid_predicates = parsed_options.valid_predicates;
             options.valid_directives = parsed_options.valid_directives;
+            options.diagnostic_options = parsed_options.diagnostic_options;
         } else {
             warn!("Unable to parse configuration settings!");
         };
@@ -336,12 +337,14 @@ pub async fn set_configuration_options(
         // installation paths
         let mut config_file_install_dirs = file_options.parser_install_directories;
         config_file_install_dirs.extend(options.parser_install_directories.clone());
+
         options.parser_install_directories = config_file_install_dirs;
         options.parser_aliases = file_options.parser_aliases;
         options.language_retrieval_patterns = file_options.language_retrieval_patterns;
         options.valid_captures = file_options.valid_captures;
         options.valid_predicates = file_options.valid_predicates;
         options.valid_directives = file_options.valid_directives;
+        options.diagnostic_options = file_options.diagnostic_options;
     }
 }
 

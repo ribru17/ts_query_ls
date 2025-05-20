@@ -127,12 +127,36 @@ pub struct Options {
     /// A map of directive names (sans `#` and `!`) to parameter specifications.
     #[serde(default)]
     pub valid_directives: BTreeMap<String, Predicate>,
+    /// Options related to diagnostics
+    #[serde(default)]
+    pub diagnostic_options: DiagnosticOptions,
 }
 
 #[cfg(feature = "schema")]
 fn prefixes_schema(gen_: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
     let raw = <BTreeMap<String, PredicateAux>>::json_schema(gen_).into_object();
     raw.into()
+}
+
+/// Options related to diagnostics
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default, Clone)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DiagnosticOptions {
+    /// The style for predicate string arguments
+    pub string_argument_style: StringArgumentStyle,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default, Clone)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum StringArgumentStyle {
+    /// String arguments can be quoted or unquoted (default)
+    #[default]
+    None,
+    /// String arguments must be quoted
+    PreferQuoted,
+    /// String arguments should be unquoted, when possible
+    PreferUnquoted,
 }
 
 /// A type specification for a directive.

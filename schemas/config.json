@@ -4,6 +4,17 @@
   "description": "Configuration options for the language server.",
   "type": "object",
   "properties": {
+    "diagnostic_options": {
+      "description": "Options related to diagnostics",
+      "default": {
+        "string_argument_style": "none"
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/DiagnosticOptions"
+        }
+      ]
+    },
     "language_retrieval_patterns": {
       "description": "A list of patterns to aid the LSP in finding a language, given a file path. Patterns must have one capture group which represents the language name. Ordered from highest to lowest precedence.",
       "default": [],
@@ -57,6 +68,23 @@
     }
   },
   "definitions": {
+    "DiagnosticOptions": {
+      "description": "Options related to diagnostics",
+      "type": "object",
+      "required": [
+        "string_argument_style"
+      ],
+      "properties": {
+        "string_argument_style": {
+          "description": "The style for predicate string arguments",
+          "allOf": [
+            {
+              "$ref": "#/definitions/StringArgumentStyle"
+            }
+          ]
+        }
+      }
+    },
     "Predicate": {
       "description": "A type specification for a directive.",
       "type": "object",
@@ -192,6 +220,31 @@
           "type": "string",
           "enum": [
             "any"
+          ]
+        }
+      ]
+    },
+    "StringArgumentStyle": {
+      "oneOf": [
+        {
+          "description": "String arguments can be quoted or unquoted (default)",
+          "type": "string",
+          "enum": [
+            "none"
+          ]
+        },
+        {
+          "description": "String arguments must be quoted",
+          "type": "string",
+          "enum": [
+            "prefer_quoted"
+          ]
+        },
+        {
+          "description": "String arguments should be unquoted, when possible",
+          "type": "string",
+          "enum": [
+            "prefer_unquoted"
           ]
         }
       ]
