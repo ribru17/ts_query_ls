@@ -6,6 +6,9 @@
   (string
     (string_content) @node.anon))
 
+(program
+  (definition) @pattern)
+
 (named_node
   .
   name: (identifier) @node.named)
@@ -40,3 +43,21 @@
   (#eq? @_type "!"))
 
 (escape_sequence) @escape
+
+(parameters
+  (capture) @capture.reference)
+
+(named_node
+  (capture) @capture.definition)
+
+(list
+  (capture) @capture.definition)
+
+(anonymous_node
+  (capture) @capture.definition)
+
+(grouping
+  (capture) @capture.definition)
+
+(missing_node
+  (capture) @capture.definition)
