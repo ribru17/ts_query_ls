@@ -20,7 +20,7 @@ static LANGUAGE_CACHE: LazyLock<DashMap<String, Arc<LanguageData>>> = LazyLock::
 static PATTERN_DEFINITION_QUERY: LazyLock<Query> =
     LazyLock::new(|| Query::new(&QUERY_LANGUAGE, "(program (definition) @def)").unwrap());
 
-pub async fn profile_directories(directories: &[PathBuf], config: String, broad: bool) {
+pub async fn profile_directories(directories: &[PathBuf], config: String, per_file: bool) {
     let Ok(options) = serde_json::from_str::<Options>(&config) else {
         eprintln!("Could not parse the provided configuration");
         return;
@@ -44,10 +44,10 @@ pub async fn profile_directories(directories: &[PathBuf], config: String, broad:
             if let Ok(source) = fs::read_to_string(&path) {
                 Some(tokio::spawn(async move {
                     let mut results = Vec::new();
-                    if broad {
+                    if per_file {
                         let now = Instant::now();
                         let _ = Query::new(&lang, &source);
-                        results.push((path_str.clone(), 1, now.elapsed().as_millis()));
+                        results.push((path_str.clone(), 1, now.elapsed().as_micros()));
                     } else {
                         let mut parser = Parser::new();
                         parser.set_language(&QUERY_LANGUAGE).unwrap();
@@ -72,7 +72,7 @@ pub async fn profile_directories(directories: &[PathBuf], config: String, broad:
                                 results.push((
                                     path_str.clone(),
                                     capture.node.start_position().row + 1,
-                                    now.elapsed().as_millis(),
+                                    now.elapsed().as_micros(),
                                 ));
                             }
                         }
@@ -98,10 +98,11 @@ pub async fn profile_directories(directories: &[PathBuf], config: String, broad:
         .collect::<Vec<_>>();
     results.sort_unstable_by(|a, b| a.2.cmp(&b.2));
     for (path, row, time) in results {
-        if broad {
-            println!("Query at {path} took {time}ms to compile");
+        let time = format!("{:.2}ms", time as f64 / 1000.0);
+        if per_file {
+            println!("{time:<10} {path}");
         } else {
-            println!("Pattern in {path} at line {row} took {time}ms to compile");
+            println!("{time:<10} {path}:{row}");
         }
     }
 }
