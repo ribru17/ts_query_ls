@@ -1,5 +1,8 @@
 use clap::{Parser, Subcommand};
-use cli::{check::check_directories, format::format_directories, lint::lint_directories};
+use cli::{
+    check::check_directories, format::format_directories, lint::lint_directories,
+    profile::profile_directories,
+};
 use core::fmt;
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
@@ -267,6 +270,19 @@ enum Commands {
         #[arg(long, short)]
         fix: bool,
     },
+    /// Profile each pattern in the given queries, outputting the time it takes them to compile.
+    Profile {
+        /// List of directories to profile
+        directories: Vec<PathBuf>,
+
+        /// String representing server's JSON configuration
+        #[arg(long, short)]
+        config: Option<String>,
+
+        /// Whether to broadly profile the entire query, rather than each pattern within the query.
+        #[arg(long, short)]
+        broad: bool,
+    },
 }
 
 /// Return the given config string, or read it from a config file if not given. This function can
@@ -307,6 +323,15 @@ async fn main() {
         }) => {
             let config_str = get_config_str(config);
             std::process::exit(lint_directories(&directories, config_str, fix).await)
+        }
+        Some(Commands::Profile {
+            directories,
+            broad,
+            config,
+        }) => {
+            let config_str = get_config_str(config);
+            profile_directories(&directories, config_str, broad).await;
+            std::process::exit(0);
         }
         None => {}
     }

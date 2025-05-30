@@ -5,6 +5,7 @@ use walkdir::WalkDir;
 pub(super) mod check;
 pub(super) mod format;
 pub(super) mod lint;
+pub(super) mod profile;
 
 pub(in crate::cli) fn get_scm_files(directories: &[PathBuf]) -> Vec<PathBuf> {
     directories

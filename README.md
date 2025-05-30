@@ -245,6 +245,24 @@ ts_query_ls lint ./queries
 ts_query_ls lint --help
 ```
 
+### Profiler
+
+The server can be used to profile individual query patterns to check for
+patterns which are very slow to compile (often because they are too complex).
+This can be done via the `profile` subcommand, which prints each pattern's file
+path, start line, and the time (in milliseconds) that it took to compile.
+Alternatively, it can also time the entire query file itself (rather than each
+pattern inside of it).
+
+```sh
+ts_query_ls profile ./queries
+# Use this command for the full documentation
+ts_query_ls profile --help
+```
+
+> **NOTE:** This command will not warm up the cache for you, so it may be best
+> to run more than once.
+
 ## Checklist
 
 - [x] References for captures
@@ -266,7 +284,7 @@ ts_query_ls lint --help
     query file. This should either be implemented as a user command, or core
     methods should be exposed to gather pattern information more efficiently~~
   - For now, this has been made possible due to caching and spawning query scans
-    on a separate, blocking thread. Ideally in the future the kinks of query
+    on a separate, blocking thread. Ideally, in the future, the kinks of query
     creation will be ironed out so query creation will be quicker, and this
     logic can be simplified
 - [x] Recognize parsers built for `WASM`
