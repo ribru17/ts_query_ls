@@ -279,9 +279,9 @@ enum Commands {
         #[arg(long, short)]
         config: Option<String>,
 
-        /// Whether to broadly profile the entire query, rather than each pattern within the query.
+        /// Whether to profile the entire query file, rather than each pattern within the query.
         #[arg(long, short)]
-        broad: bool,
+        per_file: bool,
     },
 }
 
@@ -326,11 +326,11 @@ async fn main() {
         }
         Some(Commands::Profile {
             directories,
-            broad,
+            per_file,
             config,
         }) => {
             let config_str = get_config_str(config);
-            profile_directories(&directories, config_str, broad).await;
+            profile_directories(&directories, config_str, per_file).await;
             std::process::exit(0);
         }
         None => {}
