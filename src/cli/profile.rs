@@ -1,5 +1,7 @@
 use std::{
-    env, fs,
+    env,
+    ffi::c_char,
+    fs,
     path::PathBuf,
     sync::{Arc, LazyLock},
     time::Instant,
@@ -8,7 +10,7 @@ use std::{
 use dashmap::DashMap;
 use futures::future::join_all;
 use tower_lsp::lsp_types::Url;
-use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator as _};
+use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator as _, ffi};
 use ts_query_ls::Options;
 
 use crate::{LanguageData, QUERY_LANGUAGE, handlers::did_open::init_language_data, util};
@@ -19,6 +21,24 @@ static LANGUAGE_CACHE: LazyLock<DashMap<String, Arc<LanguageData>>> = LazyLock::
 
 static PATTERN_DEFINITION_QUERY: LazyLock<Query> =
     LazyLock::new(|| Query::new(&QUERY_LANGUAGE, "(program (definition) @def)").unwrap());
+
+/// Measure the time of a query parse, without including potentially expensive logic specific to
+/// the rust bindings
+fn time_query_raw(language: *const tree_sitter::ffi::TSLanguage, source: &str) -> u128 {
+    let mut error_offset = 0u32;
+    let mut error_type: ffi::TSQueryError = 0;
+    let now = Instant::now();
+    let _ptr = unsafe {
+        ffi::ts_query_new(
+            language,
+            source.as_bytes().as_ptr().cast::<c_char>(),
+            source.len() as u32,
+            core::ptr::addr_of_mut!(error_offset),
+            core::ptr::addr_of_mut!(error_type),
+        )
+    };
+    now.elapsed().as_millis()
+}
 
 pub async fn profile_directories(directories: &[PathBuf], config: String, broad: bool) {
     let Ok(options) = serde_json::from_str::<Options>(&config) else {
@@ -45,9 +65,11 @@ pub async fn profile_directories(directories: &[PathBuf], config: String, broad:
                 Some(tokio::spawn(async move {
                     let mut results = Vec::new();
                     if broad {
-                        let now = Instant::now();
-                        let _ = Query::new(&lang, &source);
-                        results.push((path_str.clone(), 1, now.elapsed().as_millis()));
+                        results.push((
+                            path_str.clone(),
+                            1,
+                            time_query_raw(lang.into_raw(), &source),
+                        ));
                     } else {
                         let mut parser = Parser::new();
                         parser.set_language(&QUERY_LANGUAGE).unwrap();
@@ -59,20 +81,19 @@ pub async fn profile_directories(directories: &[PathBuf], config: String, broad:
                             tree.root_node(),
                             source_bytes,
                         );
+                        let lang_ptr = lang.into_raw();
                         while let Some(match_) = matches.next() {
                             for capture in match_.captures {
-                                let now = Instant::now();
-                                let _ = Query::new(
-                                    &lang,
-                                    capture
-                                        .node
-                                        .utf8_text(source_bytes)
-                                        .expect("Source should be UTF-8"),
-                                );
                                 results.push((
                                     path_str.clone(),
                                     capture.node.start_position().row + 1,
-                                    now.elapsed().as_millis(),
+                                    time_query_raw(
+                                        lang_ptr,
+                                        capture
+                                            .node
+                                            .utf8_text(source_bytes)
+                                            .expect("Source should be UTF-8"),
+                                    ),
                                 ));
                             }
                         }
