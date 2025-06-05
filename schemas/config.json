@@ -7,7 +7,8 @@
     "diagnostic_options": {
       "description": "Options related to diagnostics",
       "default": {
-        "string_argument_style": "none"
+        "string_argument_style": "none",
+        "warn_unused_underscore_captures": true
       },
       "allOf": [
         {
@@ -71,17 +72,20 @@
     "DiagnosticOptions": {
       "description": "Options related to diagnostics",
       "type": "object",
-      "required": [
-        "string_argument_style"
-      ],
       "properties": {
         "string_argument_style": {
           "description": "The style for predicate string arguments",
+          "default": "none",
           "allOf": [
             {
               "$ref": "#/definitions/StringArgumentStyle"
             }
           ]
+        },
+        "warn_unused_underscore_captures": {
+          "description": "Whether to warn on `_`-prefixed captures which are not referenced by a predicate or directive (default `true`)",
+          "default": true,
+          "type": "boolean"
         }
       }
     },

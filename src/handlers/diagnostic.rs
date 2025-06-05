@@ -64,6 +64,9 @@ static CAPTURE_DEFINITIONS_QUERY: LazyLock<Query> = LazyLock::new(|| {
     )
     .unwrap()
 });
+static CAPTURE_REFERENCES_QUERY: LazyLock<Query> = LazyLock::new(|| {
+    Query::new(&QUERY_LANGUAGE, "(parameters (capture) @capture.reference)").unwrap()
+});
 static IDENTIFIER_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9_-][a-zA-Z0-9_.-]*$").unwrap());
 
@@ -202,6 +205,7 @@ pub async fn get_diagnostics(
     let valid_predicates = &options.valid_predicates;
     let valid_directives = &options.valid_directives;
     let string_arg_style = &options.diagnostic_options.string_argument_style;
+    let warn_unused_underscore_caps = options.diagnostic_options.warn_unused_underscore_captures;
     let symbols = language_data.as_deref().map(|ld| &ld.symbols_set);
     let fields = language_data.as_deref().map(|ld| &ld.fields_set);
     let supertypes = language_data.as_deref().map(|ld| &ld.supertype_map);
@@ -356,6 +360,35 @@ pub async fn get_diagnostics(
                                 data: serde_json::to_value(CodeActions::PrefixUnderscore).ok(),
                                 ..Default::default()
                             });
+                        } else if suffix.starts_with('_') && warn_unused_underscore_caps {
+                            let mut matches = helper_cursor.matches(
+                                &CAPTURE_REFERENCES_QUERY,
+                                tree.root_node()
+                                    .child_with_descendant(capture.node)
+                                    .unwrap(),
+                                provider,
+                            );
+                            let mut valid = false;
+                            'outer: while let Some(m) = matches.next() {
+                                for cap in m.captures {
+                                    if cap.node.text(rope) == capture_text {
+                                        valid = true;
+                                        break 'outer;
+                                    }
+                                }
+                            }
+                            if !valid {
+                                diagnostics.push(Diagnostic {
+                                    message: String::from(
+                                        "Unused `_`-prefixed capture (fix available)",
+                                    ),
+                                    severity: WARNING_SEVERITY,
+                                    range,
+                                    tags: Some(vec![DiagnosticTag::UNNECESSARY]),
+                                    data: serde_json::to_value(CodeActions::Remove).ok(),
+                                    ..Default::default()
+                                });
+                            }
                         }
                     }
                 }
@@ -905,7 +938,8 @@ mod test {
         &["supertype"],
         Options {
             diagnostic_options: DiagnosticOptions {
-                string_argument_style: StringArgumentStyle::PreferUnquoted
+                string_argument_style: StringArgumentStyle::PreferUnquoted,
+                ..Default::default()
             },
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
@@ -947,7 +981,8 @@ mod test {
         &["supertype"],
         Options {
             diagnostic_options: DiagnosticOptions {
-                string_argument_style: StringArgumentStyle::PreferQuoted
+                string_argument_style: StringArgumentStyle::PreferQuoted,
+                ..Default::default()
             },
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
@@ -992,6 +1027,45 @@ mod test {
             related_information: None,
             tags: None,
             data: Some(serde_json::to_value(CodeActions::Enquote).unwrap()),
+        }],
+    )]
+    #[case(
+        r#"(identifier) @_capture"#,
+        &[SymbolInfo { label: String::from("identifier"), named: true }],
+        &["operator"],
+        &["supertype"],
+        Options {
+            diagnostic_options: DiagnosticOptions::default(),
+            valid_predicates: Default::default(),
+            valid_directives: BTreeMap::from([(String::from("set"), Predicate {
+                description: String::from("Checks for equality"),
+                parameters: vec![PredicateParameter {
+                    type_: PredicateParameterType::Capture,
+                    arity: PredicateParameterArity::Required,
+                    description: None,
+                }, PredicateParameter {
+                    type_: PredicateParameterType::String,
+                    arity: PredicateParameterArity::Variadic,
+                    description: None,
+                }],
+            })]),
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([(String::from("variable.builtin"), String::default())]))]),
+            ..Default::default()
+        },
+        &[Diagnostic {
+            range: Range {
+                start: Position { line: 0, character: 13, },
+                end: Position { line: 0, character: 22, },
+            },
+            severity: WARNING_SEVERITY,
+            code: None,
+            code_description: None,
+            source: None,
+            message: String::from("Unused `_`-prefixed capture (fix available)"),
+            related_information: None,
+            tags: Some(vec![DiagnosticTag::UNNECESSARY]),
+            data: Some(serde_json::to_value(CodeActions::Remove).unwrap()),
         }],
     )]
     #[case(
@@ -1229,7 +1303,10 @@ mod test {
         ],
         &[],
         &[],
-        Options::default(),
+        Options {
+            diagnostic_options: DiagnosticOptions { warn_unused_underscore_captures: false, ..Default::default() },
+            ..Default::default()
+        },
         &[Diagnostic {
             range: Range {
                 start: Position {

@@ -139,11 +139,25 @@ fn prefixes_schema(gen_: &mut schemars::r#gen::SchemaGenerator) -> schemars::sch
 }
 
 /// Options related to diagnostics
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DiagnosticOptions {
     /// The style for predicate string arguments
+    #[serde(default)]
     pub string_argument_style: StringArgumentStyle,
+    /// Whether to warn on `_`-prefixed captures which are not referenced by a predicate or directive
+    /// (default `true`)
+    #[serde(default = "default_true")]
+    pub warn_unused_underscore_captures: bool,
+}
+
+impl Default for DiagnosticOptions {
+    fn default() -> Self {
+        Self {
+            string_argument_style: Default::default(),
+            warn_unused_underscore_captures: true,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default, Clone)]

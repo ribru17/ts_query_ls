@@ -2,8 +2,6 @@
 
 (MISSING) @missing
 
-(capture) @capture
-
 (escape_sequence) @escape
 
 (anonymous_node
