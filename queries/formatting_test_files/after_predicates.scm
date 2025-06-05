@@ -1,2 +1,2 @@
 ((identifier) @type
-  (#lua-match? @type "^[A-Z]"))
+  (#lua-match? @type "^[A-Z]" _ asdf))
