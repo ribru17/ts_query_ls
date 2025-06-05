@@ -1,7 +1,9 @@
 use std::str::FromStr;
 
 use tower_lsp::jsonrpc::Result;
-use tower_lsp::lsp_types::{InitializeParams, InitializeResult, ServerInfo, Url};
+use tower_lsp::lsp_types::{
+    InitializeParams, InitializeResult, PositionEncodingKind, ServerInfo, Url,
+};
 use tracing::info;
 
 use crate::util::set_configuration_options;
@@ -21,6 +23,17 @@ pub async fn initialize(backend: &Backend, params: InitializeParams) -> Result<I
         }
     }
 
+    let mut server_capabilities = SERVER_CAPABILITIES.clone();
+
+    if params
+        .capabilities
+        .general
+        .and_then(|cap| cap.position_encodings)
+        .is_some_and(|encodings| encodings.contains(&PositionEncodingKind::UTF8))
+    {
+        server_capabilities.position_encoding = Some(PositionEncodingKind::UTF8);
+    }
+
     set_configuration_options(
         backend,
         params.initialization_options,
@@ -33,7 +46,7 @@ pub async fn initialize(backend: &Backend, params: InitializeParams) -> Result<I
     .await;
 
     Ok(InitializeResult {
-        capabilities: SERVER_CAPABILITIES.clone(),
+        capabilities: server_capabilities,
         server_info: Some(ServerInfo {
             name: String::from("ts_query_ls"),
             version: Some(env!("CARGO_PKG_VERSION").to_string()),
