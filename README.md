@@ -84,6 +84,19 @@ from highest to lowest precedence. E.g., for `zed` support:
 - `tree-sitter-([^/]+)/queries/[^/]+\.scm$`
 - `queries/([^/]+)/[^/]+\.scm$`
 
+#### `diagnostic_options`
+
+An optional object specifying diagnostic style preferences. Currently supported
+options are:
+
+- `string_argument_style`
+  - The style for predicate string arguments
+  - Default: `none`
+  - Possible values:
+    - `none`
+    - `prefer_quoted`
+    - `prefer_unquoted`
+
 #### `valid_captures`
 
 A map from query file name to valid captures. Valid captures are represented as
@@ -101,7 +114,7 @@ Note that captures prefixed with an underscore are always permissible.
 }
 ```
 
-### `valid_predicates`
+#### `valid_predicates`
 
 A map of predicate names (sans `#` and `?`) to parameter specifications.
 
@@ -142,7 +155,7 @@ itself, which holds true if any of the nodes in a quantified capture hold true.
 If both properties are `true`, then there will be a predicate of the form
 `#not-any-foo?`.
 
-### `valid_directives`
+#### `valid_directives`
 
 Same as `valid_predicates`, but for directives (e.g. `#foo!`).
 

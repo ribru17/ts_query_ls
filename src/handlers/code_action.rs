@@ -15,7 +15,7 @@ use crate::{
     Backend,
     util::{
         CAPTURES_QUERY, NodeUtil, TextProviderRope, ToTsPoint, get_current_capture_node,
-        get_references,
+        get_references, lsp_position_to_byte_offset,
     },
 };
 
@@ -26,6 +26,8 @@ pub enum CodeActions {
     RemoveBackslash,
     PrefixUnderscore,
     Remove,
+    Trim,
+    Enquote,
 }
 
 impl From<CodeActions> for u8 {
@@ -42,6 +44,8 @@ impl TryFrom<u8> for CodeActions {
             0 => Ok(CodeActions::RemoveBackslash),
             1 => Ok(CodeActions::PrefixUnderscore),
             2 => Ok(CodeActions::Remove),
+            3 => Ok(CodeActions::Trim),
+            4 => Ok(CodeActions::Enquote),
             _ => Err("Invalid value"),
         }
     }
@@ -132,6 +136,62 @@ pub fn diag_to_code_action(
             diagnostics: Some(vec![diagnostic]),
             ..Default::default()
         })),
+        Ok(CodeActions::Trim) => {
+            let new_text = rope
+                .byte_slice(
+                    lsp_position_to_byte_offset(diagnostic.range.start, rope)
+                        .map(|byte| byte + 1)
+                        .unwrap_or_default()
+                        ..lsp_position_to_byte_offset(diagnostic.range.end, rope)
+                            .map(|byte| byte - 1)
+                            .unwrap_or_default(),
+                )
+                .to_string();
+            Some(CodeActionOrCommand::CodeAction(CodeAction {
+                title: String::from("Trim quotations from string"),
+                kind: Some(CodeActionKind::QUICKFIX),
+                is_preferred: Some(true),
+                edit: Some(WorkspaceEdit {
+                    changes: Some(HashMap::from([(
+                        uri.clone(),
+                        vec![TextEdit {
+                            new_text,
+                            range: diagnostic.range,
+                        }],
+                    )])),
+                    ..Default::default()
+                }),
+                diagnostics: Some(vec![diagnostic]),
+                ..Default::default()
+            }))
+        }
+        Ok(CodeActions::Enquote) => {
+            let new_text = rope
+                .byte_slice(
+                    lsp_position_to_byte_offset(diagnostic.range.start, rope).unwrap_or_default()
+                        ..lsp_position_to_byte_offset(diagnostic.range.end, rope)
+                            .unwrap_or_default(),
+                )
+                .to_string();
+            let new_text = format!("\"{new_text}\"");
+            Some(CodeActionOrCommand::CodeAction(CodeAction {
+                title: String::from("Add quotations"),
+                kind: Some(CodeActionKind::QUICKFIX),
+                is_preferred: Some(true),
+                edit: Some(WorkspaceEdit {
+                    changes: Some(HashMap::from([(
+                        uri.clone(),
+                        vec![TextEdit {
+                            new_text,
+                            range: diagnostic.range,
+                        }],
+                    )])),
+                    ..Default::default()
+                }),
+                diagnostics: Some(vec![diagnostic]),
+                ..Default::default()
+            }))
+        }
         Err(_) => None,
     }
 }
@@ -239,6 +299,37 @@ mod test {
                     }, TextEdit {
                         range: Range::new(Position::new(1, 16), Position::new(1, 16)),
                         new_text: String::from("_")
+                    }]
+            ), ])),
+            ..Default::default()
+        }),
+        ..Default::default()
+    })])]
+    #[case(r#"((comment) @jsdoc_comment
+  (#lua-match? @jsdoc_comment "asdf"))"#, Default::default(), Position::new(1, 32), CodeActionContext {
+        diagnostics: vec![Diagnostic {
+            message: String::from("Unnecessary string quotation"),
+            range: Range::new(Position::new(1, 30), Position::new(1, 36)),
+            data: Some(serde_json::to_value(CodeActions::Trim).unwrap()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    }, &[CodeActionOrCommand::CodeAction(CodeAction {
+        title: String::from("Trim quotations from string"),
+        kind: Some(CodeActionKind::QUICKFIX),
+        is_preferred: Some(true),
+        diagnostics: Some(vec![Diagnostic {
+            message: String::from("Unnecessary string quotation"),
+            range: Range::new(Position::new(1, 30), Position::new(1, 36)),
+            data: Some(serde_json::to_value(CodeActions::Trim).unwrap()),
+            ..Default::default()
+        }]),
+        edit: Some(WorkspaceEdit {
+            changes: Some(HashMap::from([(
+                TEST_URI.clone(),
+                    vec![TextEdit {
+                        range: Range::new(Position::new(1, 30), Position::new(1, 36)),
+                        new_text: String::from("asdf")
                     }]
             ), ])),
             ..Default::default()
