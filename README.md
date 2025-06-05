@@ -96,6 +96,10 @@ options are:
     - `none`
     - `prefer_quoted`
     - `prefer_unquoted`
+- `warn_unused_underscore_captures`
+  - Whether to warn on `_`-prefixed captures which are not referenced by a
+    predicate or directive
+  - Default: `true`
 
 #### `valid_captures`
 
