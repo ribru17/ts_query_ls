@@ -31,9 +31,10 @@ use tower_lsp::{
         InitializeParams, InitializeResult, Location, OneOf, ReferenceParams, RenameParams,
         SelectionRange, SelectionRangeParams, SelectionRangeProviderCapability,
         SemanticTokenModifier, SemanticTokenType, SemanticTokensFullOptions, SemanticTokensLegend,
-        SemanticTokensOptions, SemanticTokensParams, SemanticTokensResult,
-        SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentSyncCapability,
-        TextDocumentSyncKind, TextEdit, Url, WorkspaceEdit,
+        SemanticTokensOptions, SemanticTokensParams, SemanticTokensRangeParams,
+        SemanticTokensRangeResult, SemanticTokensResult, SemanticTokensServerCapabilities,
+        ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
+        WorkspaceEdit,
     },
 };
 use tree_sitter::{Language, Tree, wasmtime::Engine};
@@ -47,48 +48,46 @@ mod logging;
 mod test_helpers;
 mod util;
 
-static SERVER_CAPABILITIES: LazyLock<ServerCapabilities> = LazyLock::new(|| {
-    ServerCapabilities {
-        text_document_sync: Some(TextDocumentSyncCapability::Kind(
-            TextDocumentSyncKind::INCREMENTAL,
-        )),
-        diagnostic_provider: Some(DiagnosticServerCapabilities::Options(DiagnosticOptions {
-            identifier: Some(String::from("ts_query_ls")),
-            ..Default::default()
-        })),
-        code_action_provider: Some(CodeActionProviderCapability::Options(CodeActionOptions {
-            code_action_kinds: Some(vec![CodeActionKind::QUICKFIX]),
-            ..Default::default()
-        })),
-        references_provider: Some(OneOf::Left(true)),
-        rename_provider: Some(OneOf::Left(true)),
-        definition_provider: Some(OneOf::Left(true)),
-        document_formatting_provider: Some(OneOf::Left(true)),
-        completion_provider: Some(CompletionOptions {
-            trigger_characters: Some(
-                ["@", "\"", "\\", "(", "/", ".", "#", "!"]
-                    .map(ToOwned::to_owned)
-                    .into(),
-            ),
-            ..CompletionOptions::default()
-        }),
-        document_highlight_provider: Some(OneOf::Left(true)),
-        semantic_tokens_provider: Some(SemanticTokensServerCapabilities::SemanticTokensOptions(
-            SemanticTokensOptions {
-                legend: SemanticTokensLegend {
-                    token_types: vec![SemanticTokenType::INTERFACE, SemanticTokenType::VARIABLE],
-                    token_modifiers: vec![SemanticTokenModifier::DEFAULT_LIBRARY],
-                },
-                // TODO: Support range and delta semantic token requests.
-                full: Some(SemanticTokensFullOptions::Bool(true)),
-                ..Default::default()
-            },
-        )),
-        hover_provider: Some(HoverProviderCapability::Simple(true)),
-        document_symbol_provider: Some(OneOf::Left(true)),
-        selection_range_provider: Some(SelectionRangeProviderCapability::Simple(true)),
+static SERVER_CAPABILITIES: LazyLock<ServerCapabilities> = LazyLock::new(|| ServerCapabilities {
+    text_document_sync: Some(TextDocumentSyncCapability::Kind(
+        TextDocumentSyncKind::INCREMENTAL,
+    )),
+    diagnostic_provider: Some(DiagnosticServerCapabilities::Options(DiagnosticOptions {
+        identifier: Some(String::from("ts_query_ls")),
         ..Default::default()
-    }
+    })),
+    code_action_provider: Some(CodeActionProviderCapability::Options(CodeActionOptions {
+        code_action_kinds: Some(vec![CodeActionKind::QUICKFIX]),
+        ..Default::default()
+    })),
+    references_provider: Some(OneOf::Left(true)),
+    rename_provider: Some(OneOf::Left(true)),
+    definition_provider: Some(OneOf::Left(true)),
+    document_formatting_provider: Some(OneOf::Left(true)),
+    completion_provider: Some(CompletionOptions {
+        trigger_characters: Some(
+            ["@", "\"", "\\", "(", "/", ".", "#", "!"]
+                .map(ToOwned::to_owned)
+                .into(),
+        ),
+        ..CompletionOptions::default()
+    }),
+    document_highlight_provider: Some(OneOf::Left(true)),
+    semantic_tokens_provider: Some(SemanticTokensServerCapabilities::SemanticTokensOptions(
+        SemanticTokensOptions {
+            legend: SemanticTokensLegend {
+                token_types: vec![SemanticTokenType::INTERFACE, SemanticTokenType::VARIABLE],
+                token_modifiers: vec![SemanticTokenModifier::DEFAULT_LIBRARY],
+            },
+            full: Some(SemanticTokensFullOptions::Bool(true)),
+            range: Some(true),
+            ..Default::default()
+        },
+    )),
+    hover_provider: Some(HoverProviderCapability::Simple(true)),
+    document_symbol_provider: Some(OneOf::Left(true)),
+    selection_range_provider: Some(SelectionRangeProviderCapability::Simple(true)),
+    ..Default::default()
 });
 static ENGINE: LazyLock<Engine> = LazyLock::new(Engine::default);
 static QUERY_LANGUAGE: LazyLock<Language> = LazyLock::new(|| tree_sitter_query::LANGUAGE.into());
@@ -189,7 +188,14 @@ impl LanguageServer for Backend {
         &self,
         params: SemanticTokensParams,
     ) -> Result<Option<SemanticTokensResult>> {
-        semantic_tokens_full::semantic_tokens_full(self, params).await
+        semantic_tokens::semantic_tokens_full(self, params).await
+    }
+
+    async fn semantic_tokens_range(
+        &self,
+        params: SemanticTokensRangeParams,
+    ) -> Result<Option<SemanticTokensRangeResult>> {
+        semantic_tokens::semantic_tokens_range(self, params).await
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {

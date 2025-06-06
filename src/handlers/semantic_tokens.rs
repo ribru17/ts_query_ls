@@ -2,14 +2,17 @@ use std::sync::LazyLock;
 
 use tower_lsp::{
     jsonrpc::Result,
-    lsp_types::{SemanticToken, SemanticTokens, SemanticTokensParams, SemanticTokensResult},
+    lsp_types::{
+        Range, SemanticToken, SemanticTokens, SemanticTokensParams, SemanticTokensRangeParams,
+        SemanticTokensRangeResult, SemanticTokensResult, Url,
+    },
 };
 use tracing::warn;
 use tree_sitter::{Query, QueryCursor, StreamingIterator};
 
 use crate::{
     Backend, QUERY_LANGUAGE, SymbolInfo,
-    util::{NodeUtil, TextProviderRope},
+    util::{NodeUtil, TextProviderRope, ToTsPoint},
 };
 
 static SEM_TOK_QUERY: LazyLock<Query> = LazyLock::new(|| {
@@ -24,10 +27,30 @@ pub async fn semantic_tokens_full(
     backend: &Backend,
     params: SemanticTokensParams,
 ) -> Result<Option<SemanticTokensResult>> {
-    let uri = &params.text_document.uri;
-    let Some(doc) = backend.document_map.get(uri) else {
+    Ok(get_semantic_tokens(backend, params.text_document.uri, None)
+        .await
+        .map(Into::into))
+}
+
+pub async fn semantic_tokens_range(
+    backend: &Backend,
+    params: SemanticTokensRangeParams,
+) -> Result<Option<SemanticTokensRangeResult>> {
+    Ok(
+        get_semantic_tokens(backend, params.text_document.uri, Some(params.range))
+            .await
+            .map(Into::into),
+    )
+}
+
+async fn get_semantic_tokens(
+    backend: &Backend,
+    uri: Url,
+    range: Option<Range>,
+) -> Option<SemanticTokens> {
+    let Some(doc) = backend.document_map.get(&uri) else {
         warn!("No document found for URI: {uri} when retrieving semantic tokens");
-        return Ok(None);
+        return None;
     };
     let mut tokens = Vec::new();
     let tree = &doc.tree;
@@ -39,6 +62,9 @@ pub async fn semantic_tokens_full(
     let supertypes = language_data.as_ref().map(|ld| &ld.supertype_map);
     let query = &SEM_TOK_QUERY;
     let mut cursor = QueryCursor::new();
+    if let Some(range) = range {
+        cursor.set_point_range(range.start.to_ts_point(rope)..range.end.to_ts_point(rope));
+    }
     let provider = TextProviderRope(rope);
     let mut matches = cursor.matches(query, tree.root_node(), &provider);
     let mut prev_line = 0;
@@ -86,10 +112,10 @@ pub async fn semantic_tokens_full(
         }
     }
 
-    Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
+    Some(SemanticTokens {
         result_id: None,
         data: tokens,
-    })))
+    })
 }
 
 #[cfg(test)]
