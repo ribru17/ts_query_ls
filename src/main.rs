@@ -29,6 +29,7 @@ use tower_lsp::{
         DocumentHighlightParams, DocumentSymbolParams, DocumentSymbolResponse,
         GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams, HoverProviderCapability,
         InitializeParams, InitializeResult, Location, OneOf, ReferenceParams, RenameParams,
+        SelectionRange, SelectionRangeParams, SelectionRangeProviderCapability,
         SemanticTokenModifier, SemanticTokenType, SemanticTokensFullOptions, SemanticTokensLegend,
         SemanticTokensOptions, SemanticTokensParams, SemanticTokensResult,
         SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentSyncCapability,
@@ -85,6 +86,7 @@ static SERVER_CAPABILITIES: LazyLock<ServerCapabilities> = LazyLock::new(|| {
         )),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         document_symbol_provider: Some(OneOf::Left(true)),
+        selection_range_provider: Some(SelectionRangeProviderCapability::Simple(true)),
         ..Default::default()
     }
 });
@@ -210,6 +212,13 @@ impl LanguageServer for Backend {
 
     async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
         code_action::code_action(self, params).await
+    }
+
+    async fn selection_range(
+        &self,
+        params: SelectionRangeParams,
+    ) -> Result<Option<Vec<SelectionRange>>> {
+        selection_range::selection_range(self, params).await
     }
 }
 

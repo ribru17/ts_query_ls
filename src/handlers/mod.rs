@@ -12,5 +12,6 @@ pub mod hover;
 pub mod initialize;
 pub mod references;
 pub mod rename;
+pub mod selection_range;
 pub mod semantic_tokens_full;
 pub mod shutdown;
