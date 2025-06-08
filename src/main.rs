@@ -24,17 +24,17 @@ use tower_lsp::{
         CodeActionKind, CodeActionOptions, CodeActionParams, CodeActionProviderCapability,
         CodeActionResponse, CompletionOptions, CompletionParams, CompletionResponse,
         DiagnosticOptions, DiagnosticServerCapabilities, DidChangeConfigurationParams,
-        DidChangeTextDocumentParams, DidOpenTextDocumentParams, DocumentDiagnosticParams,
-        DocumentDiagnosticReportResult, DocumentFormattingParams, DocumentHighlight,
-        DocumentHighlightParams, DocumentSymbolParams, DocumentSymbolResponse,
-        GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams, HoverProviderCapability,
-        InitializeParams, InitializeResult, Location, OneOf, ReferenceParams, RenameParams,
-        SelectionRange, SelectionRangeParams, SelectionRangeProviderCapability,
-        SemanticTokenModifier, SemanticTokenType, SemanticTokensFullOptions, SemanticTokensLegend,
-        SemanticTokensOptions, SemanticTokensParams, SemanticTokensRangeParams,
-        SemanticTokensRangeResult, SemanticTokensResult, SemanticTokensServerCapabilities,
-        ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
-        WorkspaceEdit,
+        DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
+        DidSaveTextDocumentParams, DocumentDiagnosticParams, DocumentDiagnosticReportResult,
+        DocumentFormattingParams, DocumentHighlight, DocumentHighlightParams, DocumentSymbolParams,
+        DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams,
+        HoverProviderCapability, InitializeParams, InitializeResult, Location, OneOf,
+        ReferenceParams, RenameParams, SelectionRange, SelectionRangeParams,
+        SelectionRangeProviderCapability, SemanticTokenModifier, SemanticTokenType,
+        SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
+        SemanticTokensParams, SemanticTokensRangeParams, SemanticTokensRangeResult,
+        SemanticTokensResult, SemanticTokensServerCapabilities, ServerCapabilities,
+        TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url, WorkspaceEdit,
     },
 };
 use tree_sitter::{Language, Tree, wasmtime::Engine};
@@ -155,6 +155,14 @@ impl LanguageServer for Backend {
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         did_open::did_open(self, params).await
+    }
+
+    async fn did_close(&self, params: DidCloseTextDocumentParams) {
+        did_close::did_close(self, params).await
+    }
+
+    async fn did_save(&self, params: DidSaveTextDocumentParams) {
+        did_save::did_save(self, params).await
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
