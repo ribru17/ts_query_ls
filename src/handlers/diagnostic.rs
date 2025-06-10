@@ -67,7 +67,7 @@ static CAPTURE_DEFINITIONS_QUERY: LazyLock<Query> = LazyLock::new(|| {
 static CAPTURE_REFERENCES_QUERY: LazyLock<Query> = LazyLock::new(|| {
     Query::new(&QUERY_LANGUAGE, "(parameters (capture) @capture.reference)").unwrap()
 });
-static IDENTIFIER_REGEX: LazyLock<Regex> =
+pub static IDENTIFIER_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9_-][a-zA-Z0-9_.-]*$").unwrap());
 
 pub async fn diagnostic(

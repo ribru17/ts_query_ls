@@ -1,6 +1,3 @@
-use std::sync::LazyLock;
-
-use regex::Regex;
 use tower_lsp::{
     jsonrpc::{self, Result},
     lsp_types::{
@@ -19,8 +16,7 @@ use crate::{
     },
 };
 
-static IDENTIFIER_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9.\-_\$]+$").unwrap());
+use super::diagnostic::IDENTIFIER_REGEX;
 
 pub async fn rename(backend: &Backend, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
     let uri = &params.text_document_position.text_document.uri;
@@ -44,7 +40,7 @@ pub async fn rename(backend: &Backend, params: RenameParams) -> Result<Option<Wo
         .new_name
         .strip_prefix('@')
         .unwrap_or(params.new_name.as_str());
-    if !IDENTIFIER_PATTERN.is_match(new_name) {
+    if !IDENTIFIER_REGEX.is_match(new_name) {
         return Err(jsonrpc::Error::invalid_params(
             "New name is not a valid identifier",
         ));
