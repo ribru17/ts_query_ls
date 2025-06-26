@@ -76,7 +76,11 @@ static SERVER_CAPABILITIES: LazyLock<ServerCapabilities> = LazyLock::new(|| Serv
     semantic_tokens_provider: Some(SemanticTokensServerCapabilities::SemanticTokensOptions(
         SemanticTokensOptions {
             legend: SemanticTokensLegend {
-                token_types: vec![SemanticTokenType::INTERFACE, SemanticTokenType::VARIABLE],
+                token_types: vec![
+                    SemanticTokenType::INTERFACE,
+                    SemanticTokenType::VARIABLE,
+                    SemanticTokenType::NAMESPACE,
+                ],
                 token_modifiers: vec![SemanticTokenModifier::DEFAULT_LIBRARY],
             },
             full: Some(SemanticTokensFullOptions::Bool(true)),
