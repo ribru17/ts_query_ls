@@ -12,13 +12,17 @@ use tree_sitter::{Query, QueryCursor, StreamingIterator};
 
 use crate::{
     Backend, QUERY_LANGUAGE, SymbolInfo,
-    util::{NodeUtil, TextProviderRope, ToTsPoint},
+    util::{INHERITS_REGEX, NodeUtil, TextProviderRope, ToTsPoint},
 };
 
 static SEM_TOK_QUERY: LazyLock<Query> = LazyLock::new(|| {
     Query::new(
         &QUERY_LANGUAGE,
-        "(named_node (identifier) @cap) (missing_node (identifier) @cap)",
+        r#"(named_node (identifier) @ident)
+(missing_node (identifier) @ident)
+(program
+  . (comment)+ @comment)
+"#,
     )
     .unwrap()
 });
@@ -72,42 +76,80 @@ async fn get_semantic_tokens(
 
     while let Some(match_) = matches.next() {
         for cap in match_.captures.iter() {
+            let capture_name = SEM_TOK_QUERY.capture_names()[cap.index as usize];
             let node = &cap.node;
             let node_text = node.text(rope);
             let start_row = node.start_position().row as u32;
             let start_col = node.start_position().column as u32;
             let delta_line = start_row - prev_line;
-            let length = node.byte_range().len() as u32;
             let delta_start = if start_row - prev_line == 0 {
                 start_col - prev_col
             } else {
                 start_col
             };
-            if node_text == "ERROR" {
-                tokens.push(SemanticToken {
-                    delta_line,
-                    delta_start,
-                    length,
-                    token_type: 1,
-                    token_modifiers_bitset: 1,
-                });
-                prev_line = start_row;
-                prev_col = start_col;
-            } else if supertypes.is_some_and(|supertypes| {
-                supertypes.contains_key(&SymbolInfo {
-                    label: node_text,
-                    named: true,
-                })
-            }) {
-                tokens.push(SemanticToken {
-                    delta_line,
-                    delta_start,
-                    length,
-                    token_type: 0,
-                    token_modifiers_bitset: 0,
-                });
-                prev_line = start_row;
-                prev_col = start_col;
+            match capture_name {
+                // Highlight supertypes and ERROR nodes
+                "ident" => {
+                    // Identifiers are always ASCII characters, meaning they count for the same
+                    // number of code points in each encoding (and we can count them by bytes)
+                    let length = node.byte_range().len() as u32;
+                    if node_text == "ERROR" {
+                        tokens.push(SemanticToken {
+                            delta_line,
+                            delta_start,
+                            length,
+                            token_type: 1,
+                            token_modifiers_bitset: 1,
+                        });
+                        prev_line = start_row;
+                        prev_col = start_col;
+                    } else if supertypes.is_some_and(|supertypes| {
+                        supertypes.contains_key(&SymbolInfo {
+                            label: node_text,
+                            named: true,
+                        })
+                    }) {
+                        tokens.push(SemanticToken {
+                            delta_line,
+                            delta_start,
+                            length,
+                            token_type: 0,
+                            token_modifiers_bitset: 0,
+                        });
+                        prev_line = start_row;
+                        prev_col = start_col;
+                    }
+                }
+                // Highlight imported modules
+                "comment" => {
+                    let Some(pre_text) = INHERITS_REGEX.captures(&node_text).and_then(|c| c.get(1))
+                    else {
+                        continue;
+                    };
+                    let mods = pre_text.as_str().split(',');
+                    let len = pre_text.start() as u32;
+                    let mut delta_start = delta_start + len;
+                    let mut start_col = start_col + len;
+                    let mut delta_line = delta_line;
+                    for module in mods {
+                        // We assert that modules are valid ASCII characters, so we can index them
+                        // by byte count.
+                        let length = module.len() as u32;
+                        tokens.push(SemanticToken {
+                            delta_line,
+                            delta_start,
+                            length,
+                            token_type: 2,
+                            token_modifiers_bitset: 0,
+                        });
+                        start_col += length + 1;
+                        delta_start = length + 1;
+                        delta_line = 0;
+                    }
+                    prev_line = start_row;
+                    prev_col = start_col;
+                }
+                _ => {}
             }
         }
     }
@@ -136,7 +178,9 @@ mod test {
     #[tokio::test(flavor = "current_thread")]
     async fn semantic_tokens_full() {
         // Arrange
-        let source = r"(ERROR) @error (supertype) @node (supertype) @node
+        let source = r"; inherits: c,cuda
+
+(ERROR) @error (supertype) @node (supertype) @node
 
 (supertype) @node
 
@@ -182,6 +226,20 @@ mod test {
             data: vec![
                 SemanticToken {
                     delta_line: 0,
+                    delta_start: 12,
+                    length: 1,
+                    token_type: 2,
+                    token_modifiers_bitset: 0,
+                },
+                SemanticToken {
+                    delta_line: 0,
+                    delta_start: 2,
+                    length: 4,
+                    token_type: 2,
+                    token_modifiers_bitset: 0,
+                },
+                SemanticToken {
+                    delta_line: 2,
                     delta_start: 1,
                     length: 5,
                     token_type: 1,
