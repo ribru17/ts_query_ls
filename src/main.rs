@@ -119,6 +119,7 @@ struct DocumentData {
 
 #[derive(Default, Debug)]
 struct LanguageData {
+    name: String,
     symbols_set: HashSet<SymbolInfo>,
     symbols_vec: Vec<SymbolInfo>,
     fields_set: HashSet<String>,

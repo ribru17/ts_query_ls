@@ -72,8 +72,9 @@ pub mod helpers {
                 |(uri, _, symbols, fields, supertypes)| {
                     let language_name = get_language_name(uri, options).unwrap();
                     (
-                        language_name,
+                        language_name.clone(),
                         LanguageData {
+                            name: language_name,
                             language: None,
                             symbols_set: HashSet::from_iter(symbols.clone()),
                             symbols_vec: symbols.clone(),

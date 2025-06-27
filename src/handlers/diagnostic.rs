@@ -153,11 +153,9 @@ pub async fn get_diagnostics(
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&DEFINITIONS_QUERY, tree.root_node(), &provider);
         let mut diagnostics = Vec::new();
-        let Some(language_name) = document.language_name else {
-            return diagnostics;
-        };
         let Some(LanguageData {
             language: Some(language),
+            name: language_name,
             ..
         }) = ld.as_deref()
         else {

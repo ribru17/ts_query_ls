@@ -46,13 +46,13 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     let Some(lang) = get_language(&language_name, &options) else {
         return;
     };
-    let language_data = init_language_data(lang);
+    let language_data = init_language_data(lang, language_name.clone());
     backend
         .language_map
         .insert(language_name, language_data.into());
 }
 
-pub fn init_language_data(lang: Language) -> LanguageData {
+pub fn init_language_data(lang: Language, name: String) -> LanguageData {
     let mut symbols_vec: Vec<SymbolInfo> = vec![];
     let mut symbols_set: HashSet<SymbolInfo> = HashSet::new();
     let mut fields_vec: Vec<String> = vec![];
@@ -108,6 +108,7 @@ pub fn init_language_data(lang: Language) -> LanguageData {
         }
     }
     LanguageData {
+        name,
         fields_set,
         fields_vec,
         symbols_vec,
