@@ -33,7 +33,7 @@ where
         event.record(&mut visitor);
         let mut message = visitor.0;
         if message.is_empty() {
-            message = format!("{:?}", event);
+            message = format!("{event:?}");
         }
 
         tokio::spawn({
@@ -53,7 +53,7 @@ struct MessageVisitor(String);
 impl tracing::field::Visit for MessageVisitor {
     fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
         if field.name() == "message" {
-            self.0 = format!("{:?}", value);
+            self.0 = format!("{value:?}");
         }
     }
 }
