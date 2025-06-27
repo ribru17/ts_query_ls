@@ -1,7 +1,7 @@
 use tower_lsp::{
     jsonrpc::{self, Result},
     lsp_types::{
-        DocumentChanges, Location, OneOf, OptionalVersionedTextDocumentIdentifier, RenameParams,
+        DocumentChanges, OneOf, OptionalVersionedTextDocumentIdentifier, RenameParams,
         TextDocumentEdit, TextEdit, WorkspaceEdit,
     },
 };
@@ -45,9 +45,8 @@ pub async fn rename(backend: &Backend, params: RenameParams) -> Result<Option<Wo
             "New name is not a valid identifier",
         ));
     }
-    let mut text_document_edits = vec![];
     let provider = TextProviderRope(rope);
-    get_references(
+    let edits = get_references(
         &tree.root_node(),
         &current_node,
         query,
@@ -55,18 +54,16 @@ pub async fn rename(backend: &Backend, params: RenameParams) -> Result<Option<Wo
         &provider,
         rope,
     )
-    .map(|node| Location {
-        uri: uri.clone(),
-        range: node.lsp_range(rope),
-    })
-    .for_each(|mut elem| {
+    .map(|node| {
+        let mut range = node.lsp_range(rope);
         // Don't include the preceding `@`
-        elem.range.start.character += 1;
-        text_document_edits.push(OneOf::Left(TextEdit {
-            range: elem.range,
+        range.start.character += 1;
+        OneOf::Left(TextEdit {
+            range,
             new_text: new_name.to_owned(),
-        }));
-    });
+        })
+    })
+    .collect();
 
     Ok(Some(WorkspaceEdit {
         document_changes: Some(DocumentChanges::Edits(vec![TextDocumentEdit {
@@ -74,7 +71,7 @@ pub async fn rename(backend: &Backend, params: RenameParams) -> Result<Option<Wo
                 uri: uri.clone(),
                 version: Some(doc.version),
             },
-            edits: text_document_edits,
+            edits,
         }])),
         changes: None,
         change_annotations: None,
