@@ -409,3 +409,52 @@ pub async fn get_file_uris(backend: &Backend, language_name: &str, query_type: &
 
     urls
 }
+
+/// Returns a list of URIs corresponding to the modules in the `; inherits: ` chain. `None` if the
+/// module could not be found.
+///
+/// Return value is start byte, end byte, URI (if found)
+pub async fn get_imported_uris(
+    backend: &Backend,
+    uri: &Url,
+    rope: &Rope,
+    tree: &Tree,
+) -> Vec<(u32, u32, Option<Url>)> {
+    let mut uris = Vec::new();
+    let Some(start_comment) = tree
+        .root_node()
+        .child(0)
+        .filter(|node| node.kind() == "comment" && node.start_position().row == 0)
+    else {
+        return uris;
+    };
+    let comment_text = start_comment.text(rope);
+    let Some(modules) = INHERITS_REGEX
+        .captures(&comment_text)
+        .and_then(|c| c.get(1))
+    else {
+        return uris;
+    };
+    let Some(query_name) = uri_to_basename(uri) else {
+        return uris;
+    };
+
+    let mut byte_offset = (start_comment.start_byte() + modules.start()) as u32;
+    for module in modules.as_str().split(',') {
+        let (start, end) = (byte_offset, byte_offset + module.len() as u32);
+        byte_offset = end + 1;
+        if module.is_empty() {
+            uris.push((start, end, None));
+            continue;
+        }
+        let module_uris = get_file_uris(backend, module, &query_name).await;
+        if module_uris.len() > 1 {
+            warn!(
+                "Imported module {module} has more than one associated file location, analyzing the first one"
+            );
+        }
+        uris.push((start, end, module_uris.first().cloned()));
+    }
+
+    uris
+}

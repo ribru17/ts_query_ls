@@ -637,6 +637,7 @@ mod test {
                 symbols.to_vec(),
                 fields.to_vec(),
                 supertypes.to_vec(),
+                Vec::new(),
             )],
             options,
         )

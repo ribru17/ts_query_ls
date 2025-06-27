@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     ops::Deref,
     sync::{Arc, LazyLock},
 };
@@ -9,8 +10,9 @@ use ropey::Rope;
 use tower_lsp::{
     jsonrpc::{Error, ErrorCode, Result},
     lsp_types::{
-        Diagnostic, DiagnosticSeverity, DiagnosticTag, DocumentDiagnosticParams,
-        DocumentDiagnosticReport, DocumentDiagnosticReportResult, FullDocumentDiagnosticReport,
+        Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, DiagnosticTag,
+        DocumentDiagnosticParams, DocumentDiagnosticReport, DocumentDiagnosticReportResult,
+        FullDocumentDiagnosticReport, Location, Position, Range,
         RelatedFullDocumentDiagnosticReport, Url,
     },
 };
@@ -88,13 +90,32 @@ pub async fn diagnostic(
         .and_then(|name| backend.language_map.get(name))
         .as_deref()
         .cloned();
+    let mut items = get_diagnostics(
+        uri,
+        document.clone(),
+        language_data.clone(),
+        backend.options.clone(),
+        true,
+    )
+    .await;
+
+    items.append(
+        &mut get_imported_query_diagnostics(
+            backend,
+            &document.imported_uris,
+            language_data,
+            &mut HashSet::new(),
+        )
+        .await,
+    );
+
     Ok(DocumentDiagnosticReportResult::Report(
         DocumentDiagnosticReport::Full(RelatedFullDocumentDiagnosticReport {
+            // TODO: Pass related diagnostics for queries that depend on this one
             related_documents: None,
             full_document_diagnostic_report: FullDocumentDiagnosticReport {
                 result_id: None,
-                items: get_diagnostics(uri, document, language_data, backend.options.clone(), true)
-                    .await,
+                items,
             },
         }),
     ))
@@ -153,11 +174,9 @@ pub async fn get_diagnostics(
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&DEFINITIONS_QUERY, tree.root_node(), &provider);
         let mut diagnostics = Vec::new();
-        let Some(language_name) = document.language_name else {
-            return diagnostics;
-        };
         let Some(LanguageData {
             language: Some(language),
+            name: language_name,
             ..
         }) = ld.as_deref()
         else {
@@ -490,6 +509,80 @@ pub async fn get_diagnostics(
     diagnostics
 }
 
+async fn get_imported_query_diagnostics(
+    backend: &Backend,
+    imported_uris: &Vec<(u32, u32, Option<Url>)>,
+    language_data: Option<Arc<LanguageData>>,
+    seen: &mut HashSet<Url>,
+) -> Vec<Diagnostic> {
+    let mut items = Vec::new();
+    for (start, end, uri) in imported_uris {
+        let range = Range {
+            start: Position::new(0, *start),
+            end: Position::new(0, *end),
+        };
+        if let Some(uri) = uri {
+            if seen.contains(uri) {
+                continue;
+            }
+            seen.insert(uri.clone());
+            if let Some(doc) = backend.document_map.get(uri).as_deref().cloned() {
+                let mut inner_diags = Box::pin(get_imported_query_diagnostics(
+                    backend,
+                    &doc.imported_uris,
+                    language_data.clone(),
+                    seen,
+                ))
+                .await;
+                let mut severity = DiagnosticSeverity::HINT;
+                inner_diags.append(
+                    &mut get_diagnostics(
+                        uri,
+                        doc,
+                        language_data.clone(),
+                        backend.options.clone(),
+                        true,
+                    )
+                    .await,
+                );
+                let inner_diags: Vec<DiagnosticRelatedInformation> = inner_diags
+                    .into_iter()
+                    .map(|diag| {
+                        if let Some(sev) = diag.severity {
+                            // This misleadingly computes the maximum severity
+                            severity = std::cmp::min(severity, sev);
+                        }
+                        DiagnosticRelatedInformation {
+                            message: diag.message,
+                            location: Location {
+                                uri: uri.clone(),
+                                range: diag.range,
+                            },
+                        }
+                    })
+                    .collect();
+                if !inner_diags.is_empty() {
+                    items.push(Diagnostic {
+                        range,
+                        message: String::from("Issues in module"),
+                        severity: Some(severity),
+                        related_information: Some(inner_diags),
+                        ..Default::default()
+                    });
+                }
+                continue;
+            }
+        }
+        items.push(Diagnostic {
+            range,
+            severity: WARNING_SEVERITY,
+            message: String::from("Query module not found"),
+            ..Default::default()
+        });
+    }
+    items
+}
+
 fn remove_unnecessary_escapes(input: &str) -> String {
     let mut result = String::new();
     let mut chars = input.chars().peekable();
@@ -594,31 +687,44 @@ fn validate_predicate<'a>(
 #[cfg(test)]
 mod test {
     use std::collections::{BTreeMap, HashMap};
-    use std::sync::Arc;
+    use tower::{Service as _, ServiceExt as _};
 
     use pretty_assertions::assert_eq;
     use rstest::rstest;
-    use tower_lsp::lsp_types::{Diagnostic, DiagnosticTag, Position, Range};
+    use tower_lsp::lsp_types::{
+        Diagnostic, DiagnosticRelatedInformation, DiagnosticTag, DocumentDiagnosticParams,
+        DocumentDiagnosticReport, DocumentDiagnosticReportResult, FullDocumentDiagnosticReport,
+        Location, Position, Range, RelatedFullDocumentDiagnosticReport, TextDocumentIdentifier,
+        request::DocumentDiagnosticRequest,
+    };
     use ts_query_ls::{
         DiagnosticOptions, Options, Predicate, PredicateParameter, PredicateParameterArity,
         PredicateParameterType, StringArgumentStyle,
     };
 
-    use crate::handlers::code_action::CodeActions;
-    use crate::handlers::diagnostic::{ERROR_SEVERITY, HINT_SEVERITY, WARNING_SEVERITY};
     use crate::{
         SymbolInfo,
-        handlers::diagnostic::get_diagnostics,
-        test_helpers::helpers::{TEST_URI, initialize_server},
+        handlers::{
+            code_action::CodeActions,
+            diagnostic::{ERROR_SEVERITY, HINT_SEVERITY, WARNING_SEVERITY},
+        },
+        test_helpers::helpers::{
+            Document, TEST_URI, TEST_URI_2, initialize_server, lsp_request_to_jsonrpc_request,
+            lsp_response_to_jsonrpc_response,
+        },
     };
 
     #[rstest]
     #[case(
-        r#"((identifier) @constant
+        &[(
+            TEST_URI.clone(),
+            r#"((identifier) @constant
 (#match? @cons "^[A-Z][A-Z\\d_]*$"))"#,
-        &[SymbolInfo { label: String::from("identifier"), named: true }],
-        &["operator"],
-        &["supertype"],
+            [SymbolInfo { label: String::from("identifier"), named: true }].to_vec(),
+            ["operator"].to_vec(),
+            ["supertype"].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([
@@ -659,11 +765,15 @@ mod test {
         }],
     )]
     #[case(
-        r#"("*" @constant
+        &[(
+            TEST_URI.clone(),
+            r#"("*" @constant
 (#match? @constant "^[A-Z][A-Z\\d_]*$"))"#,
-        &[SymbolInfo { label: String::from("*"), named: false }],
-        &["operator"],
-        &["supertype"],
+            [SymbolInfo { label: String::from("*"), named: false }].to_vec(),
+            ["operator"].to_vec(),
+            ["supertype"].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([
@@ -684,10 +794,14 @@ mod test {
         }],
     )]
     #[case(
-        r#"(MISSING "*") @keyword"#,
-        &[SymbolInfo { label: String::from("*"), named: false }],
-        &["operator"],
-        &["supertype"],
+        &[(
+            TEST_URI.clone(),
+            r#"(MISSING "*") @keyword"#,
+            [SymbolInfo { label: String::from("*"), named: false }].to_vec(),
+            ["operator"].to_vec(),
+            ["supertype"].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([
@@ -708,10 +822,14 @@ mod test {
         }],
     )]
     #[case(
-        r#"[ "*" ] @keyword"#,
-        &[SymbolInfo { label: String::from("*"), named: false }],
-        &["operator"],
-        &["supertype"],
+        &[(
+            TEST_URI.clone(),
+            r#"[ "*" ] @keyword"#,
+            [SymbolInfo { label: String::from("*"), named: false }].to_vec(),
+            ["operator"].to_vec(),
+            ["supertype"].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([
@@ -732,10 +850,14 @@ mod test {
         }],
     )]
     #[case(
-        r#"("*") @keyword"#,
-        &[SymbolInfo { label: String::from("*"), named: false }],
-        &["operator"],
-        &["supertype"],
+        &[(
+            TEST_URI.clone(),
+            r#"("*") @keyword"#,
+            [SymbolInfo { label: String::from("*"), named: false }].to_vec(),
+            ["operator"].to_vec(),
+            ["supertype"].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([
@@ -756,13 +878,17 @@ mod test {
         }],
     )]
     #[case(
-        r#"((identifierr) @_constant
+        &[(
+            TEST_URI.clone(),
+            r#"((identifierr) @_constant
 (#match? @_constant "^[A-Z][A-Z\\d_]*$"))
 
 (identifier) @variable"#,
-        &[SymbolInfo { label: String::from("identifier"), named: true }],
-        &["operator"],
-        &["supertype"],
+            [SymbolInfo { label: String::from("identifier"), named: true }].to_vec(),
+            ["operator"].to_vec(),
+            ["supertype"].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([
@@ -788,11 +914,15 @@ mod test {
         }],
     )]
     #[case(
-        r#"((identifier) @variable
+        &[(
+            TEST_URI.clone(),
+            r#"((identifier) @variable
 (#match? @variable "^[A-Z][A-Z\\d_]*$"))"#,
-        &[SymbolInfo { label: String::from("identifier"), named: true }],
-        &["operator"],
-        &["supertype"],
+            [SymbolInfo { label: String::from("identifier"), named: true }].to_vec(),
+            ["operator"].to_vec(),
+            ["supertype"].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([
@@ -804,11 +934,15 @@ mod test {
         &[],
     )]
     #[case(
-        r#"((identifier) @variable.builtin
+        &[(
+            TEST_URI.clone(),
+            r#"((identifier) @variable.builtin
 (#eq? @variable.builtin self))"#,
-        &[SymbolInfo { label: String::from("identifier"), named: true }],
-        &["operator"],
-        &["supertype"],
+            [SymbolInfo { label: String::from("identifier"), named: true }].to_vec(),
+            ["operator"].to_vec(),
+            ["supertype"].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             valid_predicates: BTreeMap::from([(String::from("eq"), Predicate {
                 description: String::from("Checks for equality"),
@@ -829,11 +963,15 @@ mod test {
         &[],
     )]
     #[case(
-        r#"((identifier) @variable.builtin
+        &[(
+            TEST_URI.clone(),
+            r#"((identifier) @variable.builtin
 (#eq? @variable.builtin))"#,
-        &[SymbolInfo { label: String::from("identifier"), named: true }],
-        &["operator"],
-        &["supertype"],
+            [SymbolInfo { label: String::from("identifier"), named: true }].to_vec(),
+            ["operator"].to_vec(),
+            ["supertype"].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             valid_predicates: BTreeMap::from([(String::from("eq"), Predicate {
                 description: String::from("Checks for equality"),
@@ -867,11 +1005,15 @@ mod test {
         }],
     )]
     #[case(
-        r#"((identifier) @variable.builtin
+        &[(
+            TEST_URI.clone(),
+            r#"((identifier) @variable.builtin
 (#eq? @variable.builtin self @variable.builtin))"#,
-        &[SymbolInfo { label: String::from("identifier"), named: true }],
-        &["operator"],
-        &["supertype"],
+            [SymbolInfo { label: String::from("identifier"), named: true }].to_vec(),
+            ["operator"].to_vec(),
+            ["supertype"].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             valid_predicates: BTreeMap::from([(String::from("eq"), Predicate {
                 description: String::from("Checks for equality"),
@@ -905,11 +1047,15 @@ mod test {
         }],
     )]
     #[case(
-        r#"((identifier) @variable.builtin
+        &[(
+            TEST_URI.clone(),
+            r#"((identifier) @variable.builtin
 (#set! @variable.builtin "self" "asdf" bar))"#,
-        &[SymbolInfo { label: String::from("identifier"), named: true }],
-        &["operator"],
-        &["supertype"],
+            [SymbolInfo { label: String::from("identifier"), named: true }].to_vec(),
+            ["operator"].to_vec(),
+            ["supertype"].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
@@ -931,11 +1077,15 @@ mod test {
         &[],
     )]
     #[case(
-        r#"((identifier) @variable.builtin
+        &[(
+            TEST_URI.clone(),
+            r#"((identifier) @variable.builtin
 (#set! @variable.builtin self asdf "bar"))"#,
-        &[SymbolInfo { label: String::from("identifier"), named: true }],
-        &["operator"],
-        &["supertype"],
+            [SymbolInfo { label: String::from("identifier"), named: true }].to_vec(),
+            ["operator"].to_vec(),
+            ["supertype"].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             diagnostic_options: DiagnosticOptions {
                 string_argument_style: StringArgumentStyle::PreferUnquoted,
@@ -974,11 +1124,15 @@ mod test {
         }],
     )]
     #[case(
-        r#"((identifier) @variable.builtin
+        &[(
+            TEST_URI.clone(),
+            r#"((identifier) @variable.builtin
 (#set! @variable.builtin self _ "bar"))"#,
-        &[SymbolInfo { label: String::from("identifier"), named: true }],
-        &["operator"],
-        &["supertype"],
+            [SymbolInfo { label: String::from("identifier"), named: true }].to_vec(),
+            ["operator"].to_vec(),
+            ["supertype"].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             diagnostic_options: DiagnosticOptions {
                 string_argument_style: StringArgumentStyle::PreferQuoted,
@@ -1030,10 +1184,14 @@ mod test {
         }],
     )]
     #[case(
-        r#"(identifier) @_capture"#,
-        &[SymbolInfo { label: String::from("identifier"), named: true }],
-        &["operator"],
-        &["supertype"],
+        &[(
+            TEST_URI.clone(),
+            r#"(identifier) @_capture"#,
+            [SymbolInfo { label: String::from("identifier"), named: true }].to_vec(),
+            ["operator"].to_vec(),
+            ["supertype"].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             diagnostic_options: DiagnosticOptions::default(),
             valid_predicates: Default::default(),
@@ -1069,11 +1227,15 @@ mod test {
         }],
     )]
     #[case(
-        r#"((identifier) @variable.builtin
+        &[(
+            TEST_URI.clone(),
+            r#"((identifier) @variable.builtin
 (#set! @variable.builtin self asdf bar @variable.builtin))"#,
-        &[SymbolInfo { label: String::from("identifier"), named: true }],
-        &["operator"],
-        &["supertype"],
+            [SymbolInfo { label: String::from("identifier"), named: true }].to_vec(),
+            ["operator"].to_vec(),
+            ["supertype"].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
@@ -1110,11 +1272,15 @@ mod test {
         ]
     )]
     #[case(
-        r#"((identifier) @variable.builtin
+        &[(
+            TEST_URI.clone(),
+            r#"((identifier) @variable.builtin
 (#set! @variable.builtin self asdf bar @variable.builtin))"#,
-        &[SymbolInfo { label: String::from("identifier"), named: true }],
-        &["operator"],
-        &["supertype"],
+            [SymbolInfo { label: String::from("identifier"), named: true }].to_vec(),
+            ["operator"].to_vec(),
+            ["supertype"].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
@@ -1136,11 +1302,15 @@ mod test {
         &[]
     )]
     #[case(
-        r#"((identifier) @variable.builtin
+        &[(
+            TEST_URI.clone(),
+            r#"((identifier) @variable.builtin
 (#set! @variable.builtin))"#,
-        &[SymbolInfo { label: String::from("identifier"), named: true }],
-        &["operator"],
-        &["supertype"],
+            [SymbolInfo { label: String::from("identifier"), named: true }].to_vec(),
+            ["operator"].to_vec(),
+            ["supertype"].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
@@ -1162,11 +1332,15 @@ mod test {
         &[]
     )]
     #[case(
-        r#"((identifier) @variable.builtin
+        &[(
+            TEST_URI.clone(),
+            r#"((identifier) @variable.builtin
 (#set! @variable.builtin))"#,
-        &[SymbolInfo { label: String::from("identifier"), named: true }],
-        &["operator"],
-        &["supertype"],
+            [SymbolInfo { label: String::from("identifier"), named: true }].to_vec(),
+            ["operator"].to_vec(),
+            ["supertype"].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
@@ -1188,11 +1362,15 @@ mod test {
         &[]
     )]
     #[case(
-        r#"((identifier) @variable.builtin
+        &[(
+            TEST_URI.clone(),
+            r#"((identifier) @variable.builtin
 (#set! @variable.builtin self))"#,
-        &[SymbolInfo { label: String::from("identifier"), named: true }],
-        &["operator"],
-        &["supertype"],
+            [SymbolInfo { label: String::from("identifier"), named: true }].to_vec(),
+            ["operator"].to_vec(),
+            ["supertype"].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
@@ -1214,11 +1392,15 @@ mod test {
         &[]
     )]
     #[case(
-        r#"((identifier) @variable.builtin
+        &[(
+            TEST_URI.clone(),
+            r#"((identifier) @variable.builtin
 (#set! @variable.builtin self asdf))"#,
-        &[SymbolInfo { label: String::from("identifier"), named: true }],
-        &["operator"],
-        &["supertype"],
+            [SymbolInfo { label: String::from("identifier"), named: true }].to_vec(),
+            ["operator"].to_vec(),
+            ["supertype"].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
@@ -1255,11 +1437,15 @@ mod test {
         ]
     )]
     #[case(
-        r#"((identifier) @variable.builtin
+        &[(
+            TEST_URI.clone(),
+            r#"((identifier) @variable.builtin
 (#sett! @variable.builtin self asdf bar @variable.builtin))"#,
-        &[SymbolInfo { label: String::from("identifier"), named: true }],
-        &["operator"],
-        &["supertype"],
+            [SymbolInfo { label: String::from("identifier"), named: true }].to_vec(),
+            ["operator"].to_vec(),
+            ["supertype"].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
@@ -1296,13 +1482,17 @@ mod test {
         ]
     )]
     #[case(
-        r#""\p" @_cap  "\\" @_anothercap "#,
-        &[
-            SymbolInfo { label: String::from(r"\\"), named: false },
-            SymbolInfo { label: String::from("p"), named: false }
-        ],
-        &[],
-        &[],
+        &[(
+            TEST_URI.clone(),
+            r#""\p" @_cap  "\\" @_anothercap "#,
+            [
+                SymbolInfo { label: String::from(r"\\"), named: false },
+                SymbolInfo { label: String::from("p"), named: false }
+            ].to_vec(),
+            [].to_vec(),
+            [].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             diagnostic_options: DiagnosticOptions { warn_unused_underscore_captures: false, ..Default::default() },
             ..Default::default()
@@ -1325,10 +1515,14 @@ mod test {
         }],
     )]
     #[case(
-        r#"(identifier (identifier) (#set! foo bar))"#,
-        &[SymbolInfo { label: String::from(r"identifier"), named: true }],
-        &[],
-        &[],
+        &[(
+            TEST_URI.clone(),
+            r#"(identifier (identifier) (#set! foo bar))"#,
+            [SymbolInfo { label: String::from(r"identifier"), named: true }].to_vec(),
+            [].to_vec(),
+            [].to_vec(),
+            [].to_vec(),
+        )],
         Options::default(),
         &[Diagnostic {
             range: Range {
@@ -1343,10 +1537,14 @@ mod test {
         }],
     )]
     #[case(
-        r#"(identifier name: (identifier) @capture)  (identifier asdf: (identifier) @capture)"#,
-        &[SymbolInfo { label: String::from(r"identifier"), named: true }],
-        &["name"],
-        &[],
+        &[(
+            TEST_URI.clone(),
+            r#"(identifier name: (identifier) @capture)  (identifier asdf: (identifier) @capture)"#,
+            [SymbolInfo { label: String::from(r"identifier"), named: true }].to_vec(),
+            ["name"].to_vec(),
+            [].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([(String::from("capture"), String::default())]))]),
@@ -1363,10 +1561,14 @@ mod test {
         }],
     )]
     #[case(
-        r#"(identifier !asdf) @capture"#,
-        &[SymbolInfo { label: String::from(r"identifier"), named: true }],
-        &["name"],
-        &[],
+        &[(
+            TEST_URI.clone(),
+            r#"(identifier !asdf) @capture"#,
+            [SymbolInfo { label: String::from(r"identifier"), named: true }].to_vec(),
+            ["name"].to_vec(),
+            [].to_vec(),
+            [].to_vec(),
+        )],
         Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([(String::from("capture"), String::default())]))]),
@@ -1382,47 +1584,136 @@ mod test {
             ..Default::default()
         }],
     )]
+    #[case(
+        &[(
+            TEST_URI.clone(),
+            r#"; inherits: css
+(identifier) @capture"#,
+            [SymbolInfo { label: String::from(r"identifier"), named: true }].to_vec(),
+            [].to_vec(),
+            [].to_vec(),
+            vec![(10, 13, Some(TEST_URI_2.clone()))],
+        ), (
+            TEST_URI_2.clone(),
+            r#"(squid)"#,
+            [SymbolInfo { label: String::from(r"squid"), named: true }].to_vec(),
+            [].to_vec(),
+            [].to_vec(),
+            [].to_vec(),
+        )
+        ],
+        Options {
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([(String::from("capture"), String::default())]))]),
+            ..Default::default()
+        },
+        &[Diagnostic {
+            message: String::from("Issues in module"),
+            range: Range::new(Position::new(0, 10), Position::new(0, 13)),
+            severity: ERROR_SEVERITY,
+            related_information: Some(vec![
+                DiagnosticRelatedInformation {
+                    location: Location {
+                        uri: TEST_URI_2.clone(),
+                        range: Range::new(Position::new(0, 0), Position::new(0, 7))
+                    },
+                    message: String::from("This pattern has no captures, and will not be processed")
+                },
+                DiagnosticRelatedInformation {
+                    location: Location {
+                        uri: TEST_URI_2.clone(),
+                        range: Range::new(Position::new(0, 1), Position::new(0, 6))
+                    },
+                    message: String::from("Invalid node type: \"squid\"")
+                },
+            ]),
+            ..Default::default()
+        }],
+    )]
+    #[case(
+        &[(
+            TEST_URI.clone(),
+            r#"; inherits: css
+(identifier) @capture"#,
+            [SymbolInfo { label: String::from(r"identifier"), named: true }].to_vec(),
+            [].to_vec(),
+            [].to_vec(),
+            vec![(10, 13, Some(TEST_URI_2.clone()))],
+        ), (
+            TEST_URI_2.clone(),
+            r#"(identifier)"#,
+            [SymbolInfo { label: String::from(r"squid"), named: true }].to_vec(),
+            [].to_vec(),
+            [].to_vec(),
+            [].to_vec(),
+        )
+        ],
+        Options {
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([(String::from("capture"), String::default())]))]),
+            ..Default::default()
+        },
+        &[Diagnostic {
+            message: String::from("Issues in module"),
+            range: Range::new(Position::new(0, 10), Position::new(0, 13)),
+            severity: WARNING_SEVERITY,
+            related_information: Some(vec![
+                DiagnosticRelatedInformation {
+                    location: Location {
+                        uri: TEST_URI_2.clone(),
+                        range: Range::new(Position::new(0, 0), Position::new(0, 12))
+                    },
+                    message: String::from("This pattern has no captures, and will not be processed")
+                },
+            ]),
+            ..Default::default()
+        }],
+    )]
     #[tokio::test(flavor = "current_thread")]
     async fn server_diagnostics(
-        #[case] source: &str,
-        #[case] symbols: &[SymbolInfo],
-        #[case] fields: &[&str],
-        #[case] supertypes: &[&str],
+        #[case] documents: &[Document<'_>],
         #[case] options: Options,
         #[case] expected_diagnostics: &[Diagnostic],
     ) {
         // Arrange
-        let service = initialize_server(
-            &[(
-                TEST_URI.clone(),
-                source,
-                symbols.to_vec(),
-                fields.to_vec(),
-                supertypes.to_vec(),
-            )],
-            &Default::default(),
-        )
-        .await;
-        let doc = service.inner().document_map.get(&TEST_URI).unwrap();
-        let language_name = doc.language_name.clone().unwrap();
-        let language_data = service
-            .inner()
-            .language_map
-            .get(&language_name)
-            .as_deref()
-            .cloned();
+        let mut service = initialize_server(documents, &options).await;
 
         // Act
-        let diagnostics = get_diagnostics(
-            &TEST_URI,
-            doc.clone(),
-            language_data,
-            Arc::new(options.clone().into()),
-            false,
-        )
-        .await;
+        let actual_diagnostics = service
+            .ready()
+            .await
+            .unwrap()
+            .call(lsp_request_to_jsonrpc_request::<DocumentDiagnosticRequest>(
+                DocumentDiagnosticParams {
+                    text_document: TextDocumentIdentifier {
+                        uri: TEST_URI.clone(),
+                    },
+                    identifier: None,
+                    previous_result_id: None,
+                    work_done_progress_params: Default::default(),
+                    partial_result_params: Default::default(),
+                },
+            ))
+            .await
+            .map_err(|e| format!("textDocument/completion call returned error: {e}"))
+            .unwrap();
 
         // Assert
-        assert_eq!(diagnostics, expected_diagnostics)
+        assert_eq!(
+            Some(
+                lsp_response_to_jsonrpc_response::<DocumentDiagnosticRequest>(
+                    DocumentDiagnosticReportResult::Report(DocumentDiagnosticReport::Full(
+                        RelatedFullDocumentDiagnosticReport {
+                            related_documents: None,
+                            full_document_diagnostic_report: FullDocumentDiagnosticReport {
+                                result_id: None,
+                                items: expected_diagnostics.to_vec(),
+                            },
+                        }
+                    ),)
+                )
+            ),
+            actual_diagnostics
+        );
     }
 }

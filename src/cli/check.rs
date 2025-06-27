@@ -46,7 +46,8 @@ pub async fn check_directories(
         let language_name = util::get_language_name(&uri, &options);
         let language_data = language_name.and_then(|name| {
             LANGUAGE_CACHE.get(&name).as_deref().cloned().or_else(|| {
-                util::get_language(&name, &options).map(|lang| Arc::new(init_language_data(lang)))
+                util::get_language(&name, &options)
+                    .map(|lang| Arc::new(init_language_data(lang, name)))
             })
         });
         if let Some(lang) = language_data {

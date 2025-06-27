@@ -355,7 +355,14 @@ An error node", BTreeMap::from([(String::from("error"), String::from("An error n
     ) {
         // Arrange
         let mut service = initialize_server(
-            &[(TEST_URI.clone(), source, Vec::new(), Vec::new(), supertypes)],
+            &[(
+                TEST_URI.clone(),
+                source,
+                Vec::new(),
+                Vec::new(),
+                supertypes,
+                Vec::new(),
+            )],
             &Options {
                 valid_captures: HashMap::from([(String::from("test"), captures)]),
                 valid_predicates: BTreeMap::from([(
