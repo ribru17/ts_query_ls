@@ -115,6 +115,7 @@ struct DocumentData {
     tree: Tree,
     version: i32,
     language_name: Option<String>,
+    imported_uris: Vec<(u32, u32, Option<Url>)>,
 }
 
 #[derive(Default, Debug)]

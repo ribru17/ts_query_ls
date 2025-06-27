@@ -1,13 +1,13 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use ropey::Rope;
-use tower_lsp::lsp_types::DidOpenTextDocumentParams;
+use tower_lsp::lsp_types::{DidOpenTextDocumentParams, Url};
 use tracing::info;
-use tree_sitter::{Language, Parser};
+use tree_sitter::{Language, Parser, Tree};
 
 use crate::{
     Backend, DocumentData, LanguageData, QUERY_LANGUAGE, SymbolInfo,
-    util::{get_language, get_language_name},
+    util::{get_imported_uris, get_language, get_language_name},
 };
 
 pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
@@ -23,6 +23,19 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
 
     let options = backend.options.read().await;
     let language_name = get_language_name(uri, &options);
+    let imported_uris = get_imported_uris(backend, uri, &rope, &tree).await;
+
+    async fn populate_import_documents(backend: &Backend, uri: &Url, rope: &Rope, tree: &Tree) {
+        let imported_uris = get_imported_uris(backend, uri, &rope, &tree).await;
+        f
+    }
+
+    // for (start, end, uri) in imported_uris.iter() {
+    //     if let Some(uri) = uri {
+    //         if !backend.document_map.contains_key(uri) {
+    //         }
+    //     }
+    // }
 
     // Track the document
     let version = params.text_document.version;
@@ -33,6 +46,7 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
             tree,
             language_name: language_name.clone(),
             version,
+            imported_uris,
         },
     );
 

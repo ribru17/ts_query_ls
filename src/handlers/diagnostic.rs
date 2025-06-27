@@ -191,6 +191,15 @@ pub async fn get_diagnostics(
     })
     .await;
 
+    let mut diagnostics = document.imported_uris.iter().flat_map(|(start, end, uri)| {
+        if let Some(uri) = uri {
+            // TODO: Get document here
+            return get_diagnostics(uri, document, language_data, options_arc, cache);
+        } else {
+            return Vec::new();
+        }
+    });
+
     let mut diagnostics = handle.unwrap_or_default();
 
     let options = options_arc.read().await;
