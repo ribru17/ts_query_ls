@@ -51,7 +51,7 @@ pub async fn check_directories(
         if let Some(lang) = language_data {
             if let Ok(source) = fs::read_to_string(&path) {
                 return Some(tokio::spawn(async move {
-                    lint_file(
+                    if let Some(new_source) = lint_file(
                         &path,
                         &uri,
                         &source,
@@ -60,7 +60,13 @@ pub async fn check_directories(
                         Some(lang),
                         &exit_code,
                     )
-                    .await;
+                    .await
+                    {
+                        if fs::write(&path, new_source).is_err() {
+                            eprintln!("Failed to write {:?}", path.canonicalize().unwrap());
+                            exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                    };
                 }));
             } else {
                 eprintln!("Failed to read {:?}", path.canonicalize().unwrap());
