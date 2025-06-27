@@ -21,7 +21,7 @@ static SEM_TOK_QUERY: LazyLock<Query> = LazyLock::new(|| {
         r#"(named_node (identifier) @ident)
 (missing_node (identifier) @ident)
 (program
-  . (comment)+ @comment)
+  . (comment) @comment)
 "#,
     )
     .unwrap()
@@ -122,6 +122,9 @@ async fn get_semantic_tokens(
                 }
                 // Highlight imported modules
                 "comment" => {
+                    if start_row != 0 {
+                        continue;
+                    }
                     let Some(pre_text) = INHERITS_REGEX.captures(&node_text).and_then(|c| c.get(1))
                     else {
                         continue;
