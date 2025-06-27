@@ -81,6 +81,9 @@ pub(super) async fn lint_file(
             edits.append(&mut changes);
         }
     }
+    if !fix || edits.is_empty() {
+        return None;
+    }
     edits.sort_unstable_by(|a, b| b.range.start.cmp(&a.range.start));
     let mut rope = doc.rope;
     for edit in edits {
@@ -116,7 +119,7 @@ pub async fn lint_directories(directories: &[PathBuf], config: String, fix: bool
                 if let Some(new_source) =
                     lint_file(&path, &uri, &source, options, fix, None, &exit_code).await
                 {
-                    if fix && fs::write(&path, new_source).is_err() {
+                    if fs::write(&path, new_source).is_err() {
                         eprintln!("Failed to write {:?}", path.canonicalize().unwrap());
                         exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
                     }
