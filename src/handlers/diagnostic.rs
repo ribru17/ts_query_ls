@@ -583,7 +583,7 @@ fn validate_predicate<'a>(
     }) = param_spec_iter.next()
     {
         diagnostics.push(Diagnostic {
-            message: format!("Missing parameter of type \"{}\"", type_),
+            message: format!("Missing parameter of type \"{type_}\""),
             severity: WARNING_SEVERITY,
             range: predicate_node.parent().unwrap().lsp_range(rope),
             ..Default::default()

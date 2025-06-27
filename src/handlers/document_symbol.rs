@@ -2,7 +2,7 @@ use tower_lsp::{
     jsonrpc::Result,
     lsp_types::{DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse, SymbolKind},
 };
-use tracing::{error, warn};
+use tracing::warn;
 use tree_sitter::{QueryCursor, StreamingIterator};
 
 use crate::{
@@ -26,17 +26,13 @@ pub async fn document_symbol(
 
     let provider = &TextProviderRope(rope);
     let mut cursor = QueryCursor::new();
-    let query = &CAPTURES_QUERY;
-    let mut matches = cursor.matches(query, tree.root_node(), provider);
+    let mut matches = cursor.matches(&CAPTURES_QUERY, tree.root_node(), provider);
 
     while let Some(match_) = matches.next() {
         for capture in match_.captures {
             let capture_node = capture.node;
             let node_text = capture_node.text(rope);
-            let Some(parent) = capture_node.parent() else {
-                error!("Error parsing capture {node_text}");
-                continue;
-            };
+            let parent = capture_node.parent().unwrap();
             #[allow(deprecated)]
             document_symbols.push(DocumentSymbol {
                 name: node_text,

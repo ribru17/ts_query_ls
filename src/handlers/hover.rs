@@ -88,7 +88,7 @@ pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hove
                     .get(&base)
                     .and_then(|c| c.get(&capture_text[1..].to_string()))
             }) {
-                let value = format!("## `{}`\n\n{}", capture_text, description);
+                let value = format!("## `{capture_text}`\n\n{description}");
                 Some(Hover {
                     range,
                     contents: HoverContents::Markup(MarkupContent {
@@ -111,7 +111,7 @@ pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hove
                 } else {
                     subtypes.iter().fold(
                         format!("Subtypes of `({})`:\n\n```query", sym.label),
-                        |acc, subtype| format!("{acc}\n{}", subtype),
+                        |acc, subtype| format!("{acc}\n{subtype}"),
                     ) + "\n```"
                 };
                 Some(Hover {
@@ -149,7 +149,7 @@ pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hove
                 for param in &predicate.parameters {
                     value += format!("- Type: `{}` ({})\n", param.type_, param.arity).as_str();
                     if let Some(desc) = &param.description {
-                        value += format!("  - {}\n", desc).as_str();
+                        value += format!("  - {desc}\n").as_str();
                     }
                 }
                 Some(Hover {

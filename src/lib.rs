@@ -278,7 +278,7 @@ fn expand_env_vars(input: &str) -> String {
                 result.push_str(&val);
             } else {
                 // Leave untouched if not found
-                result.push_str(&format!("${{{}}}", var_name));
+                result.push_str(&format!("${{{var_name}}}"));
             }
         } else {
             result.push(c);
