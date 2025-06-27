@@ -1,6 +1,6 @@
 use std::{
     fs::{self},
-    path::Path,
+    path::{Path, PathBuf},
     sync::LazyLock,
 };
 
@@ -14,6 +14,7 @@ use tree_sitter::{
     InputEdit, Language, Node, Point, Query, QueryCapture, QueryCursor, TextProvider, Tree,
     WasmStore,
 };
+use walkdir::WalkDir;
 
 use crate::{Backend, ENGINE, Options, QUERY_LANGUAGE};
 
@@ -383,4 +384,62 @@ pub fn capture_at_pos<'t>(
     }
 
     innermost_capture
+}
+
+pub fn get_scm_files(directories: &[PathBuf]) -> Vec<PathBuf> {
+    directories
+        .iter()
+        .flat_map(|directory| {
+            WalkDir::new(directory)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.file_type().is_file() && e.path().extension().is_some_and(|ext| ext == "scm")
+                })
+                .map(|e| e.path().to_owned())
+        })
+        .collect()
+}
+
+pub async fn get_file_uris(backend: &Backend, language_name: &str, query_type: &str) -> Vec<Url> {
+    let scm_files = get_scm_files(
+        &backend
+            .workspace_uris
+            .read()
+            .unwrap()
+            .iter()
+            .filter_map(|uri| uri.to_file_path().ok())
+            .collect::<Vec<_>>(),
+    );
+    let mut language_retrieval_regexes: Vec<Regex> = backend
+        .options
+        .read()
+        .await
+        .language_retrieval_patterns
+        .clone()
+        .iter()
+        .filter_map(|r| Regex::new(r).ok())
+        .collect();
+    language_retrieval_regexes.push(LANGUAGE_REGEX_1.clone());
+    language_retrieval_regexes.push(LANGUAGE_REGEX_2.clone());
+
+    let mut urls = Vec::new();
+
+    for scm_file in scm_files {
+        for re in &language_retrieval_regexes {
+            if let Some(lang_name) = re
+                .captures(&scm_file.canonicalize().unwrap().to_string_lossy())
+                .and_then(|caps| caps.get(1))
+            {
+                if lang_name.as_str() == language_name
+                    && scm_file.file_stem().is_some_and(|stem| stem == query_type)
+                {
+                    urls.push(Url::from_file_path(&scm_file).unwrap());
+                    break;
+                }
+            }
+        }
+    }
+
+    urls
 }

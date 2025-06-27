@@ -12,10 +12,8 @@ use ts_query_ls::Options;
 use crate::{
     DocumentData, LanguageData, QUERY_LANGUAGE,
     handlers::{code_action::diag_to_code_action, diagnostic::get_diagnostics},
-    util::{edit_rope, get_language_name},
+    util::{edit_rope, get_language_name, get_scm_files},
 };
-
-use super::get_scm_files;
 
 pub(super) async fn lint_file(
     path: &Path,
