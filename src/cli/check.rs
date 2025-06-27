@@ -9,9 +9,13 @@ use futures::future::join_all;
 use tower_lsp::lsp_types::Url;
 use ts_query_ls::Options;
 
-use crate::{LanguageData, handlers::did_open::init_language_data, util};
+use crate::{
+    LanguageData,
+    handlers::did_open::init_language_data,
+    util::{self, get_scm_files},
+};
 
-use super::{format::format_directories, get_scm_files, lint::lint_file};
+use super::{format::format_directories, lint::lint_file};
 
 static LANGUAGE_CACHE: LazyLock<DashMap<String, Arc<LanguageData>>> = LazyLock::new(DashMap::new);
 

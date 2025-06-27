@@ -7,9 +7,7 @@ use std::{
 use futures::future::join_all;
 use ropey::Rope;
 
-use crate::{QUERY_LANGUAGE, handlers::formatting};
-
-use super::get_scm_files;
+use crate::{QUERY_LANGUAGE, handlers::formatting, util::get_scm_files};
 
 pub async fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
     if directories.is_empty() {

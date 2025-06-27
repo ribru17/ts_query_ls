@@ -17,7 +17,7 @@ pub async fn initialize(backend: &Backend, params: InitializeParams) -> Result<I
         {
             ws_uris.push(root_uri);
         } else if let Some(ws_folders) = params.workspace_folders {
-            ws_uris.extend(ws_folders.iter().map(|folder| folder.uri.clone()));
+            ws_uris.extend(ws_folders.into_iter().map(|folder| folder.uri));
         }
     }
 

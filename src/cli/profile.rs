@@ -11,9 +11,11 @@ use tower_lsp::lsp_types::Url;
 use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator as _};
 use ts_query_ls::Options;
 
-use crate::{LanguageData, QUERY_LANGUAGE, handlers::did_open::init_language_data, util};
-
-use super::get_scm_files;
+use crate::{
+    LanguageData, QUERY_LANGUAGE,
+    handlers::did_open::init_language_data,
+    util::{self, get_scm_files},
+};
 
 static LANGUAGE_CACHE: LazyLock<DashMap<String, Arc<LanguageData>>> = LazyLock::new(DashMap::new);
 
