@@ -20,6 +20,9 @@ fn get_imported_module_under_cursor(
     tree: &Tree,
     position: &Position,
 ) -> Option<String> {
+    if position.line != 0 {
+        return None;
+    }
     let ts_point = position.to_ts_point(rope);
     let current_node = tree
         .root_node()
