@@ -44,10 +44,12 @@ pub(super) async fn lint_file(
         return None;
     }
 
+    let path_str = path.to_str().unwrap();
     let mut edits = Vec::new();
     if !fix {
         exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
     }
+    let mut unfixed_issues = 0;
     for diagnostic in diagnostics {
         if !fix {
             let kind = match diagnostic.severity {
@@ -60,13 +62,14 @@ pub(super) async fn lint_file(
             eprintln!(
                 "{} in \"{}\" on line {}, col {}:\n  {}",
                 kind,
-                path.to_str().unwrap(),
+                path_str,
                 diagnostic.range.start.line,
                 diagnostic.range.start.character,
                 diagnostic.message
             );
         } else {
             let Some(action) = diag_to_code_action(&doc.tree, &doc.rope, diagnostic, uri) else {
+                unfixed_issues += 1;
                 continue;
             };
             let CodeActionOrCommand::CodeAction(CodeAction {
@@ -80,6 +83,10 @@ pub(super) async fn lint_file(
             };
             edits.append(&mut changes);
         }
+    }
+    if unfixed_issues > 0 {
+        let plurality = if unfixed_issues > 1 { "s" } else { "" };
+        println!("{path_str}: {unfixed_issues} issue{plurality} could not be fixed automatically");
     }
     if !fix || edits.is_empty() {
         return None;
