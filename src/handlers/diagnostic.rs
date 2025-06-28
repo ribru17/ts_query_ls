@@ -88,13 +88,36 @@ pub async fn diagnostic(
         .and_then(|name| backend.language_map.get(name))
         .as_deref()
         .cloned();
+    let mut items = get_diagnostics(
+        uri,
+        document.clone(),
+        language_data.clone(),
+        backend.options.clone(),
+        true,
+    )
+    .await;
+    if let Some(uri) = document
+        .imported_uris
+        .first()
+        .and_then(|(_, _, uri)| uri.clone())
+    {
+        let doc = backend.document_map.get(&uri).unwrap().clone();
+        items.extend(
+            get_diagnostics(&uri, doc, language_data, backend.options.clone(), true)
+                .await
+                .into_iter()
+                .map(|mut diag| {
+                    diag.range = Default::default();
+                    diag
+                }),
+        );
+    }
     Ok(DocumentDiagnosticReportResult::Report(
         DocumentDiagnosticReport::Full(RelatedFullDocumentDiagnosticReport {
             related_documents: None,
             full_document_diagnostic_report: FullDocumentDiagnosticReport {
                 result_id: None,
-                items: get_diagnostics(uri, document, language_data, backend.options.clone(), true)
-                    .await,
+                items,
             },
         }),
     ))
@@ -190,15 +213,6 @@ pub async fn get_diagnostics(
         diagnostics
     })
     .await;
-
-    let mut diagnostics = document.imported_uris.iter().flat_map(|(start, end, uri)| {
-        if let Some(uri) = uri {
-            // TODO: Get document here
-            return get_diagnostics(uri, document, language_data, options_arc, cache);
-        } else {
-            return Vec::new();
-        }
-    });
 
     let mut diagnostics = handle.unwrap_or_default();
 
@@ -590,7 +604,7 @@ fn validate_predicate<'a>(
     }) = param_spec_iter.next()
     {
         diagnostics.push(Diagnostic {
-            message: format!("Missing parameter of type \"{}\"", type_),
+            message: format!("Missing parameter of type \"{type_}\""),
             severity: WARNING_SEVERITY,
             range: predicate_node.parent().unwrap().lsp_range(rope),
             ..Default::default()
