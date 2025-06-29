@@ -18,10 +18,13 @@
     },
     "language_retrieval_patterns": {
       "description": "A list of patterns to aid the LSP in finding a language, given a file path. Patterns must have one capture group which represents the language name. Ordered from highest to lowest precedence.",
-      "default": [],
+      "default": [
+        "queries/([^/]+)/[^/]+\\.scm$",
+        "tree-sitter-([^/]+)/queries/[^/]+\\.scm$"
+      ],
       "type": "array",
       "items": {
-        "type": "string"
+        "$ref": "#/definitions/Regex"
       }
     },
     "parser_aliases": {
@@ -227,6 +230,11 @@
           ]
         }
       ]
+    },
+    "Regex": {
+      "description": "A regular expression string (compiled at deserialization time)",
+      "type": "string",
+      "format": "regex"
     },
     "StringArgumentStyle": {
       "oneOf": [

@@ -54,6 +54,8 @@ pub mod helpers {
         parser
             .set_language(&QUERY_LANGUAGE)
             .expect("Error loading Query grammar");
+        let options_value = serde_json::to_value(options).unwrap();
+        let options = &serde_json::from_value::<Options>(options_value.clone()).unwrap();
         let arced_options = Arc::new(tokio::sync::RwLock::new(options.clone()));
         let (mut service, _socket) = LspService::build(|client| Backend {
             _client: client,
@@ -115,6 +117,7 @@ pub mod helpers {
                 InitializeParams {
                     capabilities: ClientCapabilities::default(),
                     root_uri: Some(Url::parse("file:///tmp/").unwrap()),
+                    initialization_options: Some(options_value),
                     ..Default::default()
                 },
             ))
@@ -260,6 +263,11 @@ mod test {
 
         // Assert
         let backend = service.inner();
+        // Serialize and re-serialize to populate the required fields that are added at
+        // deserialization time (default language retrieval regexes, `not-` predicates)
+        let options =
+            &serde_json::from_value::<Options>(serde_json::to_value(options).unwrap()).unwrap();
+
         let actual_options = backend.options.read().await;
         assert_eq!(actual_options.deref(), options);
         assert_eq!(backend.document_map.len(), documents.len());

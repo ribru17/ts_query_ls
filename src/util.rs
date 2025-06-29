@@ -18,10 +18,6 @@ use walkdir::WalkDir;
 
 use crate::{Backend, ENGINE, Options, QUERY_LANGUAGE};
 
-static LANGUAGE_REGEX_1: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"queries/([^/]+)/[^/]+\.scm$").unwrap());
-static LANGUAGE_REGEX_2: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"tree-sitter-([^/]+)/queries/[^/]+\.scm$").unwrap());
 pub static CAPTURES_QUERY: LazyLock<Query> =
     LazyLock::new(|| Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap());
 pub static INHERITS_REGEX: LazyLock<Regex> =
@@ -205,14 +201,7 @@ pub fn lsp_textdocchange_to_ts_inputedit(
 const DYLIB_EXTENSIONS: [&str; 3] = [".so", ".dll", ".dylib"];
 
 pub fn get_language_name(uri: &Url, options: &Options) -> Option<String> {
-    let mut language_retrieval_regexes: Vec<Regex> = options
-        .language_retrieval_patterns
-        .clone()
-        .iter()
-        .map(|r| Regex::new(r).unwrap())
-        .collect();
-    language_retrieval_regexes.push(LANGUAGE_REGEX_1.clone());
-    language_retrieval_regexes.push(LANGUAGE_REGEX_2.clone());
+    let language_retrieval_regexes = &options.language_retrieval_patterns;
     let mut captures = None;
     for re in language_retrieval_regexes {
         if let Some(caps) = re.captures(uri.as_str()) {
@@ -321,33 +310,24 @@ pub async fn set_configuration_options(
     workspace_uris: Vec<Url>,
 ) {
     let mut options = backend.options.write().await;
+    *options = Options::default();
+
     if let Some(init_options) = init_options {
         if let Ok(parsed_options) = serde_json::from_value::<Options>(init_options) {
-            options.parser_install_directories = parsed_options.parser_install_directories;
-            options.parser_aliases = parsed_options.parser_aliases;
-            options.language_retrieval_patterns = parsed_options.language_retrieval_patterns;
-            options.valid_captures = parsed_options.valid_captures;
-            options.valid_predicates = parsed_options.valid_predicates;
-            options.valid_directives = parsed_options.valid_directives;
-            options.diagnostic_options = parsed_options.diagnostic_options;
+            *options = parsed_options;
         } else {
             warn!("Unable to parse configuration settings!");
         };
     }
 
-    if let Some(file_options) = get_first_valid_file_config(workspace_uris) {
+    if let Some(mut file_options) = get_first_valid_file_config(workspace_uris) {
         // Merge parser_install_directories, since these are dependent on the local user's
         // installation paths
-        let mut config_file_install_dirs = file_options.parser_install_directories;
-        config_file_install_dirs.extend(options.parser_install_directories.clone());
+        let mut config_file_install_dirs = options.parser_install_directories.clone();
+        config_file_install_dirs.append(&mut file_options.parser_install_directories);
+        file_options.parser_install_directories = config_file_install_dirs;
 
-        options.parser_install_directories = config_file_install_dirs;
-        options.parser_aliases = file_options.parser_aliases;
-        options.language_retrieval_patterns = file_options.language_retrieval_patterns;
-        options.valid_captures = file_options.valid_captures;
-        options.valid_predicates = file_options.valid_predicates;
-        options.valid_directives = file_options.valid_directives;
-        options.diagnostic_options = file_options.diagnostic_options;
+        *options = file_options;
     }
 }
 
@@ -411,22 +391,12 @@ pub async fn get_file_uris(backend: &Backend, language_name: &str, query_type: &
             .filter_map(|uri| uri.to_file_path().ok())
             .collect::<Vec<_>>(),
     );
-    let mut language_retrieval_regexes: Vec<Regex> = backend
-        .options
-        .read()
-        .await
-        .language_retrieval_patterns
-        .clone()
-        .iter()
-        .filter_map(|r| Regex::new(r).ok())
-        .collect();
-    language_retrieval_regexes.push(LANGUAGE_REGEX_1.clone());
-    language_retrieval_regexes.push(LANGUAGE_REGEX_2.clone());
+    let language_retrieval_regexes = &backend.options.read().await.language_retrieval_patterns;
 
     let mut urls = Vec::new();
 
     for scm_file in scm_files {
-        for re in &language_retrieval_regexes {
+        for re in language_retrieval_regexes {
             if let Some(lang_name) = re
                 .captures(&scm_file.canonicalize().unwrap().to_string_lossy())
                 .and_then(|caps| caps.get(1))

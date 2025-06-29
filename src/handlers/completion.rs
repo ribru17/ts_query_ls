@@ -549,6 +549,19 @@ mod test {
                 ..Default::default()
             },
             CompletionItem {
+                label: String::from("#not-eq?"),
+                kind: Some(CompletionItemKind::FUNCTION),
+                documentation: Some(tower_lsp::lsp_types::Documentation::MarkupContent(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: String::from("The inverse of `#eq?`, which is defined as follows:\n\nEquality check")
+                })),
+                insert_text_format: Some(InsertTextFormat::SNIPPET),
+                text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+                    range: Range { start: Position { line: 0, character: 24 }, end: Position { line: 0, character: 25 } },
+                    new_text: String::from("#not-eq? ${1:@capture} ${2:text}") })),
+                ..Default::default()
+            },
+            CompletionItem {
                 label: String::from("#set!"),
                 kind: Some(CompletionItemKind::FUNCTION),
                 documentation:
@@ -630,7 +643,7 @@ mod test {
         .await;
 
         // Act
-        let completions = service
+        let actual_completions = service
             .ready()
             .await
             .unwrap()
@@ -652,16 +665,16 @@ mod test {
             .unwrap();
 
         // Assert
-        let actual_completions = if expected_completions.is_empty() {
+        let expected_completions = if expected_completions.is_empty() {
             None
         } else {
             Some(CompletionResponse::Array(expected_completions.to_vec()))
         };
         assert_eq!(
-            completions,
             Some(lsp_response_to_jsonrpc_response::<Completion>(
-                actual_completions
-            ))
+                expected_completions
+            )),
+            actual_completions,
         );
     }
 }
