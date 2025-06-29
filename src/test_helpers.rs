@@ -65,6 +65,7 @@ pub mod helpers {
                         tree: parser.parse(*source, None).unwrap(),
                         version: 0,
                         language_name: get_language_name(uri, options),
+                        imported_uris: Vec::new(),
                     },
                 )
             })),

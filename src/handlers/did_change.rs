@@ -11,6 +11,8 @@ use crate::{
     },
 };
 
+use super::did_open::populate_import_documents;
+
 pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) {
     let uri = &params.text_document.uri;
     let mut lrrs: Vec<Regex> = backend
@@ -75,6 +77,7 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
 
     if recalculate_imports {
         let uris = get_imported_uris(backend, &lrrs, uri, &document.rope, &document.tree);
+        populate_import_documents(backend, &lrrs, &uris);
         document.imported_uris = uris;
     }
 }

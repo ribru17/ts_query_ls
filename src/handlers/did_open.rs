@@ -38,47 +38,7 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     lrrs.push(LANGUAGE_REGEX_2.clone());
     let imported_uris = get_imported_uris(backend, &lrrs, uri, &rope, &tree);
 
-    async fn populate_import_documents(
-        backend: &Backend,
-        lrrs: &Vec<Regex>,
-        imported_uris: &Vec<(u32, u32, Option<Url>)>,
-    ) {
-        for (_, _, uri) in imported_uris {
-            if let Some(uri) = uri {
-                if !backend.document_map.contains_key(uri) {
-                    let path = uri.to_file_path().unwrap();
-                    if let Ok(contents) = fs::read_to_string(path) {
-                        let rope = Rope::from_str(&contents);
-                        let mut parser = Parser::new();
-                        parser
-                            .set_language(&QUERY_LANGUAGE)
-                            .expect("Error loading Query grammar");
-                        let tree = parser.parse(&contents, None).unwrap();
-                        let nested_imported_uris =
-                            get_imported_uris(backend, lrrs, uri, &rope, &tree);
-                        backend.document_map.insert(
-                            uri.clone(),
-                            DocumentData {
-                                rope,
-                                tree,
-                                language_name: None,
-                                version: -1,
-                                imported_uris: nested_imported_uris.clone(),
-                            },
-                        );
-                        Box::pin(populate_import_documents(
-                            backend,
-                            lrrs,
-                            &nested_imported_uris,
-                        ))
-                        .await;
-                    };
-                }
-            }
-        }
-    }
-
-    populate_import_documents(backend, &lrrs, &imported_uris).await;
+    populate_import_documents(backend, &lrrs, &imported_uris);
 
     // Track the document
     let version = params.text_document.version;
@@ -172,6 +132,40 @@ pub fn init_language_data(lang: Language, name: String) -> LanguageData {
         symbols_set,
         supertype_map,
         language: Some(lang),
+    }
+}
+
+pub fn populate_import_documents(
+    backend: &Backend,
+    lrrs: &Vec<Regex>,
+    imported_uris: &Vec<(u32, u32, Option<Url>)>,
+) {
+    for (_, _, uri) in imported_uris {
+        if let Some(uri) = uri {
+            if !backend.document_map.contains_key(uri) {
+                let path = uri.to_file_path().unwrap();
+                if let Ok(contents) = fs::read_to_string(path) {
+                    let rope = Rope::from_str(&contents);
+                    let mut parser = Parser::new();
+                    parser
+                        .set_language(&QUERY_LANGUAGE)
+                        .expect("Error loading Query grammar");
+                    let tree = parser.parse(&contents, None).unwrap();
+                    let nested_imported_uris = get_imported_uris(backend, lrrs, uri, &rope, &tree);
+                    backend.document_map.insert(
+                        uri.clone(),
+                        DocumentData {
+                            rope,
+                            tree,
+                            language_name: None,
+                            version: -1,
+                            imported_uris: nested_imported_uris.clone(),
+                        },
+                    );
+                    populate_import_documents(backend, lrrs, &nested_imported_uris)
+                };
+            }
+        }
     }
 }
 
