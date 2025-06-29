@@ -3,6 +3,7 @@ use std::{
     fs,
 };
 
+use regex::Regex;
 use ropey::Rope;
 use tower_lsp::lsp_types::{DidOpenTextDocumentParams, Url};
 use tracing::info;
@@ -10,7 +11,9 @@ use tree_sitter::{Language, Parser};
 
 use crate::{
     Backend, DocumentData, LanguageData, QUERY_LANGUAGE, SymbolInfo,
-    util::{get_imported_uris, get_language, get_language_name},
+    util::{
+        LANGUAGE_REGEX_1, LANGUAGE_REGEX_2, get_imported_uris, get_language, get_language_name,
+    },
 };
 
 pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
@@ -26,10 +29,18 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
 
     let options = backend.options.read().await;
     let language_name = get_language_name(uri, &options);
-    let imported_uris = get_imported_uris(backend, uri, &rope, &tree).await;
+    let mut lrrs: Vec<Regex> = options
+        .language_retrieval_patterns
+        .iter()
+        .map(|pat| Regex::new(pat).unwrap())
+        .collect();
+    lrrs.push(LANGUAGE_REGEX_1.clone());
+    lrrs.push(LANGUAGE_REGEX_2.clone());
+    let imported_uris = get_imported_uris(backend, &lrrs, uri, &rope, &tree);
 
     async fn populate_import_documents(
         backend: &Backend,
+        lrrs: &Vec<Regex>,
         imported_uris: &Vec<(u32, u32, Option<Url>)>,
     ) {
         for (_, _, uri) in imported_uris {
@@ -44,7 +55,7 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
                             .expect("Error loading Query grammar");
                         let tree = parser.parse(&contents, None).unwrap();
                         let nested_imported_uris =
-                            get_imported_uris(backend, uri, &rope, &tree).await;
+                            get_imported_uris(backend, lrrs, uri, &rope, &tree);
                         backend.document_map.insert(
                             uri.clone(),
                             DocumentData {
@@ -55,14 +66,19 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
                                 imported_uris: nested_imported_uris.clone(),
                             },
                         );
-                        Box::pin(populate_import_documents(backend, &nested_imported_uris)).await;
+                        Box::pin(populate_import_documents(
+                            backend,
+                            lrrs,
+                            &nested_imported_uris,
+                        ))
+                        .await;
                     };
                 }
             }
         }
     }
 
-    populate_import_documents(backend, &imported_uris).await;
+    populate_import_documents(backend, &lrrs, &imported_uris).await;
 
     // Track the document
     let version = params.text_document.version;

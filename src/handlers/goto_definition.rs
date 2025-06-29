@@ -1,3 +1,4 @@
+use regex::Regex;
 use ropey::Rope;
 use tower_lsp::{
     jsonrpc::Result,
@@ -9,9 +10,9 @@ use tree_sitter::{Parser, QueryCursor, Tree};
 use crate::{
     Backend, QUERY_LANGUAGE,
     util::{
-        CAPTURES_QUERY, INHERITS_REGEX, NodeUtil, TextProviderRope, ToTsPoint,
-        get_current_capture_node, get_file_uris, get_references, lsp_position_to_byte_offset,
-        uri_to_basename,
+        CAPTURES_QUERY, INHERITS_REGEX, LANGUAGE_REGEX_1, LANGUAGE_REGEX_2, NodeUtil,
+        TextProviderRope, ToTsPoint, get_current_capture_node, get_file_uris, get_references,
+        lsp_position_to_byte_offset, uri_to_basename,
     },
 };
 
@@ -54,12 +55,23 @@ pub async fn goto_definition(
     let rope = &doc.rope;
     let tree = &doc.tree;
     let cur_pos = params.text_document_position_params.position;
+    // TODO: Parse regexes at deserialization time
+    let mut lrrs: Vec<Regex> = backend
+        .options
+        .read()
+        .await
+        .language_retrieval_patterns
+        .iter()
+        .map(|pat| Regex::new(pat).unwrap())
+        .collect();
+    lrrs.push(LANGUAGE_REGEX_1.clone());
+    lrrs.push(LANGUAGE_REGEX_2.clone());
 
     if let (Some(module), Some(query_name)) = (
         get_imported_module_under_cursor(rope, tree, &cur_pos),
         uri_to_basename(uri),
     ) {
-        let uris = get_file_uris(backend, &module, &query_name).await;
+        let uris = get_file_uris(backend, &lrrs, &module, &query_name);
         if uris.is_empty() {
             return Ok(None);
         }

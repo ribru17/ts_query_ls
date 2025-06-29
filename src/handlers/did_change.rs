@@ -1,14 +1,28 @@
+use regex::Regex;
 use tower_lsp::lsp_types::{DidChangeTextDocumentParams, Position, Range};
 use tracing::warn;
 use tree_sitter::Parser;
 
 use crate::{
     Backend, QUERY_LANGUAGE,
-    util::{edit_rope, lsp_textdocchange_to_ts_inputedit},
+    util::{
+        LANGUAGE_REGEX_1, LANGUAGE_REGEX_2, edit_rope, get_imported_uris,
+        lsp_textdocchange_to_ts_inputedit,
+    },
 };
 
 pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) {
     let uri = &params.text_document.uri;
+    let mut lrrs: Vec<Regex> = backend
+        .options
+        .read()
+        .await
+        .language_retrieval_patterns
+        .iter()
+        .map(|pat| Regex::new(pat).unwrap())
+        .collect();
+    lrrs.push(LANGUAGE_REGEX_1.clone());
+    lrrs.push(LANGUAGE_REGEX_2.clone());
     let Some(mut document) = backend.document_map.get_mut(uri) else {
         warn!("No document found for URI: {uri} when handling did_change");
         return;
@@ -22,6 +36,7 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
         .expect("Error loading Query grammar");
 
     let mut edits = vec![];
+    let mut recalculate_imports = false;
     for change in &params.content_changes {
         let new_text = change.text.as_str();
 
@@ -36,6 +51,10 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
             let end = Position::new(end_line_idx as u32, 0);
             Range { start, end }
         };
+
+        if range.start.line == 0 {
+            recalculate_imports = true;
+        }
 
         edits.push(lsp_textdocchange_to_ts_inputedit(rope, change).unwrap());
         edit_rope(rope, range, new_text);
@@ -53,6 +72,11 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
     };
 
     document.tree = tree;
+
+    if recalculate_imports {
+        let uris = get_imported_uris(backend, &lrrs, uri, &document.rope, &document.tree);
+        document.imported_uris = uris;
+    }
 }
 
 #[cfg(test)]
