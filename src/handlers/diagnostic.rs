@@ -11,7 +11,7 @@ use tower_lsp::{
     lsp_types::{
         Diagnostic, DiagnosticSeverity, DiagnosticTag, DocumentDiagnosticParams,
         DocumentDiagnosticReport, DocumentDiagnosticReportResult, FullDocumentDiagnosticReport,
-        RelatedFullDocumentDiagnosticReport, Url,
+        Position, Range, RelatedFullDocumentDiagnosticReport, Url,
     },
 };
 use tree_sitter::{
@@ -96,21 +96,39 @@ pub async fn diagnostic(
         true,
     )
     .await;
-    if let Some(uri) = document
-        .imported_uris
-        .first()
-        .and_then(|(_, _, uri)| uri.clone())
-    {
-        let doc = backend.document_map.get(&uri).unwrap().clone();
-        items.extend(
-            get_diagnostics(&uri, doc, language_data, backend.options.clone(), true)
-                .await
-                .into_iter()
-                .map(|mut diag| {
-                    diag.range = Default::default();
-                    diag
-                }),
-        );
+    for (start, end, uri) in document.imported_uris {
+        let range = Range {
+            start: Position::new(0, start),
+            end: Position::new(0, end),
+        };
+        if let Some(uri) = uri {
+            if let Some(doc) = backend.document_map.get(&uri).as_deref().cloned() {
+                // TODO: Treat this as one diagnostic, and squash all original diagnostics into
+                // `related_information`
+                items.extend(
+                    get_diagnostics(
+                        &uri,
+                        doc,
+                        language_data.clone(),
+                        backend.options.clone(),
+                        true,
+                    )
+                    .await
+                    .into_iter()
+                    .map(|mut diag| {
+                        diag.range = range;
+                        diag
+                    }),
+                );
+                continue;
+            }
+        }
+        items.push(Diagnostic {
+            range,
+            severity: WARNING_SEVERITY,
+            message: String::from("Query module not found"),
+            ..Default::default()
+        });
     }
     Ok(DocumentDiagnosticReportResult::Report(
         DocumentDiagnosticReport::Full(RelatedFullDocumentDiagnosticReport {
