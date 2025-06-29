@@ -1,13 +1,19 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::{
+    collections::{BTreeSet, HashMap, HashSet},
+    fs,
+};
 
+use regex::Regex;
 use ropey::Rope;
-use tower_lsp::lsp_types::DidOpenTextDocumentParams;
+use tower_lsp::lsp_types::{DidOpenTextDocumentParams, Url};
 use tracing::info;
 use tree_sitter::{Language, Parser};
 
 use crate::{
     Backend, DocumentData, LanguageData, QUERY_LANGUAGE, SymbolInfo,
-    util::{get_language, get_language_name},
+    util::{
+        LANGUAGE_REGEX_1, LANGUAGE_REGEX_2, get_imported_uris, get_language, get_language_name,
+    },
 };
 
 pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
@@ -23,6 +29,16 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
 
     let options = backend.options.read().await;
     let language_name = get_language_name(uri, &options);
+    let mut lrrs: Vec<Regex> = options
+        .language_retrieval_patterns
+        .iter()
+        .map(|pat| Regex::new(pat).unwrap())
+        .collect();
+    lrrs.push(LANGUAGE_REGEX_1.clone());
+    lrrs.push(LANGUAGE_REGEX_2.clone());
+    let imported_uris = get_imported_uris(backend, &lrrs, uri, &rope, &tree);
+
+    populate_import_documents(backend, &lrrs, &imported_uris);
 
     // Track the document
     let version = params.text_document.version;
@@ -33,6 +49,7 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
             tree,
             language_name: language_name.clone(),
             version,
+            imported_uris,
         },
     );
 
@@ -46,13 +63,13 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     let Some(lang) = get_language(&language_name, &options) else {
         return;
     };
-    let language_data = init_language_data(lang);
+    let language_data = init_language_data(lang, language_name.clone());
     backend
         .language_map
         .insert(language_name, language_data.into());
 }
 
-pub fn init_language_data(lang: Language) -> LanguageData {
+pub fn init_language_data(lang: Language, name: String) -> LanguageData {
     let mut symbols_vec: Vec<SymbolInfo> = vec![];
     let mut symbols_set: HashSet<SymbolInfo> = HashSet::new();
     let mut fields_vec: Vec<String> = vec![];
@@ -108,12 +125,47 @@ pub fn init_language_data(lang: Language) -> LanguageData {
         }
     }
     LanguageData {
+        name,
         fields_set,
         fields_vec,
         symbols_vec,
         symbols_set,
         supertype_map,
         language: Some(lang),
+    }
+}
+
+pub fn populate_import_documents(
+    backend: &Backend,
+    lrrs: &Vec<Regex>,
+    imported_uris: &Vec<(u32, u32, Option<Url>)>,
+) {
+    for (_, _, uri) in imported_uris {
+        if let Some(uri) = uri {
+            if !backend.document_map.contains_key(uri) {
+                let path = uri.to_file_path().unwrap();
+                if let Ok(contents) = fs::read_to_string(path) {
+                    let rope = Rope::from_str(&contents);
+                    let mut parser = Parser::new();
+                    parser
+                        .set_language(&QUERY_LANGUAGE)
+                        .expect("Error loading Query grammar");
+                    let tree = parser.parse(&contents, None).unwrap();
+                    let nested_imported_uris = get_imported_uris(backend, lrrs, uri, &rope, &tree);
+                    backend.document_map.insert(
+                        uri.clone(),
+                        DocumentData {
+                            rope,
+                            tree,
+                            language_name: None,
+                            version: -1,
+                            imported_uris: nested_imported_uris.clone(),
+                        },
+                    );
+                    populate_import_documents(backend, lrrs, &nested_imported_uris)
+                };
+            }
+        }
     }
 }
 

@@ -9,8 +9,9 @@ use ropey::Rope;
 use tower_lsp::{
     jsonrpc::{Error, ErrorCode, Result},
     lsp_types::{
-        Diagnostic, DiagnosticSeverity, DiagnosticTag, DocumentDiagnosticParams,
-        DocumentDiagnosticReport, DocumentDiagnosticReportResult, FullDocumentDiagnosticReport,
+        Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, DiagnosticTag,
+        DocumentDiagnosticParams, DocumentDiagnosticReport, DocumentDiagnosticReportResult,
+        FullDocumentDiagnosticReport, Location, Position, Range,
         RelatedFullDocumentDiagnosticReport, Url,
     },
 };
@@ -88,13 +89,95 @@ pub async fn diagnostic(
         .and_then(|name| backend.language_map.get(name))
         .as_deref()
         .cloned();
+    let mut items = get_diagnostics(
+        uri,
+        document.clone(),
+        language_data.clone(),
+        backend.options.clone(),
+        true,
+    )
+    .await;
+
+    async fn analyze_recursively(
+        backend: &Backend,
+        current_uri: &Url,
+        imported_uris: &Vec<(u32, u32, Option<Url>)>,
+        language_data: Option<Arc<LanguageData>>,
+    ) -> Vec<Diagnostic> {
+        let mut items = Vec::new();
+        for (start, end, uri) in imported_uris {
+            let range = Range {
+                start: Position::new(0, *start),
+                end: Position::new(0, *end),
+            };
+            if let Some(uri) = uri {
+                if let Some(doc) = backend.document_map.get(uri).as_deref().cloned() {
+                    let mut inner_diags = Box::pin(analyze_recursively(
+                        backend,
+                        uri,
+                        &doc.imported_uris,
+                        language_data.clone(),
+                    ))
+                    .await;
+                    let mut severity = DiagnosticSeverity::HINT;
+                    inner_diags.append(
+                        &mut get_diagnostics(
+                            uri,
+                            doc,
+                            language_data.clone(),
+                            backend.options.clone(),
+                            true,
+                        )
+                        .await,
+                    );
+                    let inner_diags: Vec<DiagnosticRelatedInformation> = inner_diags
+                        .into_iter()
+                        .map(|diag| {
+                            if let Some(sev) = diag.severity {
+                                // This misleadingly computes the maximum severity
+                                severity = std::cmp::min(severity, sev);
+                            }
+                            DiagnosticRelatedInformation {
+                                message: diag.message,
+                                location: Location {
+                                    uri: current_uri.clone(),
+                                    range: diag.range,
+                                },
+                            }
+                        })
+                        .collect();
+                    if !inner_diags.is_empty() {
+                        items.push(Diagnostic {
+                            range,
+                            message: String::from("Issues in module"),
+                            severity: Some(severity),
+                            related_information: Some(inner_diags),
+                            ..Default::default()
+                        });
+                    }
+                    continue;
+                }
+            }
+            items.push(Diagnostic {
+                range,
+                severity: WARNING_SEVERITY,
+                message: String::from("Query module not found"),
+                ..Default::default()
+            });
+        }
+        items
+    }
+
+    items.append(
+        &mut analyze_recursively(backend, uri, &document.imported_uris, language_data).await,
+    );
+
     Ok(DocumentDiagnosticReportResult::Report(
         DocumentDiagnosticReport::Full(RelatedFullDocumentDiagnosticReport {
             related_documents: None,
             full_document_diagnostic_report: FullDocumentDiagnosticReport {
                 result_id: None,
-                items: get_diagnostics(uri, document, language_data, backend.options.clone(), true)
-                    .await,
+                items,
             },
         }),
     ))
@@ -153,11 +236,9 @@ pub async fn get_diagnostics(
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&DEFINITIONS_QUERY, tree.root_node(), &provider);
         let mut diagnostics = Vec::new();
-        let Some(language_name) = document.language_name else {
-            return diagnostics;
-        };
         let Some(LanguageData {
             language: Some(language),
+            name: language_name,
             ..
         }) = ld.as_deref()
         else {

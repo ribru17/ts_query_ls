@@ -18,9 +18,9 @@ use walkdir::WalkDir;
 
 use crate::{Backend, ENGINE, Options, QUERY_LANGUAGE};
 
-static LANGUAGE_REGEX_1: LazyLock<Regex> =
+pub static LANGUAGE_REGEX_1: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"queries/([^/]+)/[^/]+\.scm$").unwrap());
-static LANGUAGE_REGEX_2: LazyLock<Regex> =
+pub static LANGUAGE_REGEX_2: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"tree-sitter-([^/]+)/queries/[^/]+\.scm$").unwrap());
 pub static CAPTURES_QUERY: LazyLock<Query> =
     LazyLock::new(|| Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap());
@@ -323,31 +323,20 @@ pub async fn set_configuration_options(
     let mut options = backend.options.write().await;
     if let Some(init_options) = init_options {
         if let Ok(parsed_options) = serde_json::from_value::<Options>(init_options) {
-            options.parser_install_directories = parsed_options.parser_install_directories;
-            options.parser_aliases = parsed_options.parser_aliases;
-            options.language_retrieval_patterns = parsed_options.language_retrieval_patterns;
-            options.valid_captures = parsed_options.valid_captures;
-            options.valid_predicates = parsed_options.valid_predicates;
-            options.valid_directives = parsed_options.valid_directives;
-            options.diagnostic_options = parsed_options.diagnostic_options;
+            *options = parsed_options;
         } else {
             warn!("Unable to parse configuration settings!");
         };
     }
 
-    if let Some(file_options) = get_first_valid_file_config(workspace_uris) {
+    if let Some(mut file_options) = get_first_valid_file_config(workspace_uris) {
         // Merge parser_install_directories, since these are dependent on the local user's
         // installation paths
-        let mut config_file_install_dirs = file_options.parser_install_directories;
-        config_file_install_dirs.extend(options.parser_install_directories.clone());
+        let mut config_file_install_dirs = options.parser_install_directories.clone();
+        config_file_install_dirs.append(&mut file_options.parser_install_directories);
+        file_options.parser_install_directories = config_file_install_dirs;
 
-        options.parser_install_directories = config_file_install_dirs;
-        options.parser_aliases = file_options.parser_aliases;
-        options.language_retrieval_patterns = file_options.language_retrieval_patterns;
-        options.valid_captures = file_options.valid_captures;
-        options.valid_predicates = file_options.valid_predicates;
-        options.valid_directives = file_options.valid_directives;
-        options.diagnostic_options = file_options.diagnostic_options;
+        *options = file_options;
     }
 }
 
@@ -401,7 +390,12 @@ pub fn get_scm_files(directories: &[PathBuf]) -> Vec<PathBuf> {
         .collect()
 }
 
-pub async fn get_file_uris(backend: &Backend, language_name: &str, query_type: &str) -> Vec<Url> {
+pub fn get_file_uris(
+    backend: &Backend,
+    lrrs: &Vec<Regex>,
+    language_name: &str,
+    query_type: &str,
+) -> Vec<Url> {
     let scm_files = get_scm_files(
         &backend
             .workspace_uris
@@ -411,22 +405,12 @@ pub async fn get_file_uris(backend: &Backend, language_name: &str, query_type: &
             .filter_map(|uri| uri.to_file_path().ok())
             .collect::<Vec<_>>(),
     );
-    let mut language_retrieval_regexes: Vec<Regex> = backend
-        .options
-        .read()
-        .await
-        .language_retrieval_patterns
-        .clone()
-        .iter()
-        .filter_map(|r| Regex::new(r).ok())
-        .collect();
-    language_retrieval_regexes.push(LANGUAGE_REGEX_1.clone());
-    language_retrieval_regexes.push(LANGUAGE_REGEX_2.clone());
+    let language_retrieval_regexes = lrrs;
 
     let mut urls = Vec::new();
 
     for scm_file in scm_files {
-        for re in &language_retrieval_regexes {
+        for re in language_retrieval_regexes {
             if let Some(lang_name) = re
                 .captures(&scm_file.canonicalize().unwrap().to_string_lossy())
                 .and_then(|caps| caps.get(1))
@@ -442,4 +426,54 @@ pub async fn get_file_uris(backend: &Backend, language_name: &str, query_type: &
     }
 
     urls
+}
+
+/// Returns a list of URIs corresponding to the modules in the `; inherits: ` chain. `None` if the
+/// module could not be found.
+///
+/// Return value is start byte, end byte, URI (if found)
+pub fn get_imported_uris(
+    backend: &Backend,
+    lrrs: &Vec<Regex>,
+    uri: &Url,
+    rope: &Rope,
+    tree: &Tree,
+) -> Vec<(u32, u32, Option<Url>)> {
+    let mut uris = Vec::new();
+    let Some(start_comment) = tree
+        .root_node()
+        .child(0)
+        .filter(|node| node.kind() == "comment" && node.start_position().row == 0)
+    else {
+        return uris;
+    };
+    let comment_text = start_comment.text(rope);
+    let Some(modules) = INHERITS_REGEX
+        .captures(&comment_text)
+        .and_then(|c| c.get(1))
+    else {
+        return uris;
+    };
+    let Some(query_name) = uri_to_basename(uri) else {
+        return uris;
+    };
+
+    let mut byte_offset = (start_comment.start_byte() + modules.start()) as u32;
+    for module in modules.as_str().split(',') {
+        let (start, end) = (byte_offset, byte_offset + module.len() as u32);
+        byte_offset = end + 1;
+        if module.is_empty() {
+            uris.push((start, end, None));
+            continue;
+        }
+        let module_uris = get_file_uris(backend, lrrs, module, &query_name);
+        if module_uris.len() > 1 {
+            warn!(
+                "Imported module {module} has more than one associated file location, analyzing the first one"
+            );
+        }
+        uris.push((start, end, module_uris.first().cloned()));
+    }
+
+    uris
 }
