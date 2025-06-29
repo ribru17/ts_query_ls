@@ -97,56 +97,81 @@ pub async fn diagnostic(
         true,
     )
     .await;
-    for (start, end, uri) in document.imported_uris {
-        let range = Range {
-            start: Position::new(0, start),
-            end: Position::new(0, end),
-        };
-        if let Some(uri) = uri {
-            if let Some(doc) = backend.document_map.get(&uri).as_deref().cloned() {
-                let mut severity = DiagnosticSeverity::HINT;
-                let inner_diags: Vec<DiagnosticRelatedInformation> = get_diagnostics(
-                    &uri,
-                    doc,
-                    language_data.clone(),
-                    backend.options.clone(),
-                    true,
-                )
-                .await
-                .into_iter()
-                .map(|diag| {
-                    if let Some(sev) = diag.severity {
-                        // This misleadingly computes the maximum severity
-                        severity = std::cmp::min(severity, sev);
+
+    async fn analyze_recursively(
+        backend: &Backend,
+        current_uri: &Url,
+        imported_uris: &Vec<(u32, u32, Option<Url>)>,
+        language_data: Option<Arc<LanguageData>>,
+    ) -> Vec<Diagnostic> {
+        let mut items = Vec::new();
+        for (start, end, uri) in imported_uris {
+            let range = Range {
+                start: Position::new(0, *start),
+                end: Position::new(0, *end),
+            };
+            if let Some(uri) = uri {
+                if let Some(doc) = backend.document_map.get(uri).as_deref().cloned() {
+                    let mut inner_diags = Box::pin(analyze_recursively(
+                        backend,
+                        uri,
+                        &doc.imported_uris,
+                        language_data.clone(),
+                    ))
+                    .await;
+                    let mut severity = DiagnosticSeverity::HINT;
+                    inner_diags.append(
+                        &mut get_diagnostics(
+                            uri,
+                            doc,
+                            language_data.clone(),
+                            backend.options.clone(),
+                            true,
+                        )
+                        .await,
+                    );
+                    let inner_diags: Vec<DiagnosticRelatedInformation> = inner_diags
+                        .into_iter()
+                        .map(|diag| {
+                            if let Some(sev) = diag.severity {
+                                // This misleadingly computes the maximum severity
+                                severity = std::cmp::min(severity, sev);
+                            }
+                            DiagnosticRelatedInformation {
+                                message: diag.message,
+                                location: Location {
+                                    uri: current_uri.clone(),
+                                    range: diag.range,
+                                },
+                            }
+                        })
+                        .collect();
+                    if !inner_diags.is_empty() {
+                        items.push(Diagnostic {
+                            range,
+                            message: String::from("Issues in module"),
+                            severity: Some(severity),
+                            related_information: Some(inner_diags),
+                            ..Default::default()
+                        });
                     }
-                    DiagnosticRelatedInformation {
-                        message: diag.message,
-                        location: Location {
-                            uri: uri.clone(),
-                            range: diag.range,
-                        },
-                    }
-                })
-                .collect();
-                if !inner_diags.is_empty() {
-                    items.push(Diagnostic {
-                        range,
-                        message: String::from("Issues in module"),
-                        severity: Some(severity),
-                        related_information: Some(inner_diags),
-                        ..Default::default()
-                    });
+                    continue;
                 }
-                continue;
             }
+            items.push(Diagnostic {
+                range,
+                severity: WARNING_SEVERITY,
+                message: String::from("Query module not found"),
+                ..Default::default()
+            });
         }
-        items.push(Diagnostic {
-            range,
-            severity: WARNING_SEVERITY,
-            message: String::from("Query module not found"),
-            ..Default::default()
-        });
+        items
     }
+
+    items.append(
+        &mut analyze_recursively(backend, uri, &document.imported_uris, language_data).await,
+    );
+
     Ok(DocumentDiagnosticReportResult::Report(
         DocumentDiagnosticReport::Full(RelatedFullDocumentDiagnosticReport {
             related_documents: None,
