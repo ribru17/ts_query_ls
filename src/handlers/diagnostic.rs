@@ -9,9 +9,10 @@ use ropey::Rope;
 use tower_lsp::{
     jsonrpc::{Error, ErrorCode, Result},
     lsp_types::{
-        Diagnostic, DiagnosticSeverity, DiagnosticTag, DocumentDiagnosticParams,
-        DocumentDiagnosticReport, DocumentDiagnosticReportResult, FullDocumentDiagnosticReport,
-        Position, Range, RelatedFullDocumentDiagnosticReport, Url,
+        Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, DiagnosticTag,
+        DocumentDiagnosticParams, DocumentDiagnosticReport, DocumentDiagnosticReportResult,
+        FullDocumentDiagnosticReport, Location, Position, Range,
+        RelatedFullDocumentDiagnosticReport, Url,
     },
 };
 use tree_sitter::{
@@ -103,23 +104,39 @@ pub async fn diagnostic(
         };
         if let Some(uri) = uri {
             if let Some(doc) = backend.document_map.get(&uri).as_deref().cloned() {
-                // TODO: Treat this as one diagnostic, and squash all original diagnostics into
-                // `related_information`
-                items.extend(
-                    get_diagnostics(
-                        &uri,
-                        doc,
-                        language_data.clone(),
-                        backend.options.clone(),
-                        true,
-                    )
-                    .await
-                    .into_iter()
-                    .map(|mut diag| {
-                        diag.range = range;
-                        diag
-                    }),
-                );
+                let mut severity = DiagnosticSeverity::HINT;
+                let inner_diags: Vec<DiagnosticRelatedInformation> = get_diagnostics(
+                    &uri,
+                    doc,
+                    language_data.clone(),
+                    backend.options.clone(),
+                    true,
+                )
+                .await
+                .into_iter()
+                .map(|diag| {
+                    if let Some(sev) = diag.severity {
+                        // This misleadingly computes the maximum severity
+                        severity = std::cmp::min(severity, sev);
+                    }
+                    DiagnosticRelatedInformation {
+                        message: diag.message,
+                        location: Location {
+                            uri: uri.clone(),
+                            range: diag.range,
+                        },
+                    }
+                })
+                .collect();
+                if !inner_diags.is_empty() {
+                    items.push(Diagnostic {
+                        range,
+                        message: String::from("Issues in module"),
+                        severity: Some(severity),
+                        related_information: Some(inner_diags),
+                        ..Default::default()
+                    });
+                }
                 continue;
             }
         }
