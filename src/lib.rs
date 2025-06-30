@@ -2,11 +2,18 @@ use std::{
     collections::{BTreeMap, HashMap},
     env,
     fmt::Display,
+    sync::LazyLock,
 };
 
+use regex::Regex;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+static LANGUAGE_REGEX_1: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"queries/([^/]+)/[^/]+\.scm$").unwrap());
+static LANGUAGE_REGEX_2: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"tree-sitter-([^/]+)/queries/[^/]+\.scm$").unwrap());
 
 /// A type specification for a predicate.
 #[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -113,8 +120,8 @@ pub struct Options {
     /// A list of patterns to aid the LSP in finding a language, given a file path.
     /// Patterns must have one capture group which represents the language name. Ordered
     /// from highest to lowest precedence.
-    #[serde(default)]
-    pub language_retrieval_patterns: Vec<String>,
+    #[serde(default = "default_regexes", deserialize_with = "add_default_regexes")]
+    pub language_retrieval_patterns: Vec<SerializableRegex>,
     /// A map from query file name to valid captures. Valid captures are represented as a map from
     /// capture name (sans `@`) to a short (markdown format) description. Note that captures
     /// prefixed with an underscore are always permissible.
@@ -294,4 +301,90 @@ where
 {
     let raw = Vec::<String>::deserialize(deserializer)?;
     Ok(raw.into_iter().map(|s| expand_env_vars(&s)).collect())
+}
+
+fn default_regexes() -> Vec<SerializableRegex> {
+    vec![
+        LANGUAGE_REGEX_1.clone().into(),
+        LANGUAGE_REGEX_2.clone().into(),
+    ]
+}
+
+fn add_default_regexes<'de, D>(deserializer: D) -> Result<Vec<SerializableRegex>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let mut raw = Vec::<SerializableRegex>::deserialize(deserializer)?;
+
+    // Always provide these defaults
+    raw.append(&mut default_regexes());
+    Ok(raw)
+}
+
+#[derive(Debug, Clone)]
+pub struct SerializableRegex(Regex);
+
+impl SerializableRegex {
+    pub fn captures<'h>(&self, haystack: &'h str) -> Option<regex::Captures<'h>> {
+        self.0.captures_at(haystack, 0)
+    }
+}
+
+impl From<Regex> for SerializableRegex {
+    fn from(value: Regex) -> Self {
+        Self(value)
+    }
+}
+
+impl Serialize for SerializableRegex {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.0.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for SerializableRegex {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Regex::new(&s)
+            .map(SerializableRegex)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+impl PartialEq for SerializableRegex {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.as_str() == other.0.as_str()
+    }
+}
+
+impl Eq for SerializableRegex {}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for SerializableRegex {
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        use schemars::schema::{InstanceType, Schema, SchemaObject, StringValidation};
+
+        Schema::Object(SchemaObject {
+            instance_type: Some(InstanceType::String.into()),
+            format: Some(String::from("regex")),
+            string: Some(Box::new(StringValidation::default())),
+            metadata: Some(Box::new(schemars::schema::Metadata {
+                description: Some(String::from(
+                    "A regular expression string (compiled at deserialization time)",
+                )),
+                ..Default::default()
+            })),
+            ..Default::default()
+        })
+    }
+
+    fn schema_name() -> String {
+        String::from("Regex")
+    }
 }

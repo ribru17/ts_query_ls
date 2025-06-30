@@ -18,6 +18,7 @@ pub async fn did_change_configuration(backend: &Backend, params: DidChangeConfig
 #[cfg(test)]
 mod test {
     use pretty_assertions::assert_eq;
+    use regex::Regex;
     use std::collections::BTreeMap;
     use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
@@ -81,7 +82,13 @@ mod test {
                     String::from("/my/directory/"),
                     String::from("/tmp/tree-sitter/parsers/"),
                 ],
-                language_retrieval_patterns: vec![String::from(r"\.ts\-([^/]+)\-parser\.wasm")],
+                language_retrieval_patterns: vec![
+                    Regex::new(r"\.ts\-([^/]+)\-parser\.wasm").unwrap().into(),
+                    Regex::new("queries/([^/]+)/[^/]+\\.scm$").unwrap().into(),
+                    Regex::new("tree-sitter-([^/]+)/queries/[^/]+\\.scm$",)
+                        .unwrap()
+                        .into(),
+                ],
                 ..Default::default()
             }
         );
