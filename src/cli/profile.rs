@@ -27,11 +27,12 @@ pub async fn profile_directories(directories: &[PathBuf], config: String, per_fi
         eprintln!("Could not parse the provided configuration");
         return;
     };
-    let scm_files = if directories.is_empty() {
-        get_scm_files(&[env::current_dir().expect("Failed to get current directory")])
+    let directories = if directories.is_empty() {
+        &[env::current_dir().expect("Failed to get current directory")]
     } else {
-        get_scm_files(directories)
+        directories
     };
+    let scm_files = get_scm_files(directories);
     let tasks = scm_files.into_iter().filter_map(|path| {
         let uri = Url::from_file_path(path.canonicalize().unwrap()).unwrap();
         let path_str = path.to_string_lossy().to_string();

@@ -366,31 +366,27 @@ pub fn capture_at_pos<'t>(
     innermost_capture
 }
 
-pub fn get_scm_files(directories: &[PathBuf]) -> Vec<PathBuf> {
-    directories
-        .iter()
-        .flat_map(|directory| {
-            WalkDir::new(directory)
-                .into_iter()
-                .filter_map(|e| e.ok())
-                .filter(|e| {
-                    e.file_type().is_file() && e.path().extension().is_some_and(|ext| ext == "scm")
-                })
-                .map(|e| e.path().to_owned())
-        })
-        .collect()
+pub fn get_scm_files(directories: &[PathBuf]) -> impl Iterator<Item = PathBuf> {
+    directories.iter().flat_map(|directory| {
+        WalkDir::new(directory)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_type().is_file() && e.path().extension().is_some_and(|ext| ext == "scm")
+            })
+            .map(|e| e.path().to_owned())
+    })
 }
 
 pub async fn get_file_uris(backend: &Backend, language_name: &str, query_type: &str) -> Vec<Url> {
-    let scm_files = get_scm_files(
-        &backend
-            .workspace_uris
-            .read()
-            .unwrap()
-            .iter()
-            .filter_map(|uri| uri.to_file_path().ok())
-            .collect::<Vec<_>>(),
-    );
+    let dirs = backend
+        .workspace_uris
+        .read()
+        .unwrap()
+        .iter()
+        .filter_map(|uri| uri.to_file_path().ok())
+        .collect::<Vec<_>>();
+    let scm_files = get_scm_files(&dirs);
     let language_retrieval_regexes = &backend.options.read().await.language_retrieval_patterns;
 
     let mut urls = Vec::new();

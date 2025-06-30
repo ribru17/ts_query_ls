@@ -112,11 +112,12 @@ pub async fn lint_directories(directories: &[PathBuf], config: String, fix: bool
     let options: Arc<tokio::sync::RwLock<Options>> = Arc::new(options.into());
     let exit_code = Arc::new(AtomicI32::new(0));
     // If directories are not specified, lint all files in the current directory
-    let scm_files = if directories.is_empty() {
-        get_scm_files(&[env::current_dir().expect("Failed to get current directory")])
+    let directories = if directories.is_empty() {
+        &[env::current_dir().expect("Failed to get current directory")]
     } else {
-        get_scm_files(directories)
+        directories
     };
+    let scm_files = get_scm_files(directories);
     let tasks = scm_files.into_iter().filter_map(|path| {
         let uri = Url::from_file_path(path.canonicalize().unwrap()).unwrap();
         let exit_code = exit_code.clone();
