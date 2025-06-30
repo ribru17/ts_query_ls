@@ -33,11 +33,12 @@ pub async fn check_directories(
 
     let exit_code = Arc::new(AtomicI32::new(0));
     // If directories are not specified, check all files in the current directory
-    let scm_files = if directories.is_empty() {
-        get_scm_files(&[env::current_dir().expect("Failed to get current directory")])
+    let directories = if directories.is_empty() {
+        &[env::current_dir().expect("Failed to get current directory")]
     } else {
-        get_scm_files(directories)
+        directories
     };
+    let scm_files = get_scm_files(directories);
     let tasks = scm_files.into_iter().filter_map(|path| {
         let options_arc = options_arc.clone();
         let exit_code = exit_code.clone();
