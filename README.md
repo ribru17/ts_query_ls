@@ -203,6 +203,46 @@ vim.api.nvim_create_autocmd('FileType', {
 })
 ```
 
+## Features
+
+- Go to definition, references, renaming for captures
+  - Captures, unlike node names, are treated like "variables" in a sense. They
+    have definitions and references, and can be conveniently renamed. See the
+    example below:
+
+    ```query
+    (function_definition
+      name: (identifier) @function.builtin ; this is a capture *definition*
+      (#eq? @function.builtin "print")) ; this is a capture *reference*
+    ```
+- Completions for valid node names, field names, and allowable captures and
+  predicate/directives
+  - Node and field names are determined by the installed language object, while
+    allowable capture and predicate/directive names are specified in the
+    language server configuration.
+- Diagnostics for impossible patterns, invalid node names, invalid syntax, etc.
+  - This language server strives for 1:1 parity with tree-sitter's query errors,
+    to catch issues before they happen. If you notice a query error that was not
+    caught by the server (or a false positive from the server), please report an
+    issue!
+- Formatting and analysis of query workspaces (see the
+  [standalone tool section](#standalone-tool))
+- Support for importing query modules from other queries
+  - The language server will recognize comments of the form
+    `; inherits: foo,bar` as "import statements", and will act as though these
+    query files were imported in the current one. It will provide additional
+    diagnostics and allow you to jump to the imported files using the go to
+    definition functionality.
+  - **IMPORTANT!** This comment _must_ be the _first line_ in the file,
+    otherwise it will not be recognized. There must be exactly one space after
+    `inherits`, and there must be no spaces after the following comma(s). Files
+    will be searched across the workspace until one matches a valid
+    `language_retrieval_pattern`. Note that imported files will match the query
+    type of the original (e.g. `; inherits: foo`) inside `bar/highlights.scm`
+    will retrieve `foo/highlights.scm`, and not e.g. `foo/folds.scm`.
+- Support for hover, selection range, document symbols, semantic tokens, code
+  actions, and document highlight
+
 ## Standalone tool
 
 ### Formatter
@@ -308,6 +348,7 @@ ts_query_ls profile --help
 - [x] Document formatting compatible with the `nvim-treesitter` formatter
 - [x] Code cleanup
 - [x] Add tests for all* functionality
+- [x] Support for importing query modules via the `; inherits: foo` modeline
 
 > *All handlers are tested, but core functionality like language loading will be
 > more complicated, and does not yet have test coverage.

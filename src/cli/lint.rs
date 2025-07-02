@@ -36,6 +36,8 @@ pub(super) async fn lint_file(
         rope,
         language_name,
         version: Default::default(),
+        // TODO: Calculate these here?
+        imported_uris: Default::default(),
     };
     // The query construction already validates node names, fields, supertypes,
     // etc.

@@ -199,6 +199,7 @@ mod test {
                 Vec::new(),
                 Vec::new(),
                 vec!["supertype"],
+                Vec::new(),
             )],
             &Default::default(),
         )

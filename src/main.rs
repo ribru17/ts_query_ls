@@ -54,6 +54,7 @@ static SERVER_CAPABILITIES: LazyLock<ServerCapabilities> = LazyLock::new(|| Serv
     )),
     diagnostic_provider: Some(DiagnosticServerCapabilities::Options(DiagnosticOptions {
         identifier: Some(String::from("ts_query_ls")),
+        inter_file_dependencies: true,
         ..Default::default()
     })),
     code_action_provider: Some(CodeActionProviderCapability::Options(CodeActionOptions {
@@ -115,10 +116,12 @@ struct DocumentData {
     tree: Tree,
     version: i32,
     language_name: Option<String>,
+    imported_uris: Vec<(u32, u32, Option<Url>)>,
 }
 
 #[derive(Default, Debug)]
 struct LanguageData {
+    name: String,
     symbols_set: HashSet<SymbolInfo>,
     symbols_vec: Vec<SymbolInfo>,
     fields_set: HashSet<String>,

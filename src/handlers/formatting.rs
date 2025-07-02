@@ -364,7 +364,14 @@ mod test {
     async fn server_formatting(#[case] before: &str, #[case] after: &str) {
         // Arrange
         let mut service = initialize_server(
-            &[(TEST_URI.clone(), before, Vec::new(), Vec::new(), Vec::new())],
+            &[(
+                TEST_URI.clone(),
+                before,
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            )],
             &Default::default(),
         )
         .await;

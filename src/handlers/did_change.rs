@@ -4,8 +4,10 @@ use tree_sitter::Parser;
 
 use crate::{
     Backend, QUERY_LANGUAGE,
-    util::{edit_rope, lsp_textdocchange_to_ts_inputedit},
+    util::{edit_rope, get_imported_uris, lsp_textdocchange_to_ts_inputedit},
 };
+
+use super::did_open::populate_import_documents;
 
 pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) {
     let uri = &params.text_document.uri;
@@ -15,14 +17,15 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
     };
     let version = params.text_document.version;
     document.version = version;
-    let rope = &mut document.rope;
     let mut parser = Parser::new();
     parser
         .set_language(&QUERY_LANGUAGE)
         .expect("Error loading Query grammar");
 
     let mut edits = vec![];
+    let mut recalculate_imports = false;
     for change in &params.content_changes {
+        let rope = &mut document.rope;
         let new_text = change.text.as_str();
 
         let range = if let Some(range) = change.range {
@@ -37,10 +40,14 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
             Range { start, end }
         };
 
+        if range.start.line == 0 {
+            recalculate_imports = true;
+        }
+
         edits.push(lsp_textdocchange_to_ts_inputedit(rope, change).unwrap());
         edit_rope(rope, range, new_text);
     }
-    let contents = rope.to_string();
+    let contents = document.rope.to_string();
     let mut old_tree = document.tree.clone();
 
     for edit in edits {
@@ -53,6 +60,22 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
     };
 
     document.tree = tree;
+
+    if recalculate_imports {
+        let rope = document.rope.clone();
+        let tree = document.tree.clone();
+
+        // We must not hold a mutable reference to something in the `document_map` while populating
+        // the import documents
+        drop(document);
+
+        let uris = get_imported_uris(backend, uri, &rope, &tree).await;
+        populate_import_documents(backend, &uris).await;
+
+        if let Some(mut document) = backend.document_map.get_mut(uri) {
+            document.imported_uris = uris;
+        };
+    }
 }
 
 #[cfg(test)]
@@ -105,6 +128,7 @@ mod test {
             &[(
                 TEST_URI.clone(),
                 original,
+                Vec::new(),
                 Vec::new(),
                 Vec::new(),
                 Vec::new(),

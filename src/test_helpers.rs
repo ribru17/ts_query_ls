@@ -43,7 +43,14 @@ pub mod helpers {
 
     /// A tuple holding the document's URI, source text, symbols, fields, supertypes, and valid
     /// captures
-    pub type Document<'a> = (Url, &'a str, Vec<SymbolInfo>, Vec<&'a str>, Vec<&'a str>);
+    pub type Document<'a> = (
+        Url,
+        &'a str,
+        Vec<SymbolInfo>,
+        Vec<&'a str>,
+        Vec<&'a str>,
+        Vec<(u32, u32, Option<Url>)>,
+    );
 
     /// Initialize a test server, populating it with fake documents denoted by (uri, text, symbols, fields) tuples.
     pub async fn initialize_server(
@@ -59,23 +66,27 @@ pub mod helpers {
         let arced_options = Arc::new(tokio::sync::RwLock::new(options.clone()));
         let (mut service, _socket) = LspService::build(|client| Backend {
             _client: client,
-            document_map: DashMap::from_iter(documents.iter().map(|(uri, source, _, _, _)| {
-                (
-                    uri.clone(),
-                    DocumentData {
-                        rope: Rope::from(*source),
-                        tree: parser.parse(*source, None).unwrap(),
-                        version: 0,
-                        language_name: get_language_name(uri, options),
-                    },
-                )
-            })),
+            document_map: DashMap::from_iter(documents.iter().map(
+                |(uri, source, _, _, _, imported_uris)| {
+                    (
+                        uri.clone(),
+                        DocumentData {
+                            rope: Rope::from(*source),
+                            tree: parser.parse(*source, None).unwrap(),
+                            version: 0,
+                            language_name: get_language_name(uri, options),
+                            imported_uris: imported_uris.clone(),
+                        },
+                    )
+                },
+            )),
             language_map: DashMap::from_iter(documents.iter().map(
-                |(uri, _, symbols, fields, supertypes)| {
+                |(uri, _, symbols, fields, supertypes, _)| {
                     let language_name = get_language_name(uri, options).unwrap();
                     (
-                        language_name,
+                        language_name.clone(),
                         LanguageData {
+                            name: language_name,
                             language: None,
                             symbols_set: HashSet::from_iter(symbols.clone()),
                             symbols_vec: symbols.clone(),
@@ -235,6 +246,7 @@ mod test {
         Vec::new(),
         Vec::new(),
         Vec::new(),
+        Vec::new(),
     ), (
         TEST_URI_2.clone(),
         COMPLEX_FILE,
@@ -247,6 +259,7 @@ mod test {
             "content",
         ],
         vec!["type"],
+        vec![(0, 2, None)],
     )],
         &Options {
             valid_captures: HashMap::from([(String::from("test"), BTreeMap::from([(String::from("variable"), String::from("A common variable"))]))]),
@@ -271,7 +284,7 @@ mod test {
         let actual_options = backend.options.read().await;
         assert_eq!(actual_options.deref(), options);
         assert_eq!(backend.document_map.len(), documents.len());
-        for (uri, source, symbols, fields, supertypes) in documents {
+        for (uri, source, symbols, fields, supertypes, imported_urls) in documents {
             let doc = backend.document_map.get(uri).unwrap();
             assert_eq!(doc.rope.to_string(), (*source).to_string());
             assert_eq!(
@@ -301,6 +314,7 @@ mod test {
                     label: String::from(*supertype)
                 }))
             }
+            assert_eq!(imported_urls, &doc.imported_uris);
         }
     }
 }
