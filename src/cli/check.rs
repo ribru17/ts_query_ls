@@ -50,38 +50,36 @@ pub async fn check_directories(
                     .map(|lang| Arc::new(init_language_data(lang, name)))
             })
         });
-        if let Some(lang) = language_data {
-            if let Ok(source) = fs::read_to_string(&path) {
-                return Some(tokio::spawn(async move {
-                    if let Some(new_source) = lint_file(
-                        &path,
-                        &uri,
-                        &source,
-                        options_arc.clone(),
-                        fix,
-                        Some(lang),
-                        &exit_code,
-                    )
-                    .await
-                    {
-                        if fs::write(&path, new_source).is_err() {
-                            eprintln!("Failed to write {:?}", path.canonicalize().unwrap());
-                            exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
-                        }
-                    };
-                }));
-            } else {
-                eprintln!("Failed to read {:?}", path.canonicalize().unwrap());
-                exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
-            }
-        } else {
+        let Some(lang) = language_data else {
             exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
             eprintln!(
                 "Could not retrieve language for {:?}",
                 path.canonicalize().unwrap()
-            )
+            );
+            return None;
         };
-        None
+        let Ok(source) = fs::read_to_string(&path) else {
+            eprintln!("Failed to read {:?}", path.canonicalize().unwrap());
+            exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
+            return None;
+        };
+        Some(tokio::spawn(async move {
+            if let Some(new_source) = lint_file(
+                &path,
+                &uri,
+                &source,
+                options_arc.clone(),
+                fix,
+                Some(lang),
+                &exit_code,
+            )
+            .await
+                && fs::write(&path, new_source).is_err()
+            {
+                eprintln!("Failed to write {:?}", path.canonicalize().unwrap());
+                exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
+            };
+        }))
     });
     join_all(tasks).await;
     if format && format_directories(directories, true).await != 0 {

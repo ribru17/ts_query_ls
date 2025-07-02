@@ -159,64 +159,65 @@ pub async fn completion(
     let in_capture = cursor_after_at_sign || node_is_or_has_ancestor(root, current_node, "capture");
     let in_predicate = node_is_or_has_ancestor(root, current_node, "predicate");
     let in_missing = node_is_or_has_ancestor(root, current_node, "missing_node");
-    if !in_capture && !in_predicate {
-        if let Some(language_data) = language_data {
-            let symbols = &language_data.symbols_vec;
-            let supertypes = &language_data.supertype_map;
-            let fields = &language_data.fields_vec;
-            let in_anon = node_is_or_has_ancestor(root, current_node, "string") && !in_predicate;
-            let top_level = current_node.kind() == "program";
-            let in_negated_field = current_node.kind() == "negated_field"
-                || cursor_after_exclamation_point
-                || (current_node.kind() == "identifier"
-                    && current_node
-                        .parent()
-                        .is_some_and(|p| p.kind() == "negated_field"));
+    if !in_capture
+        && !in_predicate
+        && let Some(language_data) = language_data
+    {
+        let symbols = &language_data.symbols_vec;
+        let supertypes = &language_data.supertype_map;
+        let fields = &language_data.fields_vec;
+        let in_anon = node_is_or_has_ancestor(root, current_node, "string") && !in_predicate;
+        let top_level = current_node.kind() == "program";
+        let in_negated_field = current_node.kind() == "negated_field"
+            || cursor_after_exclamation_point
+            || (current_node.kind() == "identifier"
+                && current_node
+                    .parent()
+                    .is_some_and(|p| p.kind() == "negated_field"));
 
-            if in_negated_field {
-                for field in fields.clone() {
-                    completion_items.push(CompletionItem {
-                        label: field,
-                        kind: Some(CompletionItemKind::FIELD),
-                        ..Default::default()
-                    });
-                }
-                return Ok(Some(CompletionResponse::Array(completion_items)));
+        if in_negated_field {
+            for field in fields.clone() {
+                completion_items.push(CompletionItem {
+                    label: field,
+                    kind: Some(CompletionItemKind::FIELD),
+                    ..Default::default()
+                });
             }
-            if !top_level {
-                for symbol in symbols.iter() {
-                    if (in_anon && !symbol.named) || (!in_anon && symbol.named) {
-                        completion_items.push(CompletionItem {
-                            label: symbol.label.clone(),
-                            kind: if symbol.named {
-                                if !supertypes.contains_key(symbol) {
-                                    Some(CompletionItemKind::CLASS)
-                                } else {
-                                    Some(CompletionItemKind::INTERFACE)
-                                }
+            return Ok(Some(CompletionResponse::Array(completion_items)));
+        }
+        if !top_level {
+            for symbol in symbols.iter() {
+                if (in_anon && !symbol.named) || (!in_anon && symbol.named) {
+                    completion_items.push(CompletionItem {
+                        label: symbol.label.clone(),
+                        kind: if symbol.named {
+                            if !supertypes.contains_key(symbol) {
+                                Some(CompletionItemKind::CLASS)
                             } else {
-                                Some(CompletionItemKind::CONSTANT)
-                            },
-                            ..Default::default()
-                        });
-                    }
+                                Some(CompletionItemKind::INTERFACE)
+                            }
+                        } else {
+                            Some(CompletionItemKind::CONSTANT)
+                        },
+                        ..Default::default()
+                    });
                 }
             }
-            if !in_missing && !in_anon {
-                if !top_level {
-                    completion_items.push(CompletionItem {
-                        label: String::from("MISSING"),
-                        kind: Some(CompletionItemKind::KEYWORD),
-                        ..Default::default()
-                    });
-                }
-                for field in fields {
-                    completion_items.push(CompletionItem {
-                        label: format!("{field}: "),
-                        kind: Some(CompletionItemKind::FIELD),
-                        ..Default::default()
-                    });
-                }
+        }
+        if !in_missing && !in_anon {
+            if !top_level {
+                completion_items.push(CompletionItem {
+                    label: String::from("MISSING"),
+                    kind: Some(CompletionItemKind::KEYWORD),
+                    ..Default::default()
+                });
+            }
+            for field in fields {
+                completion_items.push(CompletionItem {
+                    label: format!("{field}: "),
+                    kind: Some(CompletionItemKind::FIELD),
+                    ..Default::default()
+                });
             }
         }
     }

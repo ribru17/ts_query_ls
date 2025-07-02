@@ -43,57 +43,53 @@ pub async fn profile_directories(directories: &[PathBuf], config: String, per_fi
                     .map(|lang| Arc::new(init_language_data(lang, name)))
             })
         });
-        if let Some(lang_data) = language_data {
-            let lang = lang_data.language.clone().unwrap();
-            if let Ok(source) = fs::read_to_string(&path) {
-                Some(tokio::spawn(async move {
-                    let mut results = Vec::new();
-                    if per_file {
-                        let now = Instant::now();
-                        let _ = Query::new(&lang, &source);
-                        results.push((path_str.clone(), 1, now.elapsed().as_micros()));
-                    } else {
-                        let mut parser = Parser::new();
-                        parser.set_language(&QUERY_LANGUAGE).unwrap();
-                        let tree = parser.parse(&source, None).expect("Tree should exist");
-                        let mut cursor = QueryCursor::new();
-                        let source_bytes = source.as_bytes();
-                        let mut matches = cursor.matches(
-                            &PATTERN_DEFINITION_QUERY,
-                            tree.root_node(),
-                            source_bytes,
-                        );
-                        while let Some(match_) = matches.next() {
-                            for capture in match_.captures {
-                                let now = Instant::now();
-                                let _ = Query::new(
-                                    &lang,
-                                    capture
-                                        .node
-                                        .utf8_text(source_bytes)
-                                        .expect("Source should be UTF-8"),
-                                );
-                                results.push((
-                                    path_str.clone(),
-                                    capture.node.start_position().row + 1,
-                                    now.elapsed().as_micros(),
-                                ));
-                            }
-                        }
-                    }
-                    results
-                }))
-            } else {
-                eprintln!("Failed to read {:?}", path.canonicalize().unwrap());
-                None
-            }
-        } else {
+        let Some(lang_data) = language_data else {
             eprintln!(
                 "Could not retrieve language for {:?}",
                 path.canonicalize().unwrap()
             );
-            None
-        }
+            return None;
+        };
+        let lang = lang_data.language.clone().unwrap();
+        let Ok(source) = fs::read_to_string(&path) else {
+            eprintln!("Failed to read {:?}", path.canonicalize().unwrap());
+            return None;
+        };
+        Some(tokio::spawn(async move {
+            if per_file {
+                let now = Instant::now();
+                let _ = Query::new(&lang, &source);
+                return vec![(path_str.clone(), 1, now.elapsed().as_micros())];
+            }
+
+            let mut results = Vec::new();
+            let mut parser = Parser::new();
+            parser.set_language(&QUERY_LANGUAGE).unwrap();
+            let tree = parser.parse(&source, None).expect("Tree should exist");
+            let mut cursor = QueryCursor::new();
+            let source_bytes = source.as_bytes();
+            let mut matches =
+                cursor.matches(&PATTERN_DEFINITION_QUERY, tree.root_node(), source_bytes);
+
+            while let Some(match_) = matches.next() {
+                for capture in match_.captures {
+                    let now = Instant::now();
+                    let _ = Query::new(
+                        &lang,
+                        capture
+                            .node
+                            .utf8_text(source_bytes)
+                            .expect("Source should be UTF-8"),
+                    );
+                    results.push((
+                        path_str.clone(),
+                        capture.node.start_position().row + 1,
+                        now.elapsed().as_micros(),
+                    ));
+                }
+            }
+            results
+        }))
     });
     let results = join_all(tasks).await;
     let mut results = results
