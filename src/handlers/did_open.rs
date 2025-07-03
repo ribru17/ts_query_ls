@@ -130,30 +130,30 @@ pub async fn populate_import_documents(
     imported_uris: &Vec<(u32, u32, Option<Url>)>,
 ) {
     for (_, _, uri) in imported_uris {
-        if let Some(uri) = uri {
-            if !backend.document_map.contains_key(uri) {
-                let path = uri.to_file_path().unwrap();
-                if let Ok(contents) = fs::read_to_string(path) {
-                    let rope = Rope::from_str(&contents);
-                    let mut parser = Parser::new();
-                    parser
-                        .set_language(&QUERY_LANGUAGE)
-                        .expect("Error loading Query grammar");
-                    let tree = parser.parse(&contents, None).unwrap();
-                    let nested_imported_uris = get_imported_uris(backend, uri, &rope, &tree).await;
-                    backend.document_map.insert(
-                        uri.clone(),
-                        DocumentData {
-                            rope,
-                            tree,
-                            language_name: None,
-                            version: -1,
-                            imported_uris: nested_imported_uris.clone(),
-                        },
-                    );
-                    Box::pin(populate_import_documents(backend, &nested_imported_uris)).await
-                }
-            }
+        if let Some(uri) = uri
+            && !backend.document_map.contains_key(uri)
+            && let Ok(contents) = uri
+                .to_file_path()
+                .and_then(|path| fs::read_to_string(path).map_err(|_| ()))
+        {
+            let rope = Rope::from_str(&contents);
+            let mut parser = Parser::new();
+            parser
+                .set_language(&QUERY_LANGUAGE)
+                .expect("Error loading Query grammar");
+            let tree = parser.parse(&contents, None).unwrap();
+            let nested_imported_uris = get_imported_uris(backend, uri, &rope, &tree).await;
+            backend.document_map.insert(
+                uri.clone(),
+                DocumentData {
+                    rope,
+                    tree,
+                    language_name: None,
+                    version: -1,
+                    imported_uris: nested_imported_uris.clone(),
+                },
+            );
+            Box::pin(populate_import_documents(backend, &nested_imported_uris)).await
         }
     }
 }

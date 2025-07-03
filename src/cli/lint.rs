@@ -128,11 +128,10 @@ pub async fn lint_directories(directories: &[PathBuf], config: String, fix: bool
             Some(tokio::spawn(async move {
                 if let Some(new_source) =
                     lint_file(&path, &uri, &source, options, fix, None, &exit_code).await
+                    && fs::write(&path, new_source).is_err()
                 {
-                    if fs::write(&path, new_source).is_err() {
-                        eprintln!("Failed to write {:?}", path.canonicalize().unwrap());
-                        exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
-                    }
+                    eprintln!("Failed to write {:?}", path.canonicalize().unwrap());
+                    exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
                 };
             }))
         } else {

@@ -33,7 +33,6 @@ pub async fn document_symbol(
             let capture_node = capture.node;
             let node_text = capture_node.text(rope);
             let parent = capture_node.parent().unwrap();
-            #[allow(deprecated)]
             document_symbols.push(DocumentSymbol {
                 name: node_text,
                 kind: SymbolKind::VARIABLE,
@@ -43,6 +42,7 @@ pub async fn document_symbol(
                 // TODO: Structure this hierarchically
                 children: None,
                 tags: None,
+                #[allow(deprecated)]
                 deprecated: None,
             });
         }
@@ -172,7 +172,6 @@ mod test {
 
         // Assert
         let actual = Some(DocumentSymbolResponse::Nested(
-            #[allow(deprecated)]
             symbols
                 .iter()
                 .map(|s| DocumentSymbol {
@@ -183,6 +182,7 @@ mod test {
                     detail: None,
                     children: None,
                     tags: None,
+                    #[allow(deprecated)]
                     deprecated: None,
                 })
                 .collect(),

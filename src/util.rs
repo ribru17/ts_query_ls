@@ -285,13 +285,12 @@ fn get_first_valid_file_config(workspace_uris: Vec<Url>) -> Option<Options> {
         if let Ok(mut path) = folder_url.to_file_path() {
             let mut config_path = path.join(".tsqueryrc.json");
             loop {
-                if config_path.is_file() {
-                    let data = fs::read_to_string(&config_path)
+                if config_path.is_file()
+                    && let Some(options) = fs::read_to_string(&config_path)
                         .ok()
-                        .and_then(|data| serde_json::from_str(&data).ok());
-                    if let Some(options) = data {
-                        return options;
-                    }
+                        .and_then(|data| serde_json::from_str(&data).ok())
+                {
+                    return options;
                 }
                 path = match path.parent() {
                     Some(parent) => parent.into(),
@@ -386,23 +385,20 @@ pub async fn get_file_uris(backend: &Backend, language_name: &str, query_type: &
         .iter()
         .filter_map(|uri| uri.to_file_path().ok())
         .collect::<Vec<_>>();
-    let scm_files = get_scm_files(&dirs);
     let language_retrieval_regexes = &backend.options.read().await.language_retrieval_patterns;
 
     let mut urls = Vec::new();
 
-    for scm_file in scm_files {
+    for scm_file in get_scm_files(&dirs) {
         for re in language_retrieval_regexes {
-            if let Some(lang_name) = re
-                .captures(&scm_file.canonicalize().unwrap().to_string_lossy())
-                .and_then(|caps| caps.get(1))
+            if scm_file.file_stem().is_some_and(|stem| stem == query_type)
+                && let Some(lang_name) = re
+                    .captures(&scm_file.canonicalize().unwrap().to_string_lossy())
+                    .and_then(|caps| caps.get(1))
+                && lang_name.as_str() == language_name
             {
-                if lang_name.as_str() == language_name
-                    && scm_file.file_stem().is_some_and(|stem| stem == query_type)
-                {
-                    urls.push(Url::from_file_path(&scm_file).unwrap());
-                    break;
-                }
+                urls.push(Url::from_file_path(&scm_file).unwrap());
+                break;
             }
         }
     }

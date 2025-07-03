@@ -230,8 +230,7 @@ fn format_iter<'a>(
                 }
             }
             if map.comment_fix.contains(id) {
-                let text = child.text(rope);
-                if let Some(mat) = COMMENT_PAT.captures(text.as_str()) {
+                if let Some(mat) = COMMENT_PAT.captures(&child.text(rope)) {
                     lines
                         .last_mut()
                         .unwrap()
@@ -310,10 +309,10 @@ fn handle_predicate(
                     Some(node) => node.kind(),
                 };
                 for arg in &args[1..] {
-                    if let QueryPredicateArg::String(kind) = arg {
-                        if node_type == kind.deref() {
-                            return false;
-                        }
+                    if let QueryPredicateArg::String(kind) = arg
+                        && node_type == kind.deref()
+                    {
+                        return false;
                     }
                 }
             }
