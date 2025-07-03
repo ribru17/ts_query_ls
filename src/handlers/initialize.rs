@@ -11,13 +11,13 @@ pub async fn initialize(backend: &Backend, params: InitializeParams) -> Result<I
     info!("ts_query_ls initialized");
     if let Ok(mut ws_uris) = backend.workspace_uris.write() {
         #[allow(deprecated)]
-        if let Some(root_uri) = params.root_uri.or(params
+        if let Some(ws_folders) = params.workspace_folders {
+            ws_uris.extend(ws_folders.into_iter().map(|folder| folder.uri));
+        } else if let Some(root_uri) = params.root_uri.or(params
             .root_path
             .and_then(|p| Url::from_str(p.as_str()).ok()))
         {
             ws_uris.push(root_uri);
-        } else if let Some(ws_folders) = params.workspace_folders {
-            ws_uris.extend(ws_folders.into_iter().map(|folder| folder.uri));
         }
     }
 
