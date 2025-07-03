@@ -377,15 +377,17 @@ pub fn get_scm_files(directories: &[PathBuf]) -> impl Iterator<Item = PathBuf> {
     })
 }
 
-pub async fn get_file_uris(backend: &Backend, language_name: &str, query_type: &str) -> Vec<Url> {
-    let dirs = backend
-        .workspace_uris
-        .read()
-        .unwrap()
+pub async fn get_file_uris(
+    uris: &[Url],
+    options: &Options,
+    language_name: &str,
+    query_type: &str,
+) -> Vec<Url> {
+    let dirs = uris
         .iter()
         .filter_map(|uri| uri.to_file_path().ok())
         .collect::<Vec<_>>();
-    let language_retrieval_regexes = &backend.options.read().await.language_retrieval_patterns;
+    let language_retrieval_regexes = &options.language_retrieval_patterns;
 
     let mut urls = Vec::new();
 
@@ -411,7 +413,8 @@ pub async fn get_file_uris(backend: &Backend, language_name: &str, query_type: &
 ///
 /// Return value is start byte, end byte, URI (if found)
 pub async fn get_imported_uris(
-    backend: &Backend,
+    workspace_uris: &[Url],
+    options: &Options,
     uri: &Url,
     rope: &Rope,
     tree: &Tree,
@@ -443,7 +446,7 @@ pub async fn get_imported_uris(
             uris.push((start, end, None));
             continue;
         }
-        let module_uris = get_file_uris(backend, module, &query_name).await;
+        let module_uris = get_file_uris(workspace_uris, options, module, &query_name).await;
         if module_uris.len() > 1 {
             warn!(
                 "Imported module {module} has more than one associated file location, analyzing the first one"

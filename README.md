@@ -277,6 +277,10 @@ formatting for the given directories. Quick fixes can be applied to supported
 diagnostics by passing the `--fix` flag. If no directories are specified to be
 checked, then the command will search for all queries in the current directory.
 
+It may also be useful to specify the workspace directory with the `--workspace`
+flag (defaults to the current directory). This is the directory that will be
+scanned for query modules when `; inherits` is used.
+
 > **NOTE:** This command performs a superset of the work done by the lint
 > command; it reads the query's language to validate query structure, node
 > names, etc.

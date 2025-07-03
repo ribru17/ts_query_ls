@@ -59,7 +59,9 @@ pub async fn goto_definition(
         get_imported_module_under_cursor(rope, tree, &cur_pos),
         uri_to_basename(uri),
     ) {
-        let uris = get_file_uris(backend, &module, &query_name).await;
+        let workspace_uris = backend.workspace_uris.read().unwrap().clone();
+        let options = backend.options.read().await;
+        let uris = get_file_uris(&workspace_uris, &options, &module, &query_name).await;
         if uris.is_empty() {
             return Ok(None);
         }
