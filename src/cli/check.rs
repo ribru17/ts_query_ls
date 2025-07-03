@@ -22,6 +22,7 @@ static LANGUAGE_CACHE: LazyLock<DashMap<String, Arc<LanguageData>>> = LazyLock::
 pub async fn check_directories(
     directories: &[PathBuf],
     config: String,
+    workspace: Option<PathBuf>,
     format: bool,
     fix: bool,
 ) -> i32 {
@@ -38,6 +39,13 @@ pub async fn check_directories(
     } else {
         directories
     };
+    let workspace = Url::from_file_path(
+        workspace
+            .unwrap_or(env::current_dir().expect("Failed to get current directory"))
+            .canonicalize()
+            .unwrap(),
+    )
+    .unwrap();
     let scm_files = get_scm_files(directories);
     let tasks = scm_files.into_iter().filter_map(|path| {
         let options_arc = options_arc.clone();
@@ -63,9 +71,11 @@ pub async fn check_directories(
             exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
             return None;
         };
+        let workspace = workspace.clone();
         Some(tokio::spawn(async move {
             if let Some(new_source) = lint_file(
                 &path,
+                &workspace,
                 &uri,
                 &source,
                 options_arc.clone(),

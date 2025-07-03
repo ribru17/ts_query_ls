@@ -4,6 +4,7 @@ use std::{
     sync::{Arc, atomic::AtomicI32},
 };
 
+use dashmap::DashMap;
 use futures::future::join_all;
 use ropey::Rope;
 use tower_lsp::lsp_types::{CodeAction, CodeActionOrCommand, DiagnosticSeverity, Url};
@@ -11,12 +12,17 @@ use ts_query_ls::Options;
 
 use crate::{
     DocumentData, LanguageData, QUERY_LANGUAGE,
-    handlers::{code_action::diag_to_code_action, diagnostic::get_diagnostics},
-    util::{edit_rope, get_language_name, get_scm_files},
+    handlers::{
+        code_action::diag_to_code_action, diagnostic::get_diagnostics,
+        did_open::populate_import_documents,
+    },
+    util::{edit_rope, get_imported_uris, get_language_name, get_scm_files},
 };
 
+#[allow(clippy::too_many_arguments)] // TODO: Refactor this
 pub(super) async fn lint_file(
     path: &Path,
+    workspace: &Url,
     uri: &Url,
     source: &str,
     options: Arc<tokio::sync::RwLock<Options>>,
@@ -30,18 +36,36 @@ pub(super) async fn lint_file(
         .expect("Error loading Query grammar");
     let tree = parser.parse(source, None).unwrap();
     let rope = Rope::from(source);
-    let language_name = get_language_name(uri, &*options.read().await);
+    let options_val = options.clone().read().await.clone();
+    let language_name = get_language_name(uri, &options_val);
+    let imported_uris =
+        get_imported_uris(&[workspace.clone()], &options_val, uri, &rope, &tree).await;
+    let document_map = DashMap::new();
+    populate_import_documents(
+        &document_map,
+        &[workspace.clone()],
+        &options_val,
+        &imported_uris,
+    )
+    .await;
     let doc = DocumentData {
         tree,
         rope,
         language_name,
         version: Default::default(),
-        // TODO: Calculate these here?
-        imported_uris: Default::default(),
+        imported_uris,
     };
     // The query construction already validates node names, fields, supertypes,
     // etc.
-    let diagnostics = get_diagnostics(uri, doc.clone(), language_data, options, false).await;
+    let diagnostics = get_diagnostics(
+        uri,
+        &document_map,
+        doc.clone(),
+        language_data,
+        options,
+        false,
+    )
+    .await;
     if diagnostics.is_empty() {
         return None;
     }
@@ -65,10 +89,26 @@ pub(super) async fn lint_file(
                 "{} in \"{}\" on line {}, col {}:\n  {}",
                 kind,
                 path_str,
-                diagnostic.range.start.line,
-                diagnostic.range.start.character,
+                diagnostic.range.start.line + 1,
+                diagnostic.range.start.character + 1,
                 diagnostic.message
             );
+            for related_info in diagnostic.related_information.unwrap_or_default() {
+                eprintln!(
+                    "    ‣ {}:{}:{}: {}",
+                    related_info
+                        .location
+                        .uri
+                        .to_file_path()
+                        .unwrap()
+                        .strip_prefix(workspace.to_file_path().unwrap())
+                        .unwrap()
+                        .to_string_lossy(),
+                    related_info.location.range.start.line + 1,
+                    related_info.location.range.start.character + 1,
+                    related_info.message
+                );
+            }
         } else {
             let Some(action) = diag_to_code_action(&doc.tree, &doc.rope, diagnostic, uri) else {
                 unfixed_issues += 1;
@@ -106,7 +146,12 @@ pub(super) async fn lint_file(
 /// Lint all the given directories according to the given configuration. Linting covers things like
 /// invalid capture names or predicate signatures, but not errors like invalid node names or
 /// impossible patterns.
-pub async fn lint_directories(directories: &[PathBuf], config: String, fix: bool) -> i32 {
+pub async fn lint_directories(
+    directories: &[PathBuf],
+    config: String,
+    workspace: Option<PathBuf>,
+    fix: bool,
+) -> i32 {
     let Ok(options) = serde_json::from_str::<Options>(&config) else {
         eprintln!("Could not parse the provided configuration");
         return 1;
@@ -119,15 +164,25 @@ pub async fn lint_directories(directories: &[PathBuf], config: String, fix: bool
     } else {
         directories
     };
+    let workspace = Url::from_file_path(
+        workspace
+            .unwrap_or(env::current_dir().expect("Failed to get current directory"))
+            .canonicalize()
+            .unwrap(),
+    )
+    .unwrap();
     let scm_files = get_scm_files(directories);
     let tasks = scm_files.into_iter().filter_map(|path| {
         let uri = Url::from_file_path(path.canonicalize().unwrap()).unwrap();
         let exit_code = exit_code.clone();
         let options = options.clone();
         if let Ok(source) = fs::read_to_string(&path) {
+            let workspace = workspace.clone();
             Some(tokio::spawn(async move {
-                if let Some(new_source) =
-                    lint_file(&path, &uri, &source, options, fix, None, &exit_code).await
+                if let Some(new_source) = lint_file(
+                    &path, &workspace, &uri, &source, options, fix, None, &exit_code,
+                )
+                .await
                     && fs::write(&path, new_source).is_err()
                 {
                     eprintln!("Failed to write {:?}", path.canonicalize().unwrap());

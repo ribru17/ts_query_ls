@@ -90,24 +90,15 @@ pub async fn diagnostic(
         .and_then(|name| backend.language_map.get(name))
         .as_deref()
         .cloned();
-    let mut items = get_diagnostics(
+    let items = get_diagnostics(
         uri,
+        &backend.document_map,
         document.clone(),
         language_data.clone(),
         backend.options.clone(),
         true,
     )
     .await;
-
-    items.append(
-        &mut get_imported_query_diagnostics(
-            backend,
-            &document.imported_uris,
-            language_data,
-            &mut HashSet::new(),
-        )
-        .await,
-    );
 
     Ok(DocumentDiagnosticReportResult::Report(
         DocumentDiagnosticReport::Full(RelatedFullDocumentDiagnosticReport {
@@ -157,11 +148,42 @@ const HINT_SEVERITY: Option<DiagnosticSeverity> = Some(DiagnosticSeverity::HINT)
 
 pub async fn get_diagnostics(
     uri: &Url,
+    document_map: &DashMap<Url, DocumentData>,
     document: DocumentData,
     language_data: Option<Arc<LanguageData>>,
     options_arc: Arc<tokio::sync::RwLock<Options>>,
     cache: bool,
 ) -> Vec<Diagnostic> {
+    get_diagnostics_recursively(
+        uri,
+        document_map,
+        document,
+        language_data,
+        options_arc,
+        cache,
+        &mut HashSet::new(),
+    )
+    .await
+}
+
+async fn get_diagnostics_recursively(
+    uri: &Url,
+    document_map: &DashMap<Url, DocumentData>,
+    document: DocumentData,
+    language_data: Option<Arc<LanguageData>>,
+    options_arc: Arc<tokio::sync::RwLock<Options>>,
+    cache: bool,
+    seen: &mut HashSet<Url>,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = Box::pin(get_imported_query_diagnostics(
+        document_map,
+        options_arc.clone(),
+        &document.imported_uris,
+        language_data.clone(),
+        seen,
+    ))
+    .await;
+
     let tree = document.tree.clone();
     let rope = document.rope.clone();
     let ld = language_data.clone();
@@ -212,7 +234,7 @@ pub async fn get_diagnostics(
     })
     .await;
 
-    let mut diagnostics = handle.unwrap_or_default();
+    diagnostics.append(&mut handle.unwrap_or_default());
 
     let options = options_arc.read().await;
     let valid_captures = options
@@ -510,7 +532,8 @@ pub async fn get_diagnostics(
 }
 
 async fn get_imported_query_diagnostics(
-    backend: &Backend,
+    document_map: &DashMap<Url, DocumentData>,
+    options_arc: Arc<tokio::sync::RwLock<Options>>,
     imported_uris: &Vec<(u32, u32, Option<Url>)>,
     language_data: Option<Arc<LanguageData>>,
     seen: &mut HashSet<Url>,
@@ -526,25 +549,18 @@ async fn get_imported_query_diagnostics(
                 continue;
             }
             seen.insert(uri.clone());
-            if let Some(doc) = backend.document_map.get(uri).as_deref().cloned() {
-                let mut inner_diags = Box::pin(get_imported_query_diagnostics(
-                    backend,
-                    &doc.imported_uris,
-                    language_data.clone(),
-                    seen,
-                ))
-                .await;
+            if let Some(doc) = document_map.get(uri).as_deref().cloned() {
                 let mut severity = DiagnosticSeverity::HINT;
-                inner_diags.append(
-                    &mut get_diagnostics(
-                        uri,
-                        doc,
-                        language_data.clone(),
-                        backend.options.clone(),
-                        true,
-                    )
-                    .await,
-                );
+                let inner_diags = get_diagnostics_recursively(
+                    uri,
+                    document_map,
+                    doc,
+                    language_data.clone(),
+                    options_arc.clone(),
+                    true,
+                    seen,
+                )
+                .await;
                 let inner_diags: Vec<DiagnosticRelatedInformation> = inner_diags
                     .into_iter()
                     .map(|diag| {

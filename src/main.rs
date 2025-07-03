@@ -256,12 +256,12 @@ struct Arguments {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Format the query files in the given directories
+    /// Format the query files in the given directories.
     Format {
-        /// List of directories to format
+        /// List of directories to format.
         directories: Vec<PathBuf>,
 
-        /// Only check that formatting is valid, do not write
+        /// Only check that formatting is valid, do not write.
         #[arg(long, short)]
         check: bool,
     },
@@ -269,18 +269,23 @@ enum Commands {
     /// of the work done by the lint command; it reads the query's language to validate query
     /// structure, node names, etc.
     Check {
-        /// List of directories to check
+        /// List of directories to check.
         directories: Vec<PathBuf>,
 
-        /// String representing server's JSON configuration
+        /// The workspace directory where imported query modules are searched when `; inherits` is
+        /// used. Defaults to the current directory.
+        #[arg(long, short)]
+        workspace: Option<PathBuf>,
+
+        /// String representing server's JSON configuration.
         #[arg(long, short)]
         config: Option<String>,
 
-        /// Check for valid formatting
+        /// Check for valid formatting.
         #[arg(long, short)]
         format: bool,
 
-        /// Apply fixes to diagnostics that have them
+        /// Apply fixes to diagnostics that have them.
         #[arg(long, short)]
         fix: bool,
     },
@@ -289,23 +294,28 @@ enum Commands {
     /// it does validate that there are no invalid captures or predicates as specified by the
     /// configuration options. Useful when you don't (yet?) have access to the parser objects.
     Lint {
-        /// List of directories to lint
+        /// List of directories to lint.
         directories: Vec<PathBuf>,
 
-        /// String representing server's JSON configuration
+        /// The workspace directory where imported query modules are searched when `; inherits` is
+        /// used. Defaults to the current directory.
+        #[arg(long, short)]
+        workspace: Option<PathBuf>,
+
+        /// String representing server's JSON configuration.
         #[arg(long, short)]
         config: Option<String>,
 
-        /// Apply fixes to diagnostics that have them
+        /// Apply fixes to diagnostics, when possible.
         #[arg(long, short)]
         fix: bool,
     },
     /// Profile each pattern in the given queries, outputting the time it takes them to compile.
     Profile {
-        /// List of directories to profile
+        /// List of directories to profile.
         directories: Vec<PathBuf>,
 
-        /// String representing server's JSON configuration
+        /// String representing server's JSON configuration.
         #[arg(long, short)]
         config: Option<String>,
 
@@ -339,20 +349,24 @@ async fn main() {
         }
         Some(Commands::Check {
             directories,
+            workspace,
             config,
             format,
             fix,
         }) => {
             let config_str = get_config_str(config);
-            std::process::exit(check_directories(&directories, config_str, format, fix).await);
+            std::process::exit(
+                check_directories(&directories, config_str, workspace, format, fix).await,
+            );
         }
         Some(Commands::Lint {
             directories,
+            workspace,
             config,
             fix,
         }) => {
             let config_str = get_config_str(config);
-            std::process::exit(lint_directories(&directories, config_str, fix).await)
+            std::process::exit(lint_directories(&directories, config_str, workspace, fix).await)
         }
         Some(Commands::Profile {
             directories,
