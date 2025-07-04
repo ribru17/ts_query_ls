@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
     fs,
+    path::PathBuf,
 };
 
 use dashmap::DashMap;
@@ -136,7 +137,7 @@ pub fn init_language_data(lang: Language, name: String) -> LanguageData {
 
 pub async fn populate_import_documents(
     document_map: &DashMap<Url, DocumentData>,
-    workspace_uris: &[Url],
+    workspace_dirs: &[PathBuf],
     options: &Options,
     imported_uris: &Vec<(u32, u32, Option<Url>)>,
 ) {
@@ -154,7 +155,7 @@ pub async fn populate_import_documents(
                 .expect("Error loading Query grammar");
             let tree = parser.parse(&contents, None).unwrap();
             let nested_imported_uris =
-                get_imported_uris(workspace_uris, options, uri, &rope, &tree).await;
+                get_imported_uris(workspace_dirs, options, uri, &rope, &tree).await;
             document_map.insert(
                 uri.clone(),
                 DocumentData {
@@ -167,7 +168,7 @@ pub async fn populate_import_documents(
             );
             Box::pin(populate_import_documents(
                 document_map,
-                workspace_uris,
+                workspace_dirs,
                 options,
                 &nested_imported_uris,
             ))

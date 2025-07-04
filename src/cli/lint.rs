@@ -22,7 +22,7 @@ use crate::{
 #[allow(clippy::too_many_arguments)] // TODO: Refactor this
 pub(super) async fn lint_file(
     path: &Path,
-    workspace: &Url,
+    workspace: &Path,
     uri: &Url,
     source: &str,
     options: Arc<tokio::sync::RwLock<Options>>,
@@ -40,7 +40,7 @@ pub(super) async fn lint_file(
     let rope = Rope::from(source);
     let options_val = options.clone().read().await.clone();
     let language_name = get_language_name(uri, &options_val);
-    let workspace_uris = &[workspace.clone()];
+    let workspace_uris = &[workspace.to_owned()];
     let imported_uris = get_imported_uris(workspace_uris, &options_val, uri, &rope, &tree).await;
     let document_map = DashMap::new();
     populate_import_documents(&document_map, workspace_uris, &options_val, &imported_uris).await;
@@ -97,7 +97,7 @@ pub(super) async fn lint_file(
                         .uri
                         .to_file_path()
                         .expect("Related information URI should be a valid file path")
-                        .strip_prefix(workspace.to_file_path().unwrap())
+                        .strip_prefix(workspace)
                         .expect("Related information URI should be within the workspace")
                         .to_string_lossy(),
                     related_info.location.range.start.line + 1,
@@ -160,13 +160,10 @@ pub async fn lint_directories(
     } else {
         directories
     };
-    let workspace = Url::from_file_path(
-        workspace
-            .unwrap_or(env::current_dir().expect("Failed to get current directory"))
-            .canonicalize()
-            .expect("Workspace path should be valid"),
-    )
-    .expect("Workspace path should be absolute");
+    let workspace = workspace
+        .unwrap_or(env::current_dir().expect("Failed to get current directory"))
+        .canonicalize()
+        .expect("Workspace path should be valid");
     let workspace = Arc::new(workspace);
     let scm_files = get_scm_files(directories);
     let tasks = scm_files.into_iter().filter_map(|path| {

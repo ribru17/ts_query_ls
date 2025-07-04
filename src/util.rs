@@ -280,24 +280,23 @@ impl NodeUtil for Node<'_> {
     }
 }
 
-fn get_first_valid_file_config(workspace_uris: Vec<Url>) -> Option<Options> {
-    for folder_url in workspace_uris {
-        if let Ok(mut path) = folder_url.to_file_path() {
-            let mut config_path = path.join(".tsqueryrc.json");
-            loop {
-                if config_path.is_file()
-                    && let Some(options) = fs::read_to_string(&config_path)
-                        .ok()
-                        .and_then(|data| serde_json::from_str(&data).ok())
-                {
-                    return options;
-                }
-                path = match path.parent() {
-                    Some(parent) => parent.into(),
-                    None => break,
-                };
-                config_path = path.join(".tsqueryrc.json");
+fn get_first_valid_file_config(workspace_uris: Vec<PathBuf>) -> Option<Options> {
+    for mut path in workspace_uris {
+        let mut config_path = path.join(".tsqueryrc.json");
+        loop {
+            if config_path.is_file()
+                && let Some(options) = fs::read_to_string(&config_path)
+                    .ok()
+                    .and_then(|data| serde_json::from_str(&data).ok())
+            {
+                return options;
             }
+            // Traverse up the file tree in search of a config file
+            path = match path.parent() {
+                Some(parent) => parent.into(),
+                None => break,
+            };
+            config_path = path.join(".tsqueryrc.json");
         }
     }
     None
@@ -306,7 +305,7 @@ fn get_first_valid_file_config(workspace_uris: Vec<Url>) -> Option<Options> {
 pub async fn set_configuration_options(
     backend: &Backend,
     init_options: Option<Value>,
-    workspace_uris: Vec<Url>,
+    workspace_uris: Vec<PathBuf>,
 ) {
     let mut options = backend.options.write().await;
     *options = Options::default();
@@ -378,20 +377,16 @@ pub fn get_scm_files(directories: &[PathBuf]) -> impl Iterator<Item = PathBuf> {
 }
 
 pub async fn get_file_uris(
-    uris: &[Url],
+    dirs: &[PathBuf],
     options: &Options,
     language_name: &str,
     query_type: &str,
 ) -> Vec<Url> {
-    let dirs = uris
-        .iter()
-        .filter_map(|uri| uri.to_file_path().ok())
-        .collect::<Vec<_>>();
     let language_retrieval_regexes = &options.language_retrieval_patterns;
 
     let mut urls = Vec::new();
 
-    for scm_file in get_scm_files(&dirs) {
+    for scm_file in get_scm_files(dirs) {
         for re in language_retrieval_regexes {
             if scm_file.file_stem().is_some_and(|stem| stem == query_type)
                 && let Some(lang_name) = re
@@ -413,7 +408,7 @@ pub async fn get_file_uris(
 ///
 /// Return value is start byte, end byte, URI (if found)
 pub async fn get_imported_uris(
-    workspace_uris: &[Url],
+    workspace_dirs: &[PathBuf],
     options: &Options,
     uri: &Url,
     rope: &Rope,
@@ -446,7 +441,7 @@ pub async fn get_imported_uris(
             uris.push((start, end, None));
             continue;
         }
-        let module_uris = get_file_uris(workspace_uris, options, module, &query_name).await;
+        let module_uris = get_file_uris(workspace_dirs, options, module, &query_name).await;
         if module_uris.len() > 1 {
             warn!(
                 "Imported module {module} has more than one associated file location, analyzing the first one"
