@@ -41,9 +41,9 @@ pub(super) async fn lint_file(
     let options_val = options.clone().read().await.clone();
     let language_name = get_language_name(uri, &options_val);
     let workspace_uris = &[workspace.to_owned()];
-    let imported_uris = get_imported_uris(workspace_uris, &options_val, uri, &rope, &tree).await;
+    let imported_uris = get_imported_uris(workspace_uris, &options_val, uri, &rope, &tree);
     let document_map = DashMap::new();
-    populate_import_documents(&document_map, workspace_uris, &options_val, &imported_uris).await;
+    populate_import_documents(&document_map, workspace_uris, &options_val, &imported_uris);
     let doc = DocumentData {
         tree,
         rope,

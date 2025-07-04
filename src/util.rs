@@ -376,7 +376,7 @@ pub fn get_scm_files(directories: &[PathBuf]) -> impl Iterator<Item = PathBuf> {
     })
 }
 
-pub async fn get_file_uris(
+pub fn get_file_uris(
     dirs: &[PathBuf],
     options: &Options,
     language_name: &str,
@@ -407,7 +407,7 @@ pub async fn get_file_uris(
 /// module could not be found.
 ///
 /// Return value is start byte, end byte, URI (if found)
-pub async fn get_imported_uris(
+pub fn get_imported_uris(
     workspace_dirs: &[PathBuf],
     options: &Options,
     uri: &Url,
@@ -441,7 +441,7 @@ pub async fn get_imported_uris(
             uris.push((start, end, None));
             continue;
         }
-        let module_uris = get_file_uris(workspace_dirs, options, module, &query_name).await;
+        let module_uris = get_file_uris(workspace_dirs, options, module, &query_name);
         if module_uris.len() > 1 {
             warn!(
                 "Imported module {module} has more than one associated file location, analyzing the first one"
