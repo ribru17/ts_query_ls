@@ -136,7 +136,7 @@ struct Backend {
     document_map: DashMap<Url, DocumentData>,
     language_map: DashMap<String, Arc<LanguageData>>,
     options: Arc<tokio::sync::RwLock<Options>>,
-    workspace_uris: Arc<RwLock<Vec<Url>>>,
+    workspace_uris: Arc<RwLock<Vec<PathBuf>>>,
 }
 
 #[tower_lsp::async_trait]

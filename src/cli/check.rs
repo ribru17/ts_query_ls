@@ -39,13 +39,10 @@ pub async fn check_directories(
     } else {
         directories
     };
-    let workspace = Url::from_file_path(
-        workspace
-            .unwrap_or(env::current_dir().expect("Failed to get current directory"))
-            .canonicalize()
-            .expect("Workspace path should be valid"),
-    )
-    .expect("Workspace path should be absolute");
+    let workspace = workspace
+        .unwrap_or(env::current_dir().expect("Failed to get current directory"))
+        .canonicalize()
+        .expect("Workspace path should be valid");
     let workspace = Arc::new(workspace);
     let scm_files = get_scm_files(directories);
     let tasks = scm_files.into_iter().filter_map(|path| {
