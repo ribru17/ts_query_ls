@@ -34,20 +34,16 @@ pub(super) async fn lint_file(
     parser
         .set_language(&QUERY_LANGUAGE)
         .expect("Error loading Query grammar");
-    let tree = parser.parse(source, None).unwrap();
+    let tree = parser
+        .parse(source, None)
+        .expect("Parsing should've completed");
     let rope = Rope::from(source);
     let options_val = options.clone().read().await.clone();
     let language_name = get_language_name(uri, &options_val);
-    let imported_uris =
-        get_imported_uris(&[workspace.clone()], &options_val, uri, &rope, &tree).await;
+    let workspace_uris = &[workspace.clone()];
+    let imported_uris = get_imported_uris(workspace_uris, &options_val, uri, &rope, &tree).await;
     let document_map = DashMap::new();
-    populate_import_documents(
-        &document_map,
-        &[workspace.clone()],
-        &options_val,
-        &imported_uris,
-    )
-    .await;
+    populate_import_documents(&document_map, workspace_uris, &options_val, &imported_uris).await;
     let doc = DocumentData {
         tree,
         rope,
@@ -70,7 +66,7 @@ pub(super) async fn lint_file(
         return None;
     }
 
-    let path_str = path.to_str().unwrap();
+    let path_str = path.to_str().expect("Path should be valid UTF-8");
     let mut edits = Vec::new();
     if !fix {
         exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
@@ -100,9 +96,9 @@ pub(super) async fn lint_file(
                         .location
                         .uri
                         .to_file_path()
-                        .unwrap()
+                        .expect("Related information URI should be a valid file path")
                         .strip_prefix(workspace.to_file_path().unwrap())
-                        .unwrap()
+                        .expect("Related information URI should be within the workspace")
                         .to_string_lossy(),
                     related_info.location.range.start.line + 1,
                     related_info.location.range.start.character + 1,
@@ -168,12 +164,14 @@ pub async fn lint_directories(
         workspace
             .unwrap_or(env::current_dir().expect("Failed to get current directory"))
             .canonicalize()
-            .unwrap(),
+            .expect("Workspace path should be valid"),
     )
-    .unwrap();
+    .expect("Workspace path should be absolute");
+    let workspace = Arc::new(workspace);
     let scm_files = get_scm_files(directories);
     let tasks = scm_files.into_iter().filter_map(|path| {
-        let uri = Url::from_file_path(path.canonicalize().unwrap()).unwrap();
+        let absolute_path = path.canonicalize().expect("Path should be valid");
+        let uri = Url::from_file_path(&absolute_path).expect("Path should be absolute");
         let exit_code = exit_code.clone();
         let options = options.clone();
         if let Ok(source) = fs::read_to_string(&path) {
@@ -185,12 +183,12 @@ pub async fn lint_directories(
                 .await
                     && fs::write(&path, new_source).is_err()
                 {
-                    eprintln!("Failed to write {:?}", path.canonicalize().unwrap());
+                    eprintln!("Failed to write {absolute_path:?}");
                     exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
                 };
             }))
         } else {
-            eprintln!("Failed to read {:?}", path.canonicalize().unwrap());
+            eprintln!("Failed to read {absolute_path:?}");
             exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
             None
         }

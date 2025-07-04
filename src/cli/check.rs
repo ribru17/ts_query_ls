@@ -43,14 +43,16 @@ pub async fn check_directories(
         workspace
             .unwrap_or(env::current_dir().expect("Failed to get current directory"))
             .canonicalize()
-            .unwrap(),
+            .expect("Workspace path should be valid"),
     )
-    .unwrap();
+    .expect("Workspace path should be absolute");
+    let workspace = Arc::new(workspace);
     let scm_files = get_scm_files(directories);
     let tasks = scm_files.into_iter().filter_map(|path| {
         let options_arc = options_arc.clone();
         let exit_code = exit_code.clone();
-        let uri = Url::from_file_path(path.canonicalize().unwrap()).unwrap();
+        let absolute_path = path.canonicalize().expect("Path should be valid");
+        let uri = Url::from_file_path(&absolute_path).expect("Path should be absolute");
         let language_name = util::get_language_name(&uri, &options);
         let language_data = language_name.and_then(|name| {
             LANGUAGE_CACHE.get(&name).as_deref().cloned().or_else(|| {
@@ -60,14 +62,11 @@ pub async fn check_directories(
         });
         let Some(lang) = language_data else {
             exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
-            eprintln!(
-                "Could not retrieve language for {:?}",
-                path.canonicalize().unwrap()
-            );
+            eprintln!("Could not retrieve language for {absolute_path:?}");
             return None;
         };
         let Ok(source) = fs::read_to_string(&path) else {
-            eprintln!("Failed to read {:?}", path.canonicalize().unwrap());
+            eprintln!("Failed to read {absolute_path:?}");
             exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
             return None;
         };
@@ -86,7 +85,7 @@ pub async fn check_directories(
             .await
                 && fs::write(&path, new_source).is_err()
             {
-                eprintln!("Failed to write {:?}", path.canonicalize().unwrap());
+                eprintln!("Failed to write {absolute_path:?}");
                 exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
             };
         }))
