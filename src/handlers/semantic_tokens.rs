@@ -1,5 +1,6 @@
 use std::sync::LazyLock;
 
+use regex::Regex;
 use tower_lsp::{
     jsonrpc::Result,
     lsp_types::{
@@ -15,13 +16,14 @@ use crate::{
     util::{INHERITS_REGEX, NodeUtil, TextProviderRope, ToTsPoint},
 };
 
+static FORMAT_IGNORE_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^;+\s*(format-ignore)").unwrap());
 static SEM_TOK_QUERY: LazyLock<Query> = LazyLock::new(|| {
     Query::new(
         &QUERY_LANGUAGE,
         r#"(named_node (identifier) @ident)
 (missing_node (identifier) @ident)
-(program
-  . (comment) @comment)
+(comment) @comment
 "#,
     )
     .unwrap()
@@ -120,8 +122,25 @@ async fn get_semantic_tokens(
                         prev_col = start_col;
                     }
                 }
-                // Highlight imported modules
+                // Highlight special comments (inherits, format ignore)
                 "comment" => {
+                    if let Some(fmt_ignore) = FORMAT_IGNORE_REGEX
+                        .captures(&node_text)
+                        .and_then(|c| c.get(1))
+                    {
+                        const FMT_IGNORE_LEN: u32 = 13;
+                        let offset = fmt_ignore.start() as u32;
+                        tokens.push(SemanticToken {
+                            delta_line,
+                            delta_start: delta_start + offset,
+                            length: FMT_IGNORE_LEN,
+                            token_type: 3,
+                            token_modifiers_bitset: 0,
+                        });
+                        prev_line = start_row;
+                        prev_col = start_col + offset;
+                        continue;
+                    };
                     if start_row != 0 {
                         continue;
                     }
@@ -203,6 +222,9 @@ mod test {
 (MISSING ERROR) @missingerror
 
 (MISSING supertype) @missingsupertype
+
+;;;format-ignore
+(foo)
         ";
         let mut service = initialize_server(
             &[(
@@ -240,9 +262,17 @@ mod test {
         let actual = Some(SemanticTokensResult::Tokens(SemanticTokens {
             result_id: None,
             data: vec![
+                // ; inherits:
                 SemanticToken {
                     delta_line: 0,
-                    delta_start: 12,
+                    delta_start: 2,
+                    length: 9,
+                    token_type: 3,
+                    token_modifiers_bitset: 0,
+                },
+                SemanticToken {
+                    delta_line: 0,
+                    delta_start: 10,
                     length: 1,
                     token_type: 2,
                     token_modifiers_bitset: 0,
@@ -254,6 +284,7 @@ mod test {
                     token_type: 2,
                     token_modifiers_bitset: 0,
                 },
+                // ERROR, Supertypes
                 SemanticToken {
                     delta_line: 2,
                     delta_start: 1,
@@ -294,6 +325,14 @@ mod test {
                     delta_start: 9,
                     length: 9,
                     token_type: 0,
+                    token_modifiers_bitset: 0,
+                },
+                // format-ignore
+                SemanticToken {
+                    delta_line: 2,
+                    delta_start: 3,
+                    length: 13,
+                    token_type: 3,
                     token_modifiers_bitset: 0,
                 },
             ],
