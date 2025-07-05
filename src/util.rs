@@ -14,7 +14,6 @@ use tree_sitter::{
     InputEdit, Language, Node, Point, Query, QueryCapture, QueryCursor, TextProvider, Tree,
     WasmStore,
 };
-use walkdir::WalkDir;
 
 use crate::{Backend, ENGINE, Options, QUERY_LANGUAGE};
 
@@ -366,11 +365,12 @@ pub fn capture_at_pos<'t>(
 
 pub fn get_scm_files(directories: &[PathBuf]) -> impl Iterator<Item = PathBuf> {
     directories.iter().flat_map(|directory| {
-        WalkDir::new(directory)
-            .into_iter()
+        // TODO: Parallelize this for further performance gains?
+        ignore::Walk::new(directory)
             .filter_map(|e| e.ok())
             .filter(|e| {
-                e.file_type().is_file() && e.path().extension().is_some_and(|ext| ext == "scm")
+                e.file_type().is_some_and(|ft| ft.is_file())
+                    && e.path().extension().is_some_and(|ext| ext == "scm")
             })
             .map(|e| e.path().to_owned())
     })
