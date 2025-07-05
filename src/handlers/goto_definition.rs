@@ -61,7 +61,7 @@ pub async fn goto_definition(
     ) {
         let workspace_uris = backend.workspace_uris.read().unwrap().clone();
         let options = backend.options.read().await;
-        let uris = get_file_uris(&workspace_uris, &options, &module, &query_name).await;
+        let uris = get_file_uris(&workspace_uris, &options, &module, &query_name);
         if uris.is_empty() {
             return Ok(None);
         }

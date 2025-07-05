@@ -30,15 +30,14 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     let options = backend.options.read().await;
     let language_name = get_language_name(uri, &options);
     let workspace_uris = backend.workspace_uris.read().unwrap().clone();
-    let imported_uris = get_imported_uris(&workspace_uris, &options, uri, &rope, &tree).await;
+    let imported_uris = get_imported_uris(&workspace_uris, &options, uri, &rope, &tree);
 
     populate_import_documents(
         &backend.document_map,
         &workspace_uris,
         &options,
         &imported_uris,
-    )
-    .await;
+    );
 
     // Track the document
     let version = params.text_document.version;
@@ -135,7 +134,7 @@ pub fn init_language_data(lang: Language, name: String) -> LanguageData {
     }
 }
 
-pub async fn populate_import_documents(
+pub fn populate_import_documents(
     document_map: &DashMap<Url, DocumentData>,
     workspace_dirs: &[PathBuf],
     options: &Options,
@@ -155,7 +154,7 @@ pub async fn populate_import_documents(
                 .expect("Error loading Query grammar");
             let tree = parser.parse(&contents, None).unwrap();
             let nested_imported_uris =
-                get_imported_uris(workspace_dirs, options, uri, &rope, &tree).await;
+                get_imported_uris(workspace_dirs, options, uri, &rope, &tree);
             document_map.insert(
                 uri.clone(),
                 DocumentData {
@@ -166,13 +165,7 @@ pub async fn populate_import_documents(
                     imported_uris: nested_imported_uris.clone(),
                 },
             );
-            Box::pin(populate_import_documents(
-                document_map,
-                workspace_dirs,
-                options,
-                &nested_imported_uris,
-            ))
-            .await
+            populate_import_documents(document_map, workspace_dirs, options, &nested_imported_uris)
         }
     }
 }
