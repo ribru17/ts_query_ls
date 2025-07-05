@@ -240,6 +240,8 @@ vim.api.nvim_create_autocmd('FileType', {
     `language_retrieval_pattern`. Note that imported files will match the query
     type of the original (e.g. `; inherits: foo`) inside `bar/highlights.scm`
     will retrieve `foo/highlights.scm`, and not e.g. `foo/folds.scm`.
+  - Query files will not be searched within hidden directories or `gitignore`d
+    locations.
 - Support for hover, selection range, document symbols, semantic tokens, code
   actions, and document highlight
 
