@@ -35,6 +35,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
 
       # Upload Rust binaries
       - uses: taiki-e/upload-rust-binary-action@v1
