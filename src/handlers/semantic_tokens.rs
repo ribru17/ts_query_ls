@@ -125,14 +125,26 @@ async fn get_semantic_tokens(
                     if start_row != 0 {
                         continue;
                     }
-                    let Some(pre_text) = INHERITS_REGEX.captures(&node_text).and_then(|c| c.get(1))
+                    let Some(mods) = INHERITS_REGEX.captures(&node_text).and_then(|c| c.get(1))
                     else {
                         continue;
                     };
-                    let mods = pre_text.as_str().split(',');
-                    let len = pre_text.start() as u32;
-                    let mut delta_start = delta_start + len;
-                    let mut start_col = start_col + len;
+                    let offset = mods.start() as u32;
+                    let mods = mods.as_str().split(',');
+
+                    // Add a token for `inherits:`
+                    const INHERITS_LEN: u32 = 9;
+                    let mut delta_start = delta_start + offset - INHERITS_LEN - 1;
+                    tokens.push(SemanticToken {
+                        delta_line: 0,
+                        delta_start,
+                        length: INHERITS_LEN,
+                        token_type: 3,
+                        token_modifiers_bitset: 0,
+                    });
+                    delta_start = INHERITS_LEN + 1;
+
+                    let mut start_col = start_col + offset;
                     let mut delta_line = delta_line;
                     for module in mods {
                         // We assert that modules are valid ASCII characters, so we can index them

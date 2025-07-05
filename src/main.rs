@@ -81,6 +81,7 @@ static SERVER_CAPABILITIES: LazyLock<ServerCapabilities> = LazyLock::new(|| Serv
                     SemanticTokenType::INTERFACE,
                     SemanticTokenType::VARIABLE,
                     SemanticTokenType::NAMESPACE,
+                    SemanticTokenType::KEYWORD,
                 ],
                 token_modifiers: vec![SemanticTokenModifier::DEFAULT_LIBRARY],
             },
