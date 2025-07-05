@@ -17,3 +17,4 @@ pub mod rename;
 pub mod selection_range;
 pub mod semantic_tokens;
 pub mod shutdown;
+pub mod workspace_symbol;
