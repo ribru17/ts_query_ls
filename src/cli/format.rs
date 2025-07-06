@@ -44,6 +44,11 @@ pub async fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
             let tree = parser.parse(contents.as_str(), None).unwrap();
             let rope = Rope::from(contents.as_str());
             let Some(formatted) = formatting::format_document(&rope, &tree.root_node()) else {
+                exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
+                eprintln!(
+                    "Unable to format -- Syntax error detected for {:?}",
+                    path.canonicalize().unwrap()
+                );
                 return;
             };
             if check {
