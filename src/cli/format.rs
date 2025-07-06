@@ -46,7 +46,7 @@ pub async fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
             let Some(formatted) = formatting::format_document(&rope, &tree.root_node()) else {
                 exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
                 eprintln!(
-                    "Unable to format -- Syntax error detected for {:?}",
+                    "No formatting performed -- invalid syntax detected at {:?}",
                     path.canonicalize().unwrap()
                 );
                 return;
@@ -71,7 +71,7 @@ pub async fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
                             eprintln!("{line}");
                         }
                     }
-                    println!();
+                    eprintln!();
                 }
             } else if fs::write(&path, formatted).is_err() {
                 exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
