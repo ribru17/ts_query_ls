@@ -4,7 +4,7 @@ use streaming_iterator::StreamingIterator;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
     CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, CompletionTextEdit,
-    Documentation, InsertTextFormat, MarkupContent, MarkupKind, Range, TextEdit,
+    Documentation, InsertTextFormat, MarkupContent, MarkupKind, Position, Range, TextEdit,
 };
 use tracing::warn;
 use tree_sitter::QueryCursor;
@@ -52,9 +52,22 @@ pub async fn completion(
             return Ok(None);
         }
         let Some(inherits) = current_node.text(rope).find("inherits: ") else {
+            let line_len = rope.line(0).len_utf16_cu() as u32;
             return Ok(Some(CompletionResponse::Array(vec![CompletionItem {
                 label: String::from("inherits: "),
+                documentation: Some(Documentation::MarkupContent(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: String::from(include_str!(concat!(
+                        env!("CARGO_MANIFEST_DIR"),
+                        "/docs/inherits.md"
+                    ))),
+                })),
                 kind: Some(CompletionItemKind::KEYWORD),
+                insert_text_format: Some(InsertTextFormat::SNIPPET),
+                text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+                    range: Range::new(Position::new(0, 0), Position::new(0, line_len)),
+                    new_text: String::from("; inherits: ${1:foo}"),
+                })),
                 ..Default::default()
             }])));
         };
@@ -344,9 +357,9 @@ mod test {
     use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
         CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse,
-        CompletionTextEdit, InsertTextFormat, MarkupContent, MarkupKind, PartialResultParams,
-        Position, Range, TextDocumentIdentifier, TextDocumentPositionParams, TextEdit,
-        WorkDoneProgressParams, request::Completion,
+        CompletionTextEdit, Documentation, InsertTextFormat, MarkupContent, MarkupKind,
+        PartialResultParams, Position, Range, TextDocumentIdentifier, TextDocumentPositionParams,
+        TextEdit, WorkDoneProgressParams, request::Completion,
     };
     use ts_query_ls::{
         Options, Predicate, PredicateParameter, PredicateParameterArity, PredicateParameterType,
@@ -696,6 +709,31 @@ mod test {
             CompletionItem {
                 label: String::from("inherits: "),
                 kind: Some(CompletionItemKind::KEYWORD),
+                documentation: Some(Documentation::MarkupContent(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: String::from("## Inheriting queries
+
+```query
+; inherits: foo,bar
+```
+
+Queries can inherit other queries if they have an `; inherits:` comment as the
+first line of the query file. The language server will then act as though the
+text of the inherited query files was placed at the top of the document, and
+will provide diagnostics for the text in those queries as well (calculated with
+the language information of the parent query). Queries will always inherit
+others of the same type (e.g. a `highlights.scm` will only import other
+`highlights.scm`, never an `injections.scm`).
+
+Note that the syntax is very sensitive; there must be _exactly one_ space after
+the `inherits:` keyword, and there must be no spaces in-between module names.
+"),
+                })),
+                insert_text_format: Some(InsertTextFormat::SNIPPET),
+                text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+                    range: Range::new(Position::new(0, 0), Position::new(0, 6)),
+                    new_text: String::from("; inherits: ${1:foo}"),
+                })),
                 ..Default::default()
             },
         ]
