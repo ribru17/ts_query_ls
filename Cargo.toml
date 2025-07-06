@@ -22,8 +22,10 @@ path = "src/lib.rs"
 schema = ["schemars"]
 
 [dependencies]
+anstyle = "1.0.11"
 clap = { version = "4.5.31", features = ["derive"] }
 dashmap = "6.1.0"
+diffy = "0.4.2"
 dissimilar = "1.0.9"
 futures = "0.3.31"
 ignore = "0.4.23"

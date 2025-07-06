@@ -4,6 +4,7 @@ use std::{
     sync::{Arc, atomic::AtomicI32},
 };
 
+use anstyle::{AnsiColor, Color, Style};
 use futures::future::join_all;
 use ropey::Rope;
 
@@ -17,6 +18,16 @@ pub async fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
 
     let scm_files = get_scm_files(directories);
     let exit_code = Arc::new(AtomicI32::new(0));
+    let use_color = std::env::var("NO_COLOR").map_or(true, |v| v.is_empty());
+    let (red, green, blue) = if use_color {
+        (
+            Some(AnsiColor::Red),
+            Some(AnsiColor::Green),
+            Some(AnsiColor::Blue),
+        )
+    } else {
+        (None, None, None)
+    };
 
     let tasks = scm_files.into_iter().map(|path| {
         let exit_code = exit_code.clone();
@@ -43,6 +54,19 @@ pub async fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
                         "Improper formatting detected for {:?}",
                         path.canonicalize().unwrap()
                     );
+                    let patch = diffy::create_patch(&contents, &formatted).to_string();
+                    for line in patch.lines() {
+                        if line.starts_with("@@") {
+                            eprintln!("{}", paint(blue, line));
+                        } else if line.starts_with("-") {
+                            eprintln!("{}", paint(red, line));
+                        } else if line.starts_with("+") {
+                            eprintln!("{}", paint(green, line));
+                        } else {
+                            eprintln!("{line}");
+                        }
+                    }
+                    println!();
                 }
             } else if fs::write(&path, formatted).is_err() {
                 exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
@@ -52,4 +76,9 @@ pub async fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
     });
     join_all(tasks).await;
     exit_code.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn paint(color: Option<impl Into<Color>>, text: &str) -> String {
+    let style = Style::new().fg_color(color.map(Into::into));
+    format!("{style}{text}{style:#}")
 }
