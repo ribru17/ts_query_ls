@@ -32,8 +32,9 @@ pub async fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
     let tasks = scm_files.into_iter().map(|path| {
         let exit_code = exit_code.clone();
         tokio::spawn(async move {
+            let path_str = path.to_string_lossy();
             let Ok(contents) = fs::read_to_string(&path) else {
-                eprintln!("Failed to read {:?}", path.canonicalize().unwrap());
+                eprintln!("Failed to read {path_str:?}");
                 exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
                 return;
             };
@@ -45,20 +46,14 @@ pub async fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
             let rope = Rope::from(contents.as_str());
             let Some(formatted) = formatting::format_document(&rope, &tree.root_node()) else {
                 exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
-                eprintln!(
-                    "No formatting performed -- invalid syntax detected at {:?}",
-                    path.canonicalize().unwrap()
-                );
+                eprintln!("No formatting performed -- invalid syntax detected at {path_str:?}");
                 return;
             };
             if check {
                 let edits = formatting::diff(&contents, &formatted, &rope);
                 if !edits.is_empty() {
                     exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
-                    eprintln!(
-                        "Improper formatting detected for {:?}",
-                        path.canonicalize().unwrap()
-                    );
+                    eprintln!("Improper formatting detected for {path_str:?}");
                     let patch = diffy::create_patch(&contents, &formatted).to_string();
                     for line in patch.lines() {
                         if line.starts_with("@@") {
@@ -75,7 +70,7 @@ pub async fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
                 }
             } else if fs::write(&path, formatted).is_err() {
                 exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
-                eprint!("Failed to write to {:?}", path.canonicalize().unwrap())
+                eprint!("Failed to write to {path_str:?}");
             }
         })
     });
