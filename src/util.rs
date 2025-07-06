@@ -459,3 +459,22 @@ pub fn get_imported_uris(
 
     uris
 }
+
+/// Check if a string is a subsequence of another string; in order words, it is contained in the
+/// other string with possible gaps between characters.
+pub fn is_subsequence(sub: &str, main: &str) -> bool {
+    let mut sub_iter = sub.chars().peekable();
+    let mut main_iter = main.chars();
+
+    while let Some(&sub_char) = sub_iter.peek() {
+        match main_iter.next() {
+            Some(main_char) if main_char == sub_char => {
+                sub_iter.next();
+            }
+            None => return false,
+            _ => {}
+        }
+    }
+
+    true
+}

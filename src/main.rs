@@ -34,7 +34,8 @@ use tower_lsp::{
         SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
         SemanticTokensParams, SemanticTokensRangeParams, SemanticTokensRangeResult,
         SemanticTokensResult, SemanticTokensServerCapabilities, ServerCapabilities,
-        TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url, WorkspaceEdit,
+        SymbolInformation, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
+        WorkspaceEdit, WorkspaceSymbolParams,
     },
 };
 use tree_sitter::{Language, Tree, wasmtime::Engine};
@@ -93,6 +94,7 @@ static SERVER_CAPABILITIES: LazyLock<ServerCapabilities> = LazyLock::new(|| Serv
     hover_provider: Some(HoverProviderCapability::Simple(true)),
     document_symbol_provider: Some(OneOf::Left(true)),
     selection_range_provider: Some(SelectionRangeProviderCapability::Simple(true)),
+    workspace_symbol_provider: Some(OneOf::Left(true)),
     ..Default::default()
 });
 static ENGINE: LazyLock<Engine> = LazyLock::new(Engine::default);
@@ -223,6 +225,13 @@ impl LanguageServer for Backend {
         params: DocumentSymbolParams,
     ) -> Result<Option<DocumentSymbolResponse>> {
         document_symbol::document_symbol(self, params).await
+    }
+
+    async fn symbol(
+        &self,
+        params: WorkspaceSymbolParams,
+    ) -> Result<Option<Vec<SymbolInformation>>> {
+        workspace_symbol::symbol(self, params).await
     }
 
     async fn diagnostic(
