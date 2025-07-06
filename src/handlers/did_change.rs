@@ -4,7 +4,10 @@ use tree_sitter::Parser;
 
 use crate::{
     Backend, QUERY_LANGUAGE,
-    util::{edit_rope, get_imported_uris, lsp_textdocchange_to_ts_inputedit},
+    util::{
+        byte_offset_to_lsp_position, edit_rope, get_imported_uris,
+        lsp_textdocchange_to_ts_inputedit,
+    },
 };
 
 use super::did_open::populate_import_documents;
@@ -28,17 +31,11 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
         let rope = &mut document.rope;
         let new_text = change.text.as_str();
 
-        let range = if let Some(range) = change.range {
-            range
-        } else {
-            let start_line_idx = rope.byte_to_line(0);
-            let text_end_byte_idx = new_text.len();
-            let end_line_idx = rope.byte_to_line(text_end_byte_idx);
-
-            let start = Position::new(start_line_idx as u32, 0);
-            let end = Position::new(end_line_idx as u32, 0);
+        let range = change.range.unwrap_or_else(|| {
+            let start = Position::new(0, 0);
+            let end = byte_offset_to_lsp_position(rope.len_bytes() - 1, rope).unwrap_or_default();
             Range { start, end }
-        };
+        });
 
         if range.start.line == 0 {
             recalculate_imports = true;
