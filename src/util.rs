@@ -160,20 +160,18 @@ pub fn lsp_textdocchange_to_ts_inputedit(
     let text = change.text.as_str();
     let text_end_byte_count = text.len();
 
-    let range = if let Some(range) = change.range {
-        range
-    } else {
-        let start = byte_offset_to_lsp_position(0, rope)?;
-        let end = byte_offset_to_lsp_position(text_end_byte_count, rope)?;
+    let range = change.range.unwrap_or_else(|| {
+        let start = Position::new(0, 0);
+        let end = byte_offset_to_lsp_position(rope.len_bytes() - 1, rope).unwrap();
         Range { start, end }
-    };
+    });
 
     let start_position = range.start.to_ts_point(rope);
     let start_byte = lsp_position_to_byte_offset(range.start, rope)?;
     let old_end_position = range.end.to_ts_point(rope);
     let old_end_byte = lsp_position_to_byte_offset(range.end, rope)?;
 
-    let new_end_byte = start_byte as usize + text_end_byte_count;
+    let new_end_byte = start_byte + text_end_byte_count;
 
     let new_end_position = {
         if new_end_byte >= rope.len_bytes() {
