@@ -46,32 +46,38 @@ mod test {
         assert_eq!(after, formatted);
     }
 
+    enum FormatValidity {
+        Valid,
+        Invalid,
+        SyntaxError,
+    }
+
     #[rstest]
     #[case(
         concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_trailing_whitespace.scm"),
-        false
+        FormatValidity::Invalid
     )]
     #[case(
         concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/after_trailing_whitespace.scm"),
-        true
+        FormatValidity::Valid
     )]
     #[case(
         concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_predicates.scm"),
-        false
+        FormatValidity::Invalid
     )]
     #[case(
         concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_missing.scm"),
-        false
+        FormatValidity::Invalid
     )]
     #[case(
         concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_syntax_error.scm"),
-        true // NOTE: Syntax errors are not issued formatting warnings. Revisit this?
+        FormatValidity::SyntaxError // NOTE: Files containing syntax errors cannot be formatted
     )]
     #[case(
         concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/after_complex.scm"),
-        true
+        FormatValidity::Valid
     )]
-    fn cli_format_validate(#[case] path_str: &str, #[case] valid: bool) {
+    fn cli_format_validate(#[case] path_str: &str, #[case] valid: FormatValidity) {
         // Arrange
         let path = Path::new(path_str);
 
@@ -84,16 +90,27 @@ mod test {
             .expect("Failed to wait on ts-query-ls format command");
 
         // Assert
-        if valid {
-            assert!(output.stderr.is_empty());
-            assert_eq!(output.status.code(), Some(0));
-        } else {
-            assert!(
-                String::from_utf8(output.stderr)
-                    .unwrap()
-                    .contains("Improper formatting detected for")
-            );
-            assert_eq!(output.status.code(), Some(1));
+        match valid {
+            FormatValidity::Valid => {
+                assert!(output.stderr.is_empty());
+                assert_eq!(output.status.code(), Some(0));
+            }
+            FormatValidity::Invalid => {
+                assert!(
+                    String::from_utf8(output.stderr)
+                        .unwrap()
+                        .contains("Improper formatting detected for")
+                );
+                assert_eq!(output.status.code(), Some(1));
+            }
+            FormatValidity::SyntaxError => {
+                assert!(
+                    String::from_utf8(output.stderr)
+                        .unwrap()
+                        .contains("No formatting performed -- invalid syntax detected at")
+                );
+                assert_eq!(output.status.code(), Some(1));
+            }
         }
     }
 }
