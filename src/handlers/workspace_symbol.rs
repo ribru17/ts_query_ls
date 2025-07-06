@@ -24,10 +24,7 @@ pub async fn symbol(
         .read()
         .as_deref()
         .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|uri| uri.to_file_path().ok())
-        .collect::<Vec<_>>();
+        .unwrap_or_default();
 
     let mut parser = Parser::new();
     parser
