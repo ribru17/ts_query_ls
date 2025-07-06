@@ -12,7 +12,8 @@ use ts_query_ls::{PredicateParameterArity, PredicateParameterType};
 
 use crate::util::{
     CAPTURES_QUERY, NodeUtil, TextProviderRope, ToTsPoint, get_current_capture_node,
-    lsp_position_to_byte_offset, node_is_or_has_ancestor, uri_to_basename,
+    get_language_name_raw, get_scm_files, lsp_position_to_byte_offset, node_is_or_has_ancestor,
+    uri_to_basename,
 };
 use crate::{Backend, SymbolInfo};
 
@@ -45,9 +46,43 @@ pub async fn completion(
         .named_descendant_for_point_range(point, point)
         .unwrap();
 
-    // Don't offer completions when in a comment
+    // Import completions
     if current_node.kind() == "comment" {
-        return Ok(None);
+        if position.line != 0 {
+            return Ok(None);
+        }
+        let Some(inherits) = current_node.text(rope).find("inherits: ") else {
+            return Ok(Some(CompletionResponse::Array(vec![CompletionItem {
+                label: String::from("inherits: "),
+                kind: Some(CompletionItemKind::KEYWORD),
+                ..Default::default()
+            }])));
+        };
+        if (position.character as usize) < current_node.start_position().column + inherits + 9 {
+            return Ok(None);
+        }
+        let Ok(path) = uri.to_file_path() else {
+            return Ok(None);
+        };
+        let Some(query_type) = path.file_stem() else {
+            return Ok(None);
+        };
+        let options = &backend.options.read().await;
+        return Ok(Some(CompletionResponse::Array(
+            get_scm_files(&backend.workspace_uris.read().unwrap())
+                .filter_map(|file| {
+                    if file.file_stem().is_none_or(|stem| stem != query_type) {
+                        return None;
+                    }
+                    get_language_name_raw(&file, options)
+                })
+                .map(|file| CompletionItem {
+                    label: file,
+                    kind: Some(CompletionItemKind::MODULE),
+                    ..Default::default()
+                })
+                .collect(),
+        )));
     }
 
     // Subtype completions
@@ -616,6 +651,51 @@ mod test {
             CompletionItem {
                 label: String::from("name"),
                 kind: Some(CompletionItemKind::FIELD),
+                ..Default::default()
+            },
+        ]
+    )]
+    #[case(
+        r"; inherits: ",
+        Position { line: 0, character: 12 },
+        &[SymbolInfo { label: String::from("constant"), named: true }],
+        &["operator", "name"],
+        &["supertype"],
+        &Options { valid_captures: HashMap::from([(String::from("test"),
+            BTreeMap::from([(String::from("constant"), String::from("a constant"))]))]),
+            ..Default::default() },
+        &[
+            CompletionItem {
+                label: String::from("cpp"),
+                kind: Some(CompletionItemKind::MODULE),
+                ..Default::default()
+            },
+        ]
+    )]
+    #[case(
+        r"; inherits: ",
+        Position { line: 0, character: 4 },
+        &[SymbolInfo { label: String::from("constant"), named: true }],
+        &["operator", "name"],
+        &["supertype"],
+        &Options { valid_captures: HashMap::from([(String::from("test"),
+            BTreeMap::from([(String::from("constant"), String::from("a constant"))]))]),
+            ..Default::default() },
+        &[]
+    )]
+    #[case(
+        r"; inhe",
+        Position { line: 0, character: 6 },
+        &[SymbolInfo { label: String::from("constant"), named: true }],
+        &["operator", "name"],
+        &["supertype"],
+        &Options { valid_captures: HashMap::from([(String::from("test"),
+            BTreeMap::from([(String::from("constant"), String::from("a constant"))]))]),
+            ..Default::default() },
+        &[
+            CompletionItem {
+                label: String::from("inherits: "),
+                kind: Some(CompletionItemKind::KEYWORD),
                 ..Default::default()
             },
         ]

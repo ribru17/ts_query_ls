@@ -199,6 +199,7 @@ pub fn lsp_textdocchange_to_ts_inputedit(
 
 const DYLIB_EXTENSIONS: [&str; 3] = [".so", ".dll", ".dylib"];
 
+/// Get the language name of a URI, following user-specified language aliases.
 pub fn get_language_name(uri: &Url, options: &Options) -> Option<String> {
     let language_retrieval_regexes = &options.language_retrieval_patterns;
     let mut captures = None;
@@ -217,6 +218,19 @@ pub fn get_language_name(uri: &Url, options: &Options) -> Option<String> {
                 .cloned()
                 .unwrap_or(capture.as_str().to_owned())
         })
+}
+
+/// Get the language name of a file without following aliases.
+pub fn get_language_name_raw(path: &Path, options: &Options) -> Option<String> {
+    let language_retrieval_regexes = &options.language_retrieval_patterns;
+    let path = path.canonicalize().ok()?;
+    let path_str = &path.to_string_lossy();
+    for re in language_retrieval_regexes {
+        if let Some(caps) = re.captures(path_str).and_then(|caps| caps.get(1)) {
+            return Some(caps.as_str().to_owned());
+        }
+    }
+    None
 }
 
 pub fn get_language(name: &str, options: &Options) -> Option<Language> {
@@ -382,21 +396,14 @@ pub fn get_file_uris(
     language_name: &str,
     query_type: &str,
 ) -> Vec<Url> {
-    let language_retrieval_regexes = &options.language_retrieval_patterns;
-
     let mut urls = Vec::new();
 
     for scm_file in get_scm_files(dirs) {
-        for re in language_retrieval_regexes {
-            if scm_file.file_stem().is_some_and(|stem| stem == query_type)
-                && let Some(lang_name) = re
-                    .captures(&scm_file.canonicalize().unwrap().to_string_lossy())
-                    .and_then(|caps| caps.get(1))
-                && lang_name.as_str() == language_name
-            {
-                urls.push(Url::from_file_path(&scm_file).unwrap());
-                break;
-            }
+        if scm_file.file_stem().is_some_and(|stem| stem == query_type)
+            && let Some(lang_name) = get_language_name_raw(&scm_file, options)
+            && lang_name.as_str() == language_name
+        {
+            urls.push(Url::from_file_path(&scm_file).unwrap());
         }
     }
 

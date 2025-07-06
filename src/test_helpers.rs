@@ -5,6 +5,8 @@ pub mod helpers {
 
     use std::{
         collections::{BTreeSet, HashMap, HashSet},
+        path::PathBuf,
+        str::FromStr,
         sync::{Arc, LazyLock},
     };
     use tower::{Service, ServiceExt};
@@ -115,7 +117,16 @@ pub mod helpers {
                     )
                 },
             )),
-            workspace_uris: Default::default(),
+            workspace_uris: Arc::new(
+                vec![
+                    PathBuf::from_str(concat!(
+                        env!("CARGO_MANIFEST_DIR"),
+                        "/queries/test_workspace/"
+                    ))
+                    .unwrap(),
+                ]
+                .into(),
+            ),
             options: arced_options,
         })
         .finish();
