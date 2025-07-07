@@ -9,7 +9,9 @@ use tree_sitter::Query;
 
 use crate::{
     Backend, QUERY_LANGUAGE, SymbolInfo,
-    util::{INHERITS_REGEX, NodeUtil, ToTsPoint, capture_at_pos, uri_to_basename},
+    util::{
+        FORMAT_IGNORE_REGEX, INHERITS_REGEX, NodeUtil, ToTsPoint, capture_at_pos, uri_to_basename,
+    },
 };
 
 static HOVER_QUERY: LazyLock<Query> = LazyLock::new(|| {
@@ -43,6 +45,7 @@ static DOCS: LazyLock<HashMap<&'static str, &'static str>> = include_docs_map!(
     "error",
     "negation",
     "inherits",
+    "format-ignore",
 );
 
 pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hover>> {
@@ -164,18 +167,27 @@ pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hove
                 None
             }
         }
-        "comment.first" => {
-            if position.line != 0 || !INHERITS_REGEX.is_match(&capture_text) {
-                return Ok(None);
+        "comment" => {
+            if position.line == 0 && INHERITS_REGEX.is_match(&capture_text) {
+                return Ok(Some(Hover {
+                    range,
+                    contents: HoverContents::Markup(MarkupContent {
+                        kind: MarkupKind::Markdown,
+                        value: DOCS.get("inherits").unwrap().to_string(),
+                    }),
+                }));
             }
-
-            Some(Hover {
-                range,
-                contents: HoverContents::Markup(MarkupContent {
-                    kind: MarkupKind::Markdown,
-                    value: DOCS.get("inherits").unwrap().to_string(),
-                }),
-            })
+            if FORMAT_IGNORE_REGEX.is_match(&capture_text) {
+                Some(Hover {
+                    range,
+                    contents: HoverContents::Markup(MarkupContent {
+                        kind: MarkupKind::Markdown,
+                        value: DOCS.get("format-ignore").unwrap().to_string(),
+                    }),
+                })
+            } else {
+                None
+            }
         }
         _ => None,
     })
@@ -369,6 +381,11 @@ An error node", BTreeMap::from([(String::from("error"), String::from("An error n
         end: Position::new(0, 17)
     },
     "", BTreeMap::default())]
+    #[case(";;; format-ignore", vec![], Position { line: 0, character: 2 }, Range {
+        start: Position::new(0, 0),
+        end: Position::new(0, 17)
+    },
+    "## `; format-ignore`\n\nThe formatter will ignore nodes that are preceeded by a comment starting with\n`format-ignore`.\n\n```query\n((call_expression\n  function: (identifier) @function.builtin)\n  ; format-ignore\n  (#any-of? @function.builtin\n    \"printf\"   \"printf_s\"\n    \"vprintf\"  \"vprintf_s\"\n    \"scanf\"    \"scanf_s\"\n    \"vscanf\"   \"vscanf_s\"\n    \"wprintf\"  \"wprintf_s\"\n    \"vwprintf\" \"vwprintf_s\"\n    \"wscanf\"   \"wscanf_s\"\n    \"vwscanf\"  \"vwscanf_s\"\n    \"cscanf\"   \"_cscanf\"\n    \"printw\"\n    \"scanw\"))\n```\n", BTreeMap::default())]
     #[tokio::test(flavor = "current_thread")]
     async fn hover(
         #[case] source: &str,
