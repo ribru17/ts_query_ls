@@ -260,6 +260,9 @@ the files.
 ts_query_ls format --help
 ```
 
+> **NOTE:** You can ignore formatting for a node by placing a `; format-ignore`
+> comment before it.
+
 ### CI Tool
 
 The language server can also be used as standalone CI tool by passing the
