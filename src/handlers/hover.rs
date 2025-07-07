@@ -9,7 +9,7 @@ use tree_sitter::Query;
 
 use crate::{
     Backend, QUERY_LANGUAGE, SymbolInfo,
-    util::{NodeUtil, ToTsPoint, capture_at_pos, uri_to_basename},
+    util::{INHERITS_REGEX, NodeUtil, ToTsPoint, capture_at_pos, uri_to_basename},
 };
 
 static HOVER_QUERY: LazyLock<Query> = LazyLock::new(|| {
@@ -42,6 +42,7 @@ static DOCS: LazyLock<HashMap<&'static str, &'static str>> = include_docs_map!(
     "alternation",
     "error",
     "negation",
+    "inherits",
 );
 
 pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hover>> {
@@ -162,6 +163,19 @@ pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hove
             } else {
                 None
             }
+        }
+        "comment.first" => {
+            if position.line != 0 || !INHERITS_REGEX.is_match(&capture_text) {
+                return Ok(None);
+            }
+
+            Some(Hover {
+                range,
+                contents: HoverContents::Markup(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: DOCS.get("inherits").unwrap().to_string(),
+                }),
+            })
         }
         _ => None,
     })
@@ -344,6 +358,17 @@ An error node", BTreeMap::from([(String::from("error"), String::from("An error n
         end: Position::new(19, 22)
     },
     "Check for equality\n\n---\n\n## Parameters:\n\n- Type: `capture` (required)\n  - A capture\n- Type: `string` (required)\n  - A string\n", BTreeMap::default())]
+    #[case(";;; inherits: foo", vec![], Position { line: 0, character: 2 }, Range {
+        start: Position::new(0, 0),
+        end: Position::new(0, 17)
+    },
+    "## Inheriting queries\n\n```query\n; inherits: foo,bar\n```\n\nQueries can inherit other queries if they have an `; inherits:` comment as the\nfirst line of the query file. The language server will then act as though the\ntext of the inherited query files was placed at the top of the document, and\nwill provide diagnostics for the text in those queries as well (calculated with\nthe language information of the parent query). Queries will always inherit\nothers of the same type (e.g. a `highlights.scm` will only import other\n`highlights.scm`, never an `injections.scm`).\n\nNote that the syntax is very sensitive; there must be _exactly one_ space after\nthe `inherits:` keyword, and there must be no spaces in-between module names.\n", BTreeMap::default())]
+    #[case("
+;;; inherits: foo", vec![], Position { line: 1, character: 2 }, Range {
+        start: Position::new(0, 0),
+        end: Position::new(0, 17)
+    },
+    "", BTreeMap::default())]
     #[tokio::test(flavor = "current_thread")]
     async fn hover(
         #[case] source: &str,
