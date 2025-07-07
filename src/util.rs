@@ -263,12 +263,17 @@ pub fn get_language(name: &str, options: &Options) -> Option<Language> {
 
 fn get_language_object_wasm(name: &str, directory: &String) -> Option<Language> {
     let object_name = format!("tree-sitter-{name}.wasm");
-    // NOTE: If WasmStore could be passed around threads safely, we could just create one global
-    // store and put all of the WASM modules in there.
     let mut language_store = WasmStore::new(&ENGINE).ok()?;
     let library_path = Path::new(directory).join(&object_name);
     if let Ok(wasm) = fs::read(library_path) {
-        return language_store.load_language(name, &wasm).ok();
+        let lang = language_store.load_language(name, &wasm);
+        return match lang {
+            Err(err) => {
+                warn!("Error loading language {name}: {err}");
+                None
+            }
+            Ok(lang) => Some(lang),
+        };
     }
     None
 }
