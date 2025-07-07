@@ -44,3 +44,7 @@
   name: _ @predicate
   name: (identifier) @predicate
   (predicate_type) @predicate)
+
+(program
+  .
+  (comment) @comment.first)
