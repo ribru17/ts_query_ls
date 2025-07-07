@@ -96,11 +96,7 @@ mod test {
                 assert_eq!(output.status.code(), Some(0));
             }
             FormatValidity::Invalid => {
-                assert!(
-                    String::from_utf8(output.stderr)
-                        .unwrap()
-                        .contains("Improper formatting detected for")
-                );
+                assert!(String::from_utf8(output.stderr).unwrap().contains(path_str));
                 assert_eq!(output.status.code(), Some(1));
             }
             FormatValidity::SyntaxError => {

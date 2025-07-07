@@ -19,14 +19,15 @@ pub async fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
     let scm_files = get_scm_files(directories);
     let exit_code = Arc::new(AtomicI32::new(0));
     let use_color = std::env::var("NO_COLOR").map_or(true, |v| v.is_empty());
-    let (red, green, blue) = if use_color {
+    let (red, green, blue, purple) = if use_color {
         (
             Some(AnsiColor::Red),
             Some(AnsiColor::Green),
             Some(AnsiColor::Blue),
+            Some(AnsiColor::Magenta),
         )
     } else {
-        (None, None, None)
+        (None, None, None, None)
     };
 
     let tasks = scm_files.into_iter().map(|path| {
@@ -53,7 +54,7 @@ pub async fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
                 let edits = formatting::diff(&contents, &formatted, &rope);
                 if !edits.is_empty() {
                     exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
-                    eprintln!("Improper formatting detected for {path_str:?}");
+                    eprintln!("{}", paint(purple, &format!("{path_str:?}:")));
                     let patch = diffy::create_patch(&contents, &formatted).to_string();
                     for line in patch.lines() {
                         if line.starts_with("@@") {
