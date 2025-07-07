@@ -21,6 +21,8 @@ pub static CAPTURES_QUERY: LazyLock<Query> =
     LazyLock::new(|| Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap());
 pub static INHERITS_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^;+\s*inherits: ([a-zA-Z0-9\-_,]+)").unwrap());
+pub static FORMAT_IGNORE_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^;+\s*(format-ignore)").unwrap());
 
 /// Returns the starting byte of the character if the position is in the middle of a character.
 pub fn lsp_position_to_byte_offset(position: Position, rope: &Rope) -> Result<usize, ropey::Error> {

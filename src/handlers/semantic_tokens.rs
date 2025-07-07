@@ -1,6 +1,5 @@
 use std::sync::LazyLock;
 
-use regex::Regex;
 use tower_lsp::{
     jsonrpc::Result,
     lsp_types::{
@@ -13,11 +12,9 @@ use tree_sitter::{Query, QueryCursor, StreamingIterator};
 
 use crate::{
     Backend, QUERY_LANGUAGE, SymbolInfo,
-    util::{INHERITS_REGEX, NodeUtil, TextProviderRope, ToTsPoint},
+    util::{FORMAT_IGNORE_REGEX, INHERITS_REGEX, NodeUtil, TextProviderRope, ToTsPoint},
 };
 
-static FORMAT_IGNORE_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^;+\s*(format-ignore)").unwrap());
 static SEM_TOK_QUERY: LazyLock<Query> = LazyLock::new(|| {
     Query::new(
         &QUERY_LANGUAGE,
