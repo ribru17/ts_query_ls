@@ -1708,8 +1708,8 @@ checksum = "c4013970217383f67b18aef68f6fb2e8d409bc5755227092d32efb0422ba24b8"
 
 [[package]]
 name = "tree-sitter-query"
-version = "0.6.1"
-source = "git+https://github.com/tree-sitter-grammars/tree-sitter-query?rev=2b3669919b22f1a6e5bfcf3753caaa63fd14e8ec#2b3669919b22f1a6e5bfcf3753caaa63fd14e8ec"
+version = "0.6.2"
+source = "git+https://github.com/tree-sitter-grammars/tree-sitter-query#8a43889f89fd0667289936341bff3a77bafade17"
 dependencies = [
  "cc",
  "tree-sitter-language",
