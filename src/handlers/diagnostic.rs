@@ -84,21 +84,40 @@ pub async fn diagnostic(
             data: None,
         });
     };
-    let language_data = document
-        .language_name
-        .as_ref()
-        .and_then(|name| backend.language_map.get(name))
-        .as_deref()
-        .cloned();
-    let items = get_diagnostics(
+    let (language_data, language_diag) = if let Some(name) = document.language_name.as_ref() {
+        match backend.language_map.get(name) {
+            Some(lang) => (Some(lang.clone()), None),
+            None => (
+                None,
+                Some(Diagnostic {
+                    message: format!("Language object for {name:?} not found"),
+                    severity: WARNING_SEVERITY,
+                    ..Default::default()
+                }),
+            ),
+        }
+    } else {
+        (
+            None,
+            Some(Diagnostic {
+                message: String::from("Language name could not be determined"),
+                severity: WARNING_SEVERITY,
+                ..Default::default()
+            }),
+        )
+    };
+    let mut items = get_diagnostics(
         uri,
         &backend.document_map,
-        document.clone(),
-        language_data.clone(),
+        document,
+        language_data,
         backend.options.clone(),
         true,
     )
     .await;
+    if let Some(diagnostic) = language_diag {
+        items.push(diagnostic);
+    }
 
     Ok(DocumentDiagnosticReportResult::Report(
         DocumentDiagnosticReport::Full(RelatedFullDocumentDiagnosticReport {
