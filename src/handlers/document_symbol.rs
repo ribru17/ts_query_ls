@@ -141,7 +141,7 @@ mod test {
     async fn document_symbol(#[case] source: &str, #[case] symbols: Vec<DocSymbol>) {
         // Arrange
         let mut service =
-            initialize_server(&[(TEST_URI.clone(), source)], &[], &Default::default()).await;
+            initialize_server(&[(TEST_URI.clone(), source)], &Default::default()).await;
 
         // Act
         let tokens = service

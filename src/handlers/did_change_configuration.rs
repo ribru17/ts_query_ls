@@ -33,7 +33,7 @@ mod test {
     #[tokio::test(flavor = "current_thread")]
     async fn server_did_change_configuration() {
         // Arrange
-        let mut service = initialize_server(&[], &[], &Default::default()).await;
+        let mut service = initialize_server(&[], &Default::default()).await;
 
         // Act
         service

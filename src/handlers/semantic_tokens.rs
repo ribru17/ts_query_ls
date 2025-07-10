@@ -202,7 +202,7 @@ mod test {
     };
 
     use crate::test_helpers::helpers::{
-        TEST_URI, initialize_server, lsp_request_to_jsonrpc_request,
+        QUERY_TEST_URI, initialize_server, lsp_request_to_jsonrpc_request,
         lsp_response_to_jsonrpc_response,
     };
 
@@ -211,32 +211,23 @@ mod test {
         // Arrange
         let source = r"; inherits: c,cuda
 
-(ERROR) @error (supertype) @node (supertype) @node
+(ERROR) @error (definition) @node (definition) @node
 
-(supertype) @node
+(definition) @node
 
 ; Weird
 (MISSING ERROR) @missingerror
 
-(MISSING supertype) @missingsupertype
+(MISSING definition) @missingsupertype
 
 ;;;format-ignore
 (foo)
         ";
-        let mut service = initialize_server(
-            &[(TEST_URI.clone(), source)],
-            &[(
-                String::from("js"),
-                Vec::new(),
-                Vec::new(),
-                vec!["supertype"],
-            )],
-            &Default::default(),
-        )
-        .await;
+        let mut service =
+            initialize_server(&[(QUERY_TEST_URI.clone(), source)], &Default::default()).await;
 
         // Act
-        let tokens = service
+        let actual_tokens = service
             .ready()
             .await
             .unwrap()
@@ -247,7 +238,7 @@ mod test {
                     },
                     work_done_progress_params: WorkDoneProgressParams::default(),
                     text_document: TextDocumentIdentifier {
-                        uri: TEST_URI.clone(),
+                        uri: QUERY_TEST_URI.clone(),
                     },
                 },
             ))
@@ -255,7 +246,7 @@ mod test {
             .unwrap();
 
         // Assert
-        let actual = Some(SemanticTokensResult::Tokens(SemanticTokens {
+        let expected_tokens = Some(SemanticTokensResult::Tokens(SemanticTokens {
             result_id: None,
             data: vec![
                 // ; inherits:
@@ -291,21 +282,21 @@ mod test {
                 SemanticToken {
                     delta_line: 0,
                     delta_start: 15,
-                    length: 9,
+                    length: 10,
                     token_type: 0,
                     token_modifiers_bitset: 0,
                 },
                 SemanticToken {
                     delta_line: 0,
-                    delta_start: 18,
-                    length: 9,
+                    delta_start: 19,
+                    length: 10,
                     token_type: 0,
                     token_modifiers_bitset: 0,
                 },
                 SemanticToken {
                     delta_line: 2,
                     delta_start: 1,
-                    length: 9,
+                    length: 10,
                     token_type: 0,
                     token_modifiers_bitset: 0,
                 },
@@ -319,7 +310,7 @@ mod test {
                 SemanticToken {
                     delta_line: 2,
                     delta_start: 9,
-                    length: 9,
+                    length: 10,
                     token_type: 0,
                     token_modifiers_bitset: 0,
                 },
@@ -334,8 +325,8 @@ mod test {
             ],
         }));
         assert_eq!(
-            tokens,
-            Some(lsp_response_to_jsonrpc_response::<SemanticTokensFullRequest>(actual))
+            Some(lsp_response_to_jsonrpc_response::<SemanticTokensFullRequest>(expected_tokens)),
+            actual_tokens,
         );
     }
 }

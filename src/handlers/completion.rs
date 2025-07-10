@@ -106,6 +106,7 @@ pub async fn completion(
         || current_node
             .prev_sibling()
             .is_some_and(|sib| sib.kind() == "/")
+        || (current_node.is_error() && current_node.child(0).is_some_and(|c| c.kind() == "/"))
     {
         let response = || {
             let supertype = current_node.prev_named_sibling()?;
@@ -350,7 +351,10 @@ pub async fn completion(
 
 #[cfg(test)]
 mod test {
-    use std::collections::{BTreeMap, HashMap};
+    use std::{
+        collections::{BTreeMap, HashMap},
+        sync::LazyLock,
+    };
 
     use pretty_assertions::assert_eq;
     use rstest::rstest;
@@ -365,22 +369,196 @@ mod test {
         Options, Predicate, PredicateParameter, PredicateParameterArity, PredicateParameterType,
     };
 
-    use crate::{
-        SymbolInfo,
-        test_helpers::helpers::{
-            TEST_URI, initialize_server, lsp_request_to_jsonrpc_request,
-            lsp_response_to_jsonrpc_response,
-        },
+    use crate::test_helpers::helpers::{
+        QUERY_TEST_URI, initialize_server, lsp_request_to_jsonrpc_request,
+        lsp_response_to_jsonrpc_response,
     };
+
+    static NODE_COMPLETIONS: LazyLock<Vec<CompletionItem>> = LazyLock::new(|| {
+        vec![
+            CompletionItem {
+                label: String::from("ERROR"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("escape_sequence"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("identifier"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("comment"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("predicate_type"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("program"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("definition"),
+                kind: Some(CompletionItemKind::INTERFACE),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("quantifier"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("capture"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("string"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("string_content"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("parameters"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("list"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("grouping"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("missing_node"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("anonymous_node"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("named_node"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("field_definition"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("negated_field"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("predicate"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("MISSING"),
+                kind: Some(CompletionItemKind::KEYWORD),
+                ..Default::default()
+            },
+        ]
+    });
+
+    static FIELD_COMPLETIONS: LazyLock<Vec<CompletionItem>> = LazyLock::new(|| {
+        vec![
+            CompletionItem {
+                label: String::from("name"),
+                kind: Some(CompletionItemKind::FIELD),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("parameters"),
+                kind: Some(CompletionItemKind::FIELD),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("quantifier"),
+                kind: Some(CompletionItemKind::FIELD),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("supertype"),
+                kind: Some(CompletionItemKind::FIELD),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("type"),
+                kind: Some(CompletionItemKind::FIELD),
+                ..Default::default()
+            },
+        ]
+    });
+
+    static SUBTYPE_COMPLETIONS: LazyLock<Vec<CompletionItem>> = LazyLock::new(|| {
+        vec![
+            CompletionItem {
+                label: String::from("anonymous_node"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("field_definition"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("grouping"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("list"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("missing_node"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("named_node"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("predicate"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+        ]
+    });
 
     #[rstest]
     #[case(
         r#"((identifier) @constant
 (#match? @cons "^[A-Z][A-Z\\d_]*$"))"#,
         Position { line: 1, character: 14 },
-        &[SymbolInfo { label: String::from("identifier"), named: true }],
-        &["operator"],
-        &["supertype"],
         &Default::default(),
         &[CompletionItem {
             label: String::from("@constant"),
@@ -399,27 +577,15 @@ mod test {
         r#"((ident) @constant
 (#match? @constant "^[A-Z][A-Z\\d_]*$"))"#,
         Position { line: 0, character: 6 },
-        &[SymbolInfo { label: String::from("identifier"), named: true }],
-        &["operator"],
-        &["supertype"],
         &Default::default(),
-        &[
-            CompletionItem {
-                label: String::from("identifier"),
-                kind: Some(CompletionItemKind::CLASS),
-                ..Default::default()
-            },
-            CompletionItem {
-                label: String::from("MISSING"),
-                kind: Some(CompletionItemKind::KEYWORD),
-                ..Default::default()
-            },
-            CompletionItem {
-                label: String::from("operator: "),
-                kind: Some(CompletionItemKind::FIELD),
-                ..Default::default()
-            },
-        ]
+        &{
+            let mut compls = NODE_COMPLETIONS.clone();
+            compls.extend(FIELD_COMPLETIONS.clone().iter_mut().map(|fc| {
+                fc.label += ": ";
+                fc.clone()
+            }));
+            compls
+        },
     )]
     #[case(
         r"((constant) @constant
@@ -427,38 +593,24 @@ mod test {
 )
 ",
         Position { line: 1, character: 4 },
-        &[SymbolInfo { label: String::from("constant"), named: true }],
-        &["operator"],
-        &["supertype"],
         &Default::default(),
         &[]
     )]
     #[case(
-        r"(supertype/t)",
+        r"(definition/)",
         Position { line: 0, character: 12 },
-        &[SymbolInfo { label: String::from("constant"), named: true }],
-        &["operator"],
-        &["supertype"],
         &Default::default(),
-        &[
-            CompletionItem {
-                label: String::from("test"),
-                kind: Some(CompletionItemKind::CLASS),
-                ..Default::default()
-            },
-            CompletionItem {
-                label: String::from("test2"),
-                kind: Some(CompletionItemKind::CLASS),
-                ..Default::default()
-            },
-        ]
+        &SUBTYPE_COMPLETIONS
+    )]
+    #[case(
+        r"(definition/a)",
+        Position { line: 0, character: 13 },
+        &Default::default(),
+        &SUBTYPE_COMPLETIONS
     )]
     #[case(
         r"(constant) @cons ",
         Position { line: 0, character: 13 },
-        &[SymbolInfo { label: String::from("constant"), named: true }],
-        &["operator"],
-        &["supertype"],
         &Options { valid_captures: HashMap::from([(String::from("test"),
             BTreeMap::from([(String::from("constant"), String::from("a constant"))]))]),
             ..Default::default() },
@@ -480,9 +632,6 @@ mod test {
     #[case(
         r"(constant) @ ",
         Position { line: 0, character: 12 },
-        &[SymbolInfo { label: String::from("constant"), named: true }],
-        &["operator"],
-        &["supertype"],
         &Options { valid_captures: HashMap::from([(String::from("test"),
             BTreeMap::from([(String::from("constant"), String::from("a constant"))]))]),
             ..Default::default() },
@@ -504,9 +653,6 @@ mod test {
     #[case(
         r"( (constant) @constant (#eq? @) ) ",
         Position { line: 0, character: 30 },
-        &[SymbolInfo { label: String::from("constant"), named: true }],
-        &["operator"],
-        &["supertype"],
         &Options { valid_captures: HashMap::from([(String::from("test"),
             BTreeMap::from([(String::from("constant"), String::from("a constant"))]))]),
             ..Default::default() },
@@ -524,9 +670,6 @@ mod test {
     #[case(
         r"( (constant) @constant (#eq? @cons) ) ",
         Position { line: 0, character: 34 },
-        &[SymbolInfo { label: String::from("constant"), named: true }],
-        &["operator"],
-        &["supertype"],
         &Options { valid_captures: HashMap::from([(String::from("test"),
             BTreeMap::from([(String::from("constant"), String::from("a constant"))]))]),
             ..Default::default() },
@@ -544,9 +687,6 @@ mod test {
     #[case(
         r"( (constant) @constant (#) ) ",
         Position { line: 0, character: 25 },
-        &[SymbolInfo { label: String::from("constant"), named: true }],
-        &["operator"],
-        &["supertype"],
         &Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([(String::from("constant"), String::from("a constant"))]))]),
@@ -627,53 +767,22 @@ mod test {
     #[case(
         r"((constant ! ) @constant)",
         Position { line: 0, character: 12 },
-        &[SymbolInfo { label: String::from("constant"), named: true }],
-        &["operator", "name"],
-        &["supertype"],
         &Options { valid_captures: HashMap::from([(String::from("test"),
             BTreeMap::from([(String::from("constant"), String::from("a constant"))]))]),
             ..Default::default() },
-        &[
-            CompletionItem {
-                label: String::from("operator"),
-                kind: Some(CompletionItemKind::FIELD),
-                ..Default::default()
-            },
-            CompletionItem {
-                label: String::from("name"),
-                kind: Some(CompletionItemKind::FIELD),
-                ..Default::default()
-            },
-        ]
+        &FIELD_COMPLETIONS
     )]
     #[case(
         r"((constant !oper ) @constant)",
         Position { line: 0, character: 16 },
-        &[SymbolInfo { label: String::from("constant"), named: true }],
-        &["operator", "name"],
-        &["supertype"],
         &Options { valid_captures: HashMap::from([(String::from("test"),
             BTreeMap::from([(String::from("constant"), String::from("a constant"))]))]),
             ..Default::default() },
-        &[
-            CompletionItem {
-                label: String::from("operator"),
-                kind: Some(CompletionItemKind::FIELD),
-                ..Default::default()
-            },
-            CompletionItem {
-                label: String::from("name"),
-                kind: Some(CompletionItemKind::FIELD),
-                ..Default::default()
-            },
-        ]
+        &FIELD_COMPLETIONS
     )]
     #[case(
         r"; inherits: ",
         Position { line: 0, character: 12 },
-        &[SymbolInfo { label: String::from("constant"), named: true }],
-        &["operator", "name"],
-        &["supertype"],
         &Options { valid_captures: HashMap::from([(String::from("test"),
             BTreeMap::from([(String::from("constant"), String::from("a constant"))]))]),
             ..Default::default() },
@@ -683,14 +792,16 @@ mod test {
                 kind: Some(CompletionItemKind::MODULE),
                 ..Default::default()
             },
+            CompletionItem {
+                label: String::from("other"),
+                kind: Some(CompletionItemKind::MODULE),
+                ..Default::default()
+            },
         ]
     )]
     #[case(
         r"; inherits: ",
         Position { line: 0, character: 4 },
-        &[SymbolInfo { label: String::from("constant"), named: true }],
-        &["operator", "name"],
-        &["supertype"],
         &Options { valid_captures: HashMap::from([(String::from("test"),
             BTreeMap::from([(String::from("constant"), String::from("a constant"))]))]),
             ..Default::default() },
@@ -699,9 +810,6 @@ mod test {
     #[case(
         r"; inhe",
         Position { line: 0, character: 6 },
-        &[SymbolInfo { label: String::from("constant"), named: true }],
-        &["operator", "name"],
-        &["supertype"],
         &Options { valid_captures: HashMap::from([(String::from("test"),
             BTreeMap::from([(String::from("constant"), String::from("a constant"))]))]),
             ..Default::default() },
@@ -742,24 +850,11 @@ the `inherits:` keyword, and there must be no spaces in-between module names.
     async fn server_completions(
         #[case] source: &str,
         #[case] position: Position,
-        #[case] symbols: &[SymbolInfo],
-        #[case] fields: &[&str],
-        #[case] supertypes: &[&str],
         #[case] options: &Options,
         #[case] expected_completions: &[CompletionItem],
     ) {
         // Arrange
-        let mut service = initialize_server(
-            &[(TEST_URI.clone(), source)],
-            &[(
-                String::from("js"),
-                symbols.to_vec(),
-                fields.to_vec(),
-                supertypes.to_vec(),
-            )],
-            options,
-        )
-        .await;
+        let mut service = initialize_server(&[(QUERY_TEST_URI.clone(), source)], options).await;
 
         // Act
         let actual_completions = service
@@ -772,7 +867,7 @@ the `inherits:` keyword, and there must be no spaces in-between module names.
                     text_document_position: TextDocumentPositionParams {
                         position,
                         text_document: TextDocumentIdentifier {
-                            uri: TEST_URI.clone(),
+                            uri: QUERY_TEST_URI.clone(),
                         },
                     },
                     partial_result_params: PartialResultParams::default(),

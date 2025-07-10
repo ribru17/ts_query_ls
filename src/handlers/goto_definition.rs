@@ -151,7 +151,7 @@ mod test {
     ) {
         // Arrange
         let mut service =
-            initialize_server(&[(TEST_URI.clone(), input)], &[], &Default::default()).await;
+            initialize_server(&[(TEST_URI.clone(), input)], &Default::default()).await;
 
         // Act
         let refs = service

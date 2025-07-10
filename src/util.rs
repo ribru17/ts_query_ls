@@ -234,6 +234,11 @@ pub fn get_language_name_raw(path: &Path, options: &Options) -> Option<String> {
 }
 
 pub fn get_language(name: &str, options: &Options) -> Option<Language> {
+    // Return query language object for mock tests
+    if cfg!(test) && name == "query" {
+        return Some(QUERY_LANGUAGE.clone());
+    }
+
     let directories = &options.parser_install_directories;
     let name = name.replace('-', "_");
     let language_fn_name = format!("tree_sitter_{name}");

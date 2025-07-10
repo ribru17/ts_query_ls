@@ -106,12 +106,8 @@ mod test {
         #[case] expected_ranges: Option<Vec<Vec<Range>>>,
     ) {
         // Arrange
-        let mut service = initialize_server(
-            &[(TEST_URI.clone(), document_text)],
-            &[],
-            &Default::default(),
-        )
-        .await;
+        let mut service =
+            initialize_server(&[(TEST_URI.clone(), document_text)], &Default::default()).await;
         let expected_selection_ranges = if let Some(ranges_list) = expected_ranges {
             let mut results = Vec::new();
             for ranges in ranges_list {

@@ -68,7 +68,7 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
         .insert(language_name, language_data.into());
 }
 
-pub fn init_language_data(lang: Language, name: String) -> LanguageData {
+pub fn init_language_data(language: Language, name: String) -> LanguageData {
     let mut symbols_vec: Vec<SymbolInfo> = vec![];
     let mut symbols_set: HashSet<SymbolInfo> = HashSet::new();
     let mut fields_vec: Vec<String> = vec![];
@@ -81,13 +81,14 @@ pub fn init_language_data(lang: Language, name: String) -> LanguageData {
     };
     symbols_set.insert(error_symbol.clone());
     symbols_vec.push(error_symbol);
-    for i in 0..lang.node_kind_count() as u16 {
-        let supertype = lang.node_kind_is_supertype(i);
-        let named = lang.node_kind_is_named(i) || supertype;
+    for i in 0..language.node_kind_count() as u16 {
+        let supertype = language.node_kind_is_supertype(i);
+        let named = language.node_kind_is_named(i) || supertype;
         let label = if named {
-            lang.node_kind_for_id(i).unwrap().to_owned()
+            language.node_kind_for_id(i).unwrap().to_owned()
         } else {
-            lang.node_kind_for_id(i)
+            language
+                .node_kind_for_id(i)
                 .unwrap()
                 .replace('\\', r"\\")
                 .replace('"', r#"\""#)
@@ -100,24 +101,26 @@ pub fn init_language_data(lang: Language, name: String) -> LanguageData {
         if supertype {
             supertype_map.insert(
                 symbol_info.clone(),
-                lang.subtypes_for_supertype(i)
+                language
+                    .subtypes_for_supertype(i)
                     .iter()
                     .map(|s| SymbolInfo {
-                        label: lang.node_kind_for_id(*s).unwrap().to_string(),
-                        named: lang.node_kind_is_named(*s) || lang.node_kind_is_supertype(*s),
+                        label: language.node_kind_for_id(*s).unwrap().to_string(),
+                        named: language.node_kind_is_named(*s)
+                            || language.node_kind_is_supertype(*s),
                     })
                     .collect(),
             );
         }
-        if symbols_set.contains(&symbol_info) || !(lang.node_kind_is_visible(i) || supertype) {
+        if symbols_set.contains(&symbol_info) || !(language.node_kind_is_visible(i) || supertype) {
             continue;
         }
         symbols_set.insert(symbol_info.clone());
         symbols_vec.push(symbol_info);
     }
     // Field IDs go from 1 to nfields inclusive (extra index 0 maps to NULL)
-    for i in 1..=lang.field_count() as u16 {
-        let field_name = lang.field_name_for_id(i).unwrap().to_owned();
+    for i in 1..=language.field_count() as u16 {
+        let field_name = language.field_name_for_id(i).unwrap().to_owned();
         if !fields_set.contains(&field_name) {
             fields_set.insert(field_name.clone());
             fields_vec.push(field_name);
@@ -130,7 +133,7 @@ pub fn init_language_data(lang: Language, name: String) -> LanguageData {
         symbols_vec,
         symbols_set,
         supertype_map,
-        language: Some(lang),
+        language,
     }
 }
 
@@ -185,7 +188,7 @@ mod test {
     #[tokio::test(flavor = "current_thread")]
     async fn server_did_open_document() {
         // Arrange
-        let mut service = initialize_server(&[], &[], &Default::default()).await;
+        let mut service = initialize_server(&[], &Default::default()).await;
         let source = r#""[" @cap"#;
 
         // Act

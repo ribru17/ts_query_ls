@@ -2,32 +2,25 @@
 pub mod helpers {
     use serde_json::to_value;
 
-    use std::{
-        collections::{BTreeSet, HashMap, HashSet},
-        path::PathBuf,
-        str::FromStr,
-        sync::{Arc, LazyLock},
-    };
+    use std::sync::LazyLock;
     use tower::{Service, ServiceExt};
-    use tree_sitter::Parser;
 
-    use dashmap::DashMap;
     use tower_lsp::{
         LspService,
         jsonrpc::{Request, Response},
         lsp_types::{
             ClientCapabilities, DidOpenTextDocumentParams, InitializeParams, Position, Range,
-            TextDocumentContentChangeEvent, TextDocumentItem, TextEdit, Url,
+            TextDocumentContentChangeEvent, TextDocumentItem, TextEdit, Url, WorkspaceFolder,
             notification::DidOpenTextDocument, request::Initialize,
         },
     };
 
-    use crate::{Backend, LanguageData, Options, QUERY_LANGUAGE, SymbolInfo};
+    use crate::{Backend, Options};
 
     pub static TEST_URI: LazyLock<Url> =
         LazyLock::new(|| Url::parse("file:///tmp/queries/js/test.scm").unwrap());
-    pub static TEST_URI_2: LazyLock<Url> =
-        LazyLock::new(|| Url::parse("file:///tmp/queries/css/test.scm").unwrap());
+    pub static QUERY_TEST_URI: LazyLock<Url> =
+        LazyLock::new(|| Url::parse("file:///tmp/queries/query/test.scm").unwrap());
     pub const SIMPLE_FILE: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/queries/example_test_files/simple.scm"
@@ -43,70 +36,22 @@ pub mod helpers {
     /// A tuple holding the document's URI and source text.
     pub type Document<'a> = (Url, &'a str);
 
-    /// A tuple holding the language's name, symbols, fields, and supertype names.
-    pub type TestLanguage<'a> = (String, Vec<SymbolInfo>, Vec<&'a str>, Vec<&'a str>);
-
     /// Initialize a test server, populating it with fake documents denoted by (uri, text, symbols, fields) tuples.
     pub async fn initialize_server(
         documents: &[Document<'_>],
-        languages: &[TestLanguage<'_>],
         options: &Options,
     ) -> LspService<Backend> {
-        let mut parser = Parser::new();
-        parser
-            .set_language(&QUERY_LANGUAGE)
-            .expect("Error loading Query grammar");
         let options_value = serde_json::to_value(options).unwrap();
-        let options = &serde_json::from_value::<Options>(options_value.clone()).unwrap();
-        let arced_options = Arc::new(tokio::sync::RwLock::new(options.clone()));
-        let workspace_dirs = vec![
-            PathBuf::from_str(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/queries/test_workspace/"
-            ))
-            .unwrap(),
-        ];
         let (mut service, _socket) = LspService::build(|client| Backend {
             _client: client,
             document_map: Default::default(),
-            language_map: DashMap::from_iter(languages.iter().cloned().map(
-                |(name, symbols, fields, supertypes)| {
-                    (
-                        name.clone(),
-                        Arc::new(LanguageData {
-                            name,
-                            symbols_set: HashSet::from_iter(symbols.iter().cloned()),
-                            symbols_vec: symbols.to_vec(),
-                            fields_set: HashSet::from_iter(fields.iter().map(ToString::to_string)),
-                            fields_vec: fields.iter().map(ToString::to_string).collect(),
-                            supertype_map: HashMap::from_iter(supertypes.iter().map(|st| {
-                                (
-                                    SymbolInfo {
-                                        label: st.to_string(),
-                                        named: true,
-                                    },
-                                    BTreeSet::from([
-                                        SymbolInfo {
-                                            label: "test".to_string(),
-                                            named: true,
-                                        },
-                                        SymbolInfo {
-                                            label: "test2".to_string(),
-                                            named: true,
-                                        },
-                                    ]),
-                                )
-                            })),
-                            language: None,
-                        }),
-                    )
-                },
-            )),
-            workspace_uris: Arc::new(workspace_dirs.into()),
-            options: arced_options,
+            language_map: Default::default(),
+            workspace_uris: Default::default(),
+            options: Default::default(),
         })
         .finish();
 
+        // Initialize the server
         service
             .ready()
             .await
@@ -114,7 +59,14 @@ pub mod helpers {
             .call(lsp_request_to_jsonrpc_request::<Initialize>(
                 InitializeParams {
                     capabilities: ClientCapabilities::default(),
-                    root_uri: Some(Url::parse("file:///tmp/").unwrap()),
+                    workspace_folders: Some(vec![WorkspaceFolder {
+                        name: String::from("test_workspace"),
+                        uri: Url::from_file_path(concat!(
+                            env!("CARGO_MANIFEST_DIR"),
+                            "/queries/test_workspace/"
+                        ))
+                        .unwrap(),
+                    }]),
                     initialization_options: Some(options_value),
                     ..Default::default()
                 },
@@ -230,41 +182,26 @@ mod test {
         collections::{BTreeMap, HashMap},
         ops::Deref,
     };
+    use tower_lsp::lsp_types::Url;
     use ts_query_ls::Options;
 
     use pretty_assertions::assert_eq;
     use rstest::rstest;
 
-    use crate::{
-        SymbolInfo,
-        test_helpers::helpers::{
-            COMPLEX_FILE, SIMPLE_FILE, TEST_URI, TEST_URI_2, initialize_server,
-        },
-    };
+    use crate::test_helpers::helpers::{COMPLEX_FILE, SIMPLE_FILE, TEST_URI, initialize_server};
 
-    use super::helpers::{Document, TestLanguage};
+    use super::helpers::Document;
 
     #[rstest]
-    #[case(&[], &[], &Default::default())]
+    #[case(&[], &Default::default())]
     #[case(&[(
             TEST_URI.clone(),
             SIMPLE_FILE,
         ),
         (
-            TEST_URI_2.clone(),
+            Url::parse("file:///tmp/queries/css/test.scm").unwrap(),
             COMPLEX_FILE,
         )],
-        &[
-            (
-                String::from("css"),
-                vec![
-                    SymbolInfo { named: true, label: String::from("identifier") },
-                    SymbolInfo { named: false, label: String::from(";") },
-                ],
-                vec!["operator", "content"],
-                vec!["type"]
-            )
-        ],
         &Options {
             valid_captures: HashMap::from([(String::from("test"), BTreeMap::from([(String::from("variable"), String::from("A common variable"))]))]),
             ..Default::default()
@@ -273,11 +210,10 @@ mod test {
     #[tokio::test(flavor = "current_thread")]
     async fn initialize_server_helper(
         #[case] documents: &[Document<'_>],
-        #[case] languages: &[TestLanguage<'_>],
         #[case] options: &Options,
     ) {
         // Act
-        let service = initialize_server(documents, languages, options).await;
+        let service = initialize_server(documents, options).await;
 
         // Assert
         let backend = service.inner();
@@ -299,27 +235,6 @@ mod test {
                     .unwrap(),
                 (*source).to_string()
             );
-        }
-        for (language_name, symbols, fields, supertypes) in languages {
-            let language_data = backend.language_map.get(language_name).unwrap();
-            assert!(language_data.symbols_vec.len() == symbols.len());
-            assert!(language_data.symbols_set.len() == symbols.len());
-            for symbol in symbols {
-                assert!(language_data.symbols_vec.contains(symbol));
-                assert!(language_data.symbols_set.contains(symbol));
-            }
-            assert!(language_data.fields_vec.len() == fields.len());
-            assert!(language_data.fields_set.len() == fields.len());
-            for field in fields {
-                assert!(language_data.fields_vec.contains(&field.to_string()));
-                assert!(language_data.fields_set.contains(*field));
-            }
-            for supertype in supertypes {
-                assert!(language_data.supertype_map.contains_key(&SymbolInfo {
-                    named: true,
-                    label: String::from(*supertype)
-                }))
-            }
         }
     }
 }
