@@ -1,2 +1,2 @@
-queries/example_test_files/* linguist-vendored
-queries/formatting_test_files/* linguist-vendored
+queries/example_test_files/** linguist-vendored
+queries/formatting_test_files/** linguist-vendored
