@@ -12,7 +12,7 @@ use tree_sitter::{Language, Parser};
 use ts_query_ls::Options;
 
 use crate::{
-    Backend, DocumentData, LanguageData, QUERY_LANGUAGE, SymbolInfo,
+    Backend, DocumentData, ImportedUri, LanguageData, QUERY_LANGUAGE, SymbolInfo,
     util::{get_imported_uris, get_language, get_language_name},
 };
 
@@ -138,10 +138,10 @@ pub fn populate_import_documents(
     document_map: &DashMap<Url, DocumentData>,
     workspace_dirs: &[PathBuf],
     options: &Options,
-    imported_uris: &Vec<(u32, u32, Option<Url>)>,
+    imported_uris: &Vec<ImportedUri>,
 ) {
-    for (_, _, uri) in imported_uris {
-        if let Some(uri) = uri
+    for imported_uri in imported_uris {
+        if let Some(uri) = &imported_uri.uri
             && !document_map.contains_key(uri)
             && let Ok(contents) = uri
                 .to_file_path()
