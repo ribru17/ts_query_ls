@@ -84,40 +84,25 @@ pub async fn diagnostic(
             data: None,
         });
     };
-    let (language_data, language_diag) = if let Some(name) = document.language_name.as_ref() {
-        match backend.language_map.get(name) {
-            Some(lang) => (Some(lang.clone()), None),
-            None => (
-                None,
-                Some(Diagnostic {
-                    message: format!("Language object for {name:?} not found"),
-                    severity: WARNING_SEVERITY,
-                    ..Default::default()
-                }),
-            ),
-        }
-    } else {
-        (
-            None,
-            Some(Diagnostic {
-                message: String::from("Language name could not be determined"),
-                severity: WARNING_SEVERITY,
-                ..Default::default()
-            }),
-        )
-    };
-    let mut items = get_diagnostics(
+    let language_data = document
+        .language_name
+        .as_ref()
+        .and_then(|name| backend.language_map.get(name))
+        .as_deref()
+        .cloned();
+    let ignore_missing_language = false;
+    let cache = true;
+
+    let items = get_diagnostics(
         uri,
         &backend.document_map,
         document,
         language_data,
         backend.options.clone(),
-        true,
+        ignore_missing_language,
+        cache,
     )
     .await;
-    if let Some(diagnostic) = language_diag {
-        items.push(diagnostic);
-    }
 
     Ok(DocumentDiagnosticReportResult::Report(
         DocumentDiagnosticReport::Full(RelatedFullDocumentDiagnosticReport {
@@ -171,9 +156,25 @@ pub async fn get_diagnostics(
     document: DocumentData,
     language_data: Option<Arc<LanguageData>>,
     options_arc: Arc<tokio::sync::RwLock<Options>>,
+    ignore_missing_language: bool,
     cache: bool,
 ) -> Vec<Diagnostic> {
-    get_diagnostics_recursively(
+    let missing_language_diag = if !ignore_missing_language && language_data.is_none() {
+        let message = if let Some(language_name) = document.language_name.as_ref() {
+            format!("Language object for {language_name:?} not found")
+        } else {
+            String::from("Language name could not be determined")
+        };
+        Some(Diagnostic {
+            message,
+            severity: WARNING_SEVERITY,
+            ..Default::default()
+        })
+    } else {
+        None
+    };
+
+    let mut full_report = get_diagnostics_recursively(
         uri,
         document_map,
         document,
@@ -182,7 +183,13 @@ pub async fn get_diagnostics(
         cache,
         &mut HashSet::new(),
     )
-    .await
+    .await;
+
+    if let Some(diagnostic) = missing_language_diag {
+        full_report.push(diagnostic);
+    }
+
+    full_report
 }
 
 async fn get_diagnostics_recursively(
@@ -1663,6 +1670,16 @@ mod test {
             ..Default::default()
         }, Diagnostic {
             message: String::from("Language object for \"js\" not found"),
+            range: Range::new(Position::new(0, 0), Position::new(0, 0)),
+            severity: WARNING_SEVERITY,
+            ..Default::default()
+        }],
+    )]
+    #[case(
+        (Url::parse("file:///tmp/test.scm").unwrap(), ""),
+        Default::default(),
+        &[Diagnostic {
+            message: String::from("Language name could not be determined"),
             range: Range::new(Position::new(0, 0), Position::new(0, 0)),
             severity: WARNING_SEVERITY,
             ..Default::default()

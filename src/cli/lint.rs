@@ -27,6 +27,7 @@ pub(super) async fn lint_file(
     source: &str,
     options: Arc<tokio::sync::RwLock<Options>>,
     fix: bool,
+    ignore_missing_language: bool,
     language_data: Option<Arc<LanguageData>>,
     exit_code: &AtomicI32,
 ) -> Option<String> {
@@ -51,6 +52,7 @@ pub(super) async fn lint_file(
         version: Default::default(),
         imported_uris,
     };
+    let cache = false;
     // The query construction already validates node names, fields, supertypes,
     // etc.
     let diagnostics = get_diagnostics(
@@ -59,7 +61,8 @@ pub(super) async fn lint_file(
         doc.clone(),
         language_data,
         options,
-        false,
+        ignore_missing_language,
+        cache,
     )
     .await;
     if diagnostics.is_empty() {
@@ -175,7 +178,7 @@ pub async fn lint_directories(
             let workspace = workspace.clone();
             Some(tokio::spawn(async move {
                 if let Some(new_source) = lint_file(
-                    &path, &workspace, &uri, &source, options, fix, None, &exit_code,
+                    &path, &workspace, &uri, &source, options, fix, true, None, &exit_code,
                 )
                 .await
                     && fs::write(&path, new_source).is_err()

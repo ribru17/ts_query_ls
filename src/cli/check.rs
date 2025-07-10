@@ -57,17 +57,13 @@ pub async fn check_directories(
                     .map(|lang| Arc::new(init_language_data(lang, name)))
             })
         });
-        let Some(lang) = language_data else {
-            exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
-            eprintln!("Could not retrieve language for {absolute_path:?}");
-            return None;
-        };
         let Ok(source) = fs::read_to_string(&path) else {
             eprintln!("Failed to read {absolute_path:?}");
             exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
             return None;
         };
         let workspace = workspace.clone();
+        let ignore_missing_language = false;
         Some(tokio::spawn(async move {
             if let Some(new_source) = lint_file(
                 &path,
@@ -76,7 +72,8 @@ pub async fn check_directories(
                 &source,
                 options_arc.clone(),
                 fix,
-                Some(lang),
+                ignore_missing_language,
+                language_data,
                 &exit_code,
             )
             .await
