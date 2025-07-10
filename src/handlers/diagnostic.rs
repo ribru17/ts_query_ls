@@ -1813,6 +1813,30 @@ mod test {
             ..Default::default()
         }],
     )]
+    #[case(
+        &[(
+            TEST_URI.clone(),
+            r#"; inherits: css
+(squid) @capture"#,
+        )],
+        &[],
+        Options {
+            valid_captures: HashMap::from([(String::from("test"),
+                BTreeMap::from([(String::from("capture"), String::default())]))]),
+            ..Default::default()
+        },
+        &[Diagnostic {
+            message: String::from("Query module not found"),
+            range: Range::new(Position::new(0, 12), Position::new(0, 15)),
+            severity: WARNING_SEVERITY,
+            ..Default::default()
+        }, Diagnostic {
+            message: String::from("Language object for \"js\" not found"),
+            range: Range::new(Position::new(0, 0), Position::new(0, 0)),
+            severity: WARNING_SEVERITY,
+            ..Default::default()
+        }],
+    )]
     #[tokio::test(flavor = "current_thread")]
     async fn server_diagnostics(
         #[case] documents: &[Document<'_>],
