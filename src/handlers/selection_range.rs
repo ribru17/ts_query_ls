@@ -107,14 +107,8 @@ mod test {
     ) {
         // Arrange
         let mut service = initialize_server(
-            &[(
-                TEST_URI.clone(),
-                document_text,
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-            )],
+            &[(TEST_URI.clone(), document_text)],
+            &[],
             &Default::default(),
         )
         .await;

@@ -122,7 +122,7 @@ struct DocumentData {
     imported_uris: Vec<(u32, u32, Option<Url>)>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug)]
 struct LanguageData {
     name: String,
     symbols_set: HashSet<SymbolInfo>,

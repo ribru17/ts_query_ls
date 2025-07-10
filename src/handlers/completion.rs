@@ -750,13 +750,12 @@ the `inherits:` keyword, and there must be no spaces in-between module names.
     ) {
         // Arrange
         let mut service = initialize_server(
+            &[(TEST_URI.clone(), source)],
             &[(
-                TEST_URI.clone(),
-                source,
+                String::from("js"),
                 symbols.to_vec(),
                 fields.to_vec(),
                 supertypes.to_vec(),
-                Vec::new(),
             )],
             options,
         )

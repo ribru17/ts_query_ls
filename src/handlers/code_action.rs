@@ -345,18 +345,7 @@ mod test {
         #[case] expected_code_actions: &[CodeActionOrCommand],
     ) {
         // Arrange
-        let mut service = initialize_server(
-            &[(
-                TEST_URI.clone(),
-                source,
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-            )],
-            &options,
-        )
-        .await;
+        let mut service = initialize_server(&[(TEST_URI.clone(), source)], &[], &options).await;
 
         // Act
         let code_actions = service

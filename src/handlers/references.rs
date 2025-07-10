@@ -125,18 +125,8 @@ function: (identifier) @function)",
         #[case] ranges: &[Coordinate],
     ) {
         // Arrange
-        let mut service = initialize_server(
-            &[(
-                TEST_URI.clone(),
-                input,
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-            )],
-            &Default::default(),
-        )
-        .await;
+        let mut service =
+            initialize_server(&[(TEST_URI.clone(), input)], &[], &Default::default()).await;
 
         // Act
         let refs = service
