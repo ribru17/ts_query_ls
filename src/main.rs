@@ -141,7 +141,7 @@ struct DocumentData {
     imported_uris: Vec<ImportedUri>,
 }
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Debug)]
 struct LanguageData {
     name: String,
     symbols_set: HashSet<SymbolInfo>,
@@ -149,8 +149,7 @@ struct LanguageData {
     fields_set: HashSet<String>,
     fields_vec: Vec<String>,
     supertype_map: HashMap<SymbolInfo, BTreeSet<SymbolInfo>>,
-    // Only `None` in test mocks
-    language: Option<Language>,
+    language: Language,
 }
 
 struct Backend {

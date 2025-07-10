@@ -50,7 +50,7 @@ pub async fn profile_directories(directories: &[PathBuf], config: String, per_fi
             );
             return None;
         };
-        let lang = lang_data.language.clone().unwrap();
+        let lang = lang_data.language.clone();
         let Ok(source) = fs::read_to_string(&path) else {
             eprintln!("Failed to read {:?}", path.canonicalize().unwrap());
             return None;

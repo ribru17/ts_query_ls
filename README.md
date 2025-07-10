@@ -359,9 +359,6 @@ ts_query_ls profile --help
 - [x] Add tests for all* functionality
 - [x] Support for importing query modules via the `; inherits: foo` modeline
 
-> *All handlers are tested, but core functionality like language loading will be
-> more complicated, and does not yet have test coverage.
-
 ### Packaging
 
 - [ ] [`homebrew`](https://github.com/Homebrew/homebrew-core)

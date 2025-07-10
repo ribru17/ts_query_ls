@@ -211,15 +211,15 @@ mod test {
     };
 
     use crate::test_helpers::helpers::{
-        TEST_URI, initialize_server, lsp_request_to_jsonrpc_request,
+        QUERY_TEST_URI, initialize_server, lsp_request_to_jsonrpc_request,
         lsp_response_to_jsonrpc_response,
     };
 
-    const SOURCE: &str = r"(ERROR) @error (supertype) @node
+    const SOURCE: &str = r"(ERROR) @error (definition) @node
 
-(supertype/test) @node
+(definition/test) @node
 
-(MISSING supertype) @node
+(MISSING definition) @node
 
 (_) @any
 _ @any
@@ -238,126 +238,141 @@ _ @any
 ";
 
     #[rstest]
-    #[case(SOURCE, vec!["supertype"], Position { line: 0, character: 2 }, Range::new(
+    #[case(SOURCE, Position { line: 0, character: 2 }, Range::new(
         Position { line: 0, character: 1 },
         Position { line: 0, character: 6 } ),
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/docs/error.md"
     )), Default::default())]
-    #[case(SOURCE, vec!["supertype"], Position { line: 4, character: 4 }, Range::new(
+    #[case(SOURCE, Position { line: 4, character: 4 }, Range::new(
         Position { line: 4, character: 1 },
         Position { line: 4, character: 8 } ),
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/docs/missing.md"
     )), Default::default())]
-    #[case(SOURCE, vec!["supertype"], Position { line: 6, character: 1 }, Range::new(
+    #[case(SOURCE, Position { line: 6, character: 1 }, Range::new(
         Position { line: 6, character: 1 },
         Position { line: 6, character: 2 } ),
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/docs/wildcard.md"
     )), Default::default())]
-    #[case(SOURCE, vec!["supertype"], Position { line: 7, character: 0 }, Range::new(
+    #[case(SOURCE, Position { line: 7, character: 0 }, Range::new(
         Position { line: 7, character: 0 },
         Position { line: 7, character: 1 } ),
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/docs/wildcard.md"
     )), Default::default())]
-    #[case(SOURCE, vec!["supertype"], Position { line: 0, character: 17 }, Range::new(
+    #[case(SOURCE, Position { line: 0, character: 17 }, Range::new(
         Position { line: 0, character: 16 },
-        Position { line: 0, character: 25 } ),
-    r"Subtypes of `(supertype)`:
+        Position { line: 0, character: 26 } ),
+    r"Subtypes of `(definition)`:
 
 ```query
-(test)
-(test2)
+(anonymous_node)
+(field_definition)
+(grouping)
+(list)
+(missing_node)
+(named_node)
+(predicate)
 ```", Default::default())]
-    #[case(SOURCE, vec!["supertype"], Position { line: 2, character: 4 }, Range::new(
+    #[case(SOURCE, Position { line: 2, character: 4 }, Range::new(
         Position { line: 2, character: 1 },
-        Position { line: 2, character: 10 } ),
-    r"Subtypes of `(supertype)`:
+        Position { line: 2, character: 11 } ),
+    r"Subtypes of `(definition)`:
 
 ```query
-(test)
-(test2)
+(anonymous_node)
+(field_definition)
+(grouping)
+(list)
+(missing_node)
+(named_node)
+(predicate)
 ```", Default::default())]
-    #[case(SOURCE, vec!["supertype"], Position { line: 4, character: 10 }, Range::new(
+    #[case(SOURCE, Position { line: 4, character: 10 }, Range::new(
         Position { line: 4, character: 9 },
-        Position { line: 4, character: 18 } ),
-    r"Subtypes of `(supertype)`:
+        Position { line: 4, character: 19 } ),
+    r"Subtypes of `(definition)`:
 
 ```query
-(test)
-(test2)
+(anonymous_node)
+(field_definition)
+(grouping)
+(list)
+(missing_node)
+(named_node)
+(predicate)
 ```", Default::default())]
-    #[case(SOURCE, vec!["supertype"], Position { line: 0, character: 10 }, Range::new(
+    #[case(SOURCE, Position { line: 0, character: 10 }, Range::new(
         Position { line: 0, character: 8 },
         Position { line: 0, character: 14 } ),
     r"## `@error`
 
 An error node", BTreeMap::from([(String::from("error"), String::from("An error node"))]))]
-    #[case(SOURCE, vec![], Position { line: 9, character: 10 }, Range::new(
+    #[case(SOURCE, Position { line: 9, character: 10 }, Range::new(
         Position { line: 9, character: 10 },
         Position { line: 9, character: 11 } ),
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/docs/anchor.md"
     )), BTreeMap::from([(String::from("error"), String::from("An error node"))]))]
-    #[case(SOURCE, vec![], Position { line: 9, character: 24 }, Range::new(
+    #[case(SOURCE, Position { line: 9, character: 24 }, Range::new(
         Position { line: 9, character: 24 },
         Position { line: 9, character: 25 } ),
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/docs/quantifier.md"
     )), BTreeMap::from([(String::from("error"), String::from("An error node"))]))]
-    #[case(SOURCE, vec![], Position { line: 11, character: 24 }, Range::new(
+    #[case(SOURCE, Position { line: 11, character: 24 }, Range::new(
         Position { line: 11, character: 24 },
         Position { line: 11, character: 25 } ),
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/docs/quantifier.md"
     )), BTreeMap::from([(String::from("error"), String::from("An error node"))]))]
-    #[case(SOURCE, vec![], Position { line: 11, character: 22 }, Range::new(
+    #[case(SOURCE, Position { line: 11, character: 22 }, Range::new(
         Position { line: 11, character: 22 },
         Position { line: 11, character: 23 } ),
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/docs/quantifier.md"
     )), BTreeMap::from([(String::from("error"), String::from("An error node"))]))]
-    #[case(SOURCE, vec![], Position { line: 13, character: 0 }, Range::new(
+    #[case(SOURCE, Position { line: 13, character: 0 }, Range::new(
         Position { line: 13, character: 0 },
         Position { line: 13, character: 1 } ),
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/docs/alternation.md"
     )), BTreeMap::from([(String::from("error"), String::from("An error node"))]))]
-    #[case(SOURCE, vec![], Position { line: 13, character: 21 }, Range::new(
+    #[case(SOURCE, Position { line: 13, character: 21 }, Range::new(
         Position { line: 13, character: 21 },
         Position { line: 13, character: 22 } ),
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/docs/alternation.md"
     )), BTreeMap::from([(String::from("error"), String::from("An error node"))]))]
-    #[case(SOURCE, vec![], Position { line: 15, character: 18 }, Range {
+    #[case(SOURCE, Position { line: 15, character: 18 }, Range {
         start: Position::new(15, 18),
         end: Position::new(15, 23)
     },
     "Set a property\n\n---\n\n## Parameters:\n\n- Type: `string` (required)\n  - A property\n", BTreeMap::default())]
-    #[case(SOURCE, vec![], Position { line: 15, character: 22 }, Range {
+    #[case(SOURCE, Position { line: 15, character: 22 }, Range {
         start: Position::new(15, 18),
         end: Position::new(15, 23)
     },
     "Set a property\n\n---\n\n## Parameters:\n\n- Type: `string` (required)\n  - A property\n", BTreeMap::default())]
-    #[case(SOURCE, vec![], Position { line: 15, character: 23 }, Range::default(), "", BTreeMap::default())]
-    #[case(SOURCE, vec![], Position { line: 15, character: 21 }, Range {
+    #[case(SOURCE, Position { line: 15, character: 23 }, Range::default(), "", BTreeMap::default())]
+    #[case(SOURCE, Position { line: 15, character: 21 }, Range {
         start: Position::new(15, 18),
         end: Position::new(15, 23)
     },
     "Set a property\n\n---\n\n## Parameters:\n\n- Type: `string` (required)\n  - A property\n", BTreeMap::default())]
-    #[case(SOURCE, vec![], Position { line: 17, character: 12 }, Range {
+    #[case(SOURCE, Position { line: 17, character: 12 }, Range {
         start: Position::new(17, 12),
         end: Position::new(17, 13),
     },
@@ -365,23 +380,23 @@ An error node", BTreeMap::from([(String::from("error"), String::from("An error n
         env!("CARGO_MANIFEST_DIR"),
         "/docs/negation.md"
     )), BTreeMap::default())]
-    #[case(SOURCE, vec![], Position { line: 19, character: 18 }, Range {
+    #[case(SOURCE, Position { line: 19, character: 18 }, Range {
         start: Position::new(19, 18),
         end: Position::new(19, 22)
     },
     "Check for equality\n\n---\n\n## Parameters:\n\n- Type: `capture` (required)\n  - A capture\n- Type: `string` (required)\n  - A string\n", BTreeMap::default())]
-    #[case(";;; inherits: foo", vec![], Position { line: 0, character: 2 }, Range {
+    #[case(";;; inherits: foo", Position { line: 0, character: 2 }, Range {
         start: Position::new(0, 0),
         end: Position::new(0, 17)
     },
     "## Inheriting queries\n\n```query\n; inherits: foo,bar\n```\n\nQueries can inherit other queries if they have an `; inherits:` comment as the\nfirst line of the query file. The language server will then act as though the\ntext of the inherited query files was placed at the top of the document, and\nwill provide diagnostics for the text in those queries as well (calculated with\nthe language information of the parent query). Queries will always inherit\nothers of the same type (e.g. a `highlights.scm` will only import other\n`highlights.scm`, never an `injections.scm`).\n\nNote that the syntax is very sensitive; there must be _exactly one_ space after\nthe `inherits:` keyword, and there must be no spaces in-between module names.\n", BTreeMap::default())]
     #[case("
-;;; inherits: foo", vec![], Position { line: 1, character: 2 }, Range {
+;;; inherits: foo", Position { line: 1, character: 2 }, Range {
         start: Position::new(0, 0),
         end: Position::new(0, 17)
     },
     "", BTreeMap::default())]
-    #[case(";;; format-ignore", vec![], Position { line: 0, character: 2 }, Range {
+    #[case(";;; format-ignore", Position { line: 0, character: 2 }, Range {
         start: Position::new(0, 0),
         end: Position::new(0, 17)
     },
@@ -389,7 +404,6 @@ An error node", BTreeMap::from([(String::from("error"), String::from("An error n
     #[tokio::test(flavor = "current_thread")]
     async fn hover(
         #[case] source: &str,
-        #[case] supertypes: Vec<&str>,
         #[case] position: Position,
         #[case] range: Range,
         #[case] hover_content: &str,
@@ -397,8 +411,7 @@ An error node", BTreeMap::from([(String::from("error"), String::from("An error n
     ) {
         // Arrange
         let mut service = initialize_server(
-            &[(TEST_URI.clone(), source)],
-            &[(String::from("js"), Vec::new(), Vec::new(), supertypes)],
+            &[(QUERY_TEST_URI.clone(), source)],
             &Options {
                 valid_captures: HashMap::from([(String::from("test"), captures)]),
                 valid_predicates: BTreeMap::from([(
@@ -444,7 +457,7 @@ An error node", BTreeMap::from([(String::from("error"), String::from("An error n
                 HoverParams {
                     text_document_position_params: TextDocumentPositionParams {
                         text_document: TextDocumentIdentifier {
-                            uri: TEST_URI.clone(),
+                            uri: QUERY_TEST_URI.clone(),
                         },
                         position,
                     },
