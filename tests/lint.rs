@@ -15,17 +15,30 @@ mod test {
         parser_aliases: BTreeMap::new(),
         diagnostic_options: Default::default(),
         valid_directives: BTreeMap::new(),
-        valid_predicates: BTreeMap::from([(
-            String::from("pred-name"),
-            Predicate {
-                description: String::from("A predicate"),
-                parameters: vec![PredicateParameter {
-                    description: None,
-                    type_: ts_query_ls::PredicateParameterType::Any,
-                    arity: ts_query_ls::PredicateParameterArity::Variadic,
-                }],
-            },
-        )]),
+        valid_predicates: BTreeMap::from([
+            (
+                String::from("pred-name"),
+                Predicate {
+                    description: String::from("A predicate"),
+                    parameters: vec![PredicateParameter {
+                        description: None,
+                        type_: ts_query_ls::PredicateParameterType::Any,
+                        arity: ts_query_ls::PredicateParameterArity::Variadic,
+                    }],
+                },
+            ),
+            (
+                String::from("match"),
+                Predicate {
+                    description: String::from("Check match"),
+                    parameters: vec![PredicateParameter {
+                        description: None,
+                        type_: ts_query_ls::PredicateParameterType::Any,
+                        arity: ts_query_ls::PredicateParameterArity::Variadic,
+                    }],
+                },
+            ),
+        ]),
         valid_captures: HashMap::from([
             (
                 String::from("after_trailing_whitespace"),
@@ -55,6 +68,10 @@ mod test {
         concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_syntax_error.scm"),
         Some(["Invalid syntax"].as_slice())
     )]
+    #[case(
+        concat!(env!("CARGO_MANIFEST_DIR"), "/queries/example_test_files/simple.scm"),
+        None
+    )]
     fn cli_lint(#[case] path_str: &str, #[case] warning_messages: Option<&[&str]>) {
         // Arrange
         let path = Path::new(path_str);
@@ -69,14 +86,14 @@ mod test {
             .expect("Failed to wait on ts-query-ls format command");
 
         // Assert
+        let string_output = String::from_utf8(output.stderr).unwrap();
         if let Some(messages) = warning_messages {
-            let string_output = String::from_utf8(output.stderr).unwrap();
             for message in messages {
                 assert!(string_output.contains(message));
             }
             assert_eq!(output.status.code(), Some(1));
         } else {
-            assert!(output.stderr.is_empty());
+            assert_eq!(string_output, "");
             assert_eq!(output.status.code(), Some(0));
         }
     }
