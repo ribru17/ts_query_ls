@@ -26,7 +26,7 @@ use ts_query_ls::{
 };
 
 use crate::{
-    Backend, DocumentData, LanguageData, QUERY_LANGUAGE, SymbolInfo,
+    Backend, DocumentData, ImportedUri, LanguageData, QUERY_LANGUAGE, SymbolInfo,
     util::{CAPTURES_QUERY, NodeUtil as _, TextProviderRope, uri_to_basename},
 };
 
@@ -553,15 +553,21 @@ async fn get_diagnostics_recursively(
 async fn get_imported_query_diagnostics(
     document_map: &DashMap<Url, DocumentData>,
     options_arc: Arc<tokio::sync::RwLock<Options>>,
-    imported_uris: &Vec<(u32, u32, Option<Url>)>,
+    imported_uris: &Vec<ImportedUri>,
     language_data: Option<Arc<LanguageData>>,
     seen: &mut HashSet<Url>,
 ) -> Vec<Diagnostic> {
     let mut items = Vec::new();
-    for (start, end, uri) in imported_uris {
+    for ImportedUri {
+        start_col,
+        end_col,
+        name,
+        uri,
+    } in imported_uris
+    {
         let range = Range {
-            start: Position::new(0, *start),
-            end: Position::new(0, *end),
+            start: Position::new(0, *start_col),
+            end: Position::new(0, *end_col),
         };
         if let Some(uri) = uri {
             if seen.contains(uri) {
@@ -599,7 +605,7 @@ async fn get_imported_query_diagnostics(
                 if !inner_diags.is_empty() {
                     items.push(Diagnostic {
                         range,
-                        message: String::from("Issues in module"),
+                        message: format!("Issues in module {name:?}"),
                         severity: Some(severity),
                         related_information: Some(inner_diags),
                         ..Default::default()
@@ -608,12 +614,21 @@ async fn get_imported_query_diagnostics(
                 continue;
             }
         }
-        items.push(Diagnostic {
-            range,
-            severity: WARNING_SEVERITY,
-            message: String::from("Query module not found"),
-            ..Default::default()
-        });
+        if name.is_empty() {
+            items.push(Diagnostic {
+                range,
+                severity: WARNING_SEVERITY,
+                message: String::from("Missing query module name"),
+                ..Default::default()
+            });
+        } else {
+            items.push(Diagnostic {
+                range,
+                severity: WARNING_SEVERITY,
+                message: format!("Query module {name:?} not found"),
+                ..Default::default()
+            });
+        }
     }
     items
 }
@@ -1750,7 +1765,7 @@ mod test {
             ..Default::default()
         },
         &[Diagnostic {
-            message: String::from("Issues in module"),
+            message: String::from("Issues in module \"cpp\""),
             range: Range::new(Position::new(0, 12), Position::new(0, 15)),
             severity: ERROR_SEVERITY,
             related_information: Some(vec![
@@ -1798,7 +1813,7 @@ mod test {
             ..Default::default()
         },
         &[Diagnostic {
-            message: String::from("Issues in module"),
+            message: String::from("Issues in module \"cpp\""),
             range: Range::new(Position::new(0, 12), Position::new(0, 15)),
             severity: WARNING_SEVERITY,
             related_information: Some(vec![
@@ -1816,7 +1831,7 @@ mod test {
     #[case(
         &[(
             TEST_URI.clone(),
-            r#"; inherits: css
+            r#"; inherits: css,
 (squid) @capture"#,
         )],
         &[],
@@ -1826,8 +1841,13 @@ mod test {
             ..Default::default()
         },
         &[Diagnostic {
-            message: String::from("Query module not found"),
+            message: String::from("Query module \"css\" not found"),
             range: Range::new(Position::new(0, 12), Position::new(0, 15)),
+            severity: WARNING_SEVERITY,
+            ..Default::default()
+        }, Diagnostic {
+            message: String::from("Missing query module name"),
+            range: Range::new(Position::new(0, 16), Position::new(0, 16)),
             severity: WARNING_SEVERITY,
             ..Default::default()
         }, Diagnostic {

@@ -15,7 +15,7 @@ use tree_sitter::{
     WasmStore,
 };
 
-use crate::{Backend, ENGINE, Options, QUERY_LANGUAGE};
+use crate::{Backend, ENGINE, ImportedUri, Options, QUERY_LANGUAGE};
 
 pub static CAPTURES_QUERY: LazyLock<Query> =
     LazyLock::new(|| Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap());
@@ -425,7 +425,7 @@ pub fn get_imported_uris(
     uri: &Url,
     rope: &Rope,
     tree: &Tree,
-) -> Vec<(u32, u32, Option<Url>)> {
+) -> Vec<ImportedUri> {
     let mut uris = Vec::new();
     let Some(start_comment) = tree
         .root_node()
@@ -450,7 +450,7 @@ pub fn get_imported_uris(
         let (start, end) = (byte_offset, byte_offset + module.len() as u32);
         byte_offset = end + 1;
         if module.is_empty() {
-            uris.push((start, end, None));
+            uris.push(ImportedUri::new(start, end, module.to_string(), None));
             continue;
         }
         let module_uris = get_file_uris(workspace_dirs, options, module, &query_name);
@@ -459,7 +459,12 @@ pub fn get_imported_uris(
                 "Imported module {module} has more than one associated file location, analyzing the first one"
             );
         }
-        uris.push((start, end, module_uris.first().cloned()));
+        uris.push(ImportedUri::new(
+            start,
+            end,
+            module.to_string(),
+            module_uris.first().cloned(),
+        ));
     }
 
     uris

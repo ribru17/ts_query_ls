@@ -114,12 +114,31 @@ impl fmt::Display for SymbolInfo {
 }
 
 #[derive(Clone)]
+struct ImportedUri {
+    start_col: u32,
+    end_col: u32,
+    name: String,
+    uri: Option<Url>,
+}
+
+impl ImportedUri {
+    fn new(start_col: u32, end_col: u32, name: String, uri: Option<Url>) -> ImportedUri {
+        ImportedUri {
+            start_col,
+            end_col,
+            name,
+            uri,
+        }
+    }
+}
+
+#[derive(Clone)]
 struct DocumentData {
     rope: Rope,
     tree: Tree,
     version: i32,
     language_name: Option<String>,
-    imported_uris: Vec<(u32, u32, Option<Url>)>,
+    imported_uris: Vec<ImportedUri>,
 }
 
 #[derive(Clone, Default, Debug)]
