@@ -131,18 +131,8 @@ mod test {
         #[case] new_name: &str,
     ) {
         // Arrange
-        let mut service = initialize_server(
-            &[(
-                TEST_URI.clone(),
-                original,
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-            )],
-            &Default::default(),
-        )
-        .await;
+        let mut service =
+            initialize_server(&[(TEST_URI.clone(), original)], &[], &Default::default()).await;
 
         // Act
         let rename_edits = service

@@ -1,6 +1,5 @@
 #[cfg(test)]
 pub mod helpers {
-    use ropey::Rope;
     use serde_json::to_value;
 
     use std::{
@@ -17,15 +16,13 @@ pub mod helpers {
         LspService,
         jsonrpc::{Request, Response},
         lsp_types::{
-            ClientCapabilities, InitializeParams, Position, Range, TextDocumentContentChangeEvent,
-            TextEdit, Url, request::Initialize,
+            ClientCapabilities, DidOpenTextDocumentParams, InitializeParams, Position, Range,
+            TextDocumentContentChangeEvent, TextDocumentItem, TextEdit, Url,
+            notification::DidOpenTextDocument, request::Initialize,
         },
     };
 
-    use crate::{
-        Backend, DocumentData, LanguageData, Options, QUERY_LANGUAGE, SymbolInfo,
-        util::get_language_name,
-    };
+    use crate::{Backend, LanguageData, Options, QUERY_LANGUAGE, SymbolInfo};
 
     pub static TEST_URI: LazyLock<Url> =
         LazyLock::new(|| Url::parse("file:///tmp/queries/js/test.scm").unwrap());
@@ -43,20 +40,16 @@ pub mod helpers {
     /// Always test with id of 1 for simplicity
     const ID: i64 = 1;
 
-    /// A tuple holding the document's URI, source text, symbols, fields, supertypes, and valid
-    /// captures
-    pub type Document<'a> = (
-        Url,
-        &'a str,
-        Vec<SymbolInfo>,
-        Vec<&'a str>,
-        Vec<&'a str>,
-        Vec<(u32, u32, Option<Url>)>,
-    );
+    /// A tuple holding the document's URI and source text.
+    pub type Document<'a> = (Url, &'a str);
+
+    /// A tuple holding the language's name, symbols, fields, and supertype names.
+    pub type TestLanguage<'a> = (String, Vec<SymbolInfo>, Vec<&'a str>, Vec<&'a str>);
 
     /// Initialize a test server, populating it with fake documents denoted by (uri, text, symbols, fields) tuples.
     pub async fn initialize_server(
         documents: &[Document<'_>],
+        languages: &[TestLanguage<'_>],
         options: &Options,
     ) -> LspService<Backend> {
         let mut parser = Parser::new();
@@ -66,67 +59,50 @@ pub mod helpers {
         let options_value = serde_json::to_value(options).unwrap();
         let options = &serde_json::from_value::<Options>(options_value.clone()).unwrap();
         let arced_options = Arc::new(tokio::sync::RwLock::new(options.clone()));
+        let workspace_dirs = vec![
+            PathBuf::from_str(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/queries/test_workspace/"
+            ))
+            .unwrap(),
+        ];
         let (mut service, _socket) = LspService::build(|client| Backend {
             _client: client,
-            document_map: DashMap::from_iter(documents.iter().map(
-                |(uri, source, _, _, _, imported_uris)| {
+            document_map: Default::default(),
+            language_map: DashMap::from_iter(languages.iter().cloned().map(
+                |(name, symbols, fields, supertypes)| {
                     (
-                        uri.clone(),
-                        DocumentData {
-                            rope: Rope::from(*source),
-                            tree: parser.parse(*source, None).unwrap(),
-                            version: 0,
-                            language_name: get_language_name(uri, options),
-                            imported_uris: imported_uris.clone(),
-                        },
-                    )
-                },
-            )),
-            language_map: DashMap::from_iter(documents.iter().map(
-                |(uri, _, symbols, fields, supertypes, _)| {
-                    let language_name = get_language_name(uri, options).unwrap();
-                    (
-                        language_name.clone(),
-                        LanguageData {
-                            name: language_name,
-                            language: None,
-                            symbols_set: HashSet::from_iter(symbols.clone()),
-                            symbols_vec: symbols.clone(),
+                        name.clone(),
+                        Arc::new(LanguageData {
+                            name,
+                            symbols_set: HashSet::from_iter(symbols.iter().cloned()),
+                            symbols_vec: symbols.to_vec(),
                             fields_set: HashSet::from_iter(fields.iter().map(ToString::to_string)),
-                            fields_vec: fields.clone().iter().map(ToString::to_string).collect(),
-                            supertype_map: HashMap::from_iter(supertypes.iter().map(|supertype| {
+                            fields_vec: fields.iter().map(ToString::to_string).collect(),
+                            supertype_map: HashMap::from_iter(supertypes.iter().map(|st| {
                                 (
                                     SymbolInfo {
+                                        label: st.to_string(),
                                         named: true,
-                                        label: String::from(*supertype),
                                     },
                                     BTreeSet::from([
                                         SymbolInfo {
+                                            label: "test".to_string(),
                                             named: true,
-                                            label: String::from("test"),
                                         },
                                         SymbolInfo {
+                                            label: "test2".to_string(),
                                             named: true,
-                                            label: String::from("test2"),
                                         },
                                     ]),
                                 )
                             })),
-                        }
-                        .into(),
+                            language: None,
+                        }),
                     )
                 },
             )),
-            workspace_uris: Arc::new(
-                vec![
-                    PathBuf::from_str(concat!(
-                        env!("CARGO_MANIFEST_DIR"),
-                        "/queries/test_workspace/"
-                    ))
-                    .unwrap(),
-                ]
-                .into(),
-            ),
+            workspace_uris: Arc::new(workspace_dirs.into()),
             options: arced_options,
         })
         .finish();
@@ -146,6 +122,26 @@ pub mod helpers {
             .await
             .unwrap()
             .unwrap();
+
+        // Open the documents
+        for (uri, src) in documents.iter().cloned() {
+            service
+                .ready()
+                .await
+                .unwrap()
+                .call(lsp_notification_to_jsonrpc_request::<DidOpenTextDocument>(
+                    DidOpenTextDocumentParams {
+                        text_document: TextDocumentItem {
+                            version: 0,
+                            language_id: String::from("query"),
+                            text: src.to_string(),
+                            uri,
+                        },
+                    },
+                ))
+                .await
+                .unwrap();
+        }
 
         service
     }
@@ -244,34 +240,31 @@ mod test {
         test_helpers::helpers::{
             COMPLEX_FILE, SIMPLE_FILE, TEST_URI, TEST_URI_2, initialize_server,
         },
-        util::get_language_name,
     };
 
-    use super::helpers::Document;
+    use super::helpers::{Document, TestLanguage};
 
     #[rstest]
-    #[case(&[], &Default::default())]
+    #[case(&[], &[], &Default::default())]
     #[case(&[(
-        TEST_URI.clone(),
-        SIMPLE_FILE,
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-    ), (
-        TEST_URI_2.clone(),
-        COMPLEX_FILE,
-        vec![
-            SymbolInfo { named: true, label: String::from("identifier") },
-            SymbolInfo { named: false, label: String::from(";") }
+            TEST_URI.clone(),
+            SIMPLE_FILE,
+        ),
+        (
+            TEST_URI_2.clone(),
+            COMPLEX_FILE,
+        )],
+        &[
+            (
+                String::from("css"),
+                vec![
+                    SymbolInfo { named: true, label: String::from("identifier") },
+                    SymbolInfo { named: false, label: String::from(";") },
+                ],
+                vec!["operator", "content"],
+                vec!["type"]
+            )
         ],
-        vec![
-            "operator",
-            "content",
-        ],
-        vec!["type"],
-        vec![(0, 2, None)],
-    )],
         &Options {
             valid_captures: HashMap::from([(String::from("test"), BTreeMap::from([(String::from("variable"), String::from("A common variable"))]))]),
             ..Default::default()
@@ -280,10 +273,11 @@ mod test {
     #[tokio::test(flavor = "current_thread")]
     async fn initialize_server_helper(
         #[case] documents: &[Document<'_>],
+        #[case] languages: &[TestLanguage<'_>],
         #[case] options: &Options,
     ) {
         // Act
-        let service = initialize_server(documents, options).await;
+        let service = initialize_server(documents, languages, options).await;
 
         // Assert
         let backend = service.inner();
@@ -295,7 +289,7 @@ mod test {
         let actual_options = backend.options.read().await;
         assert_eq!(actual_options.deref(), options);
         assert_eq!(backend.document_map.len(), documents.len());
-        for (uri, source, symbols, fields, supertypes, imported_urls) in documents {
+        for (uri, source) in documents {
             let doc = backend.document_map.get(uri).unwrap();
             assert_eq!(doc.rope.to_string(), (*source).to_string());
             assert_eq!(
@@ -305,8 +299,9 @@ mod test {
                     .unwrap(),
                 (*source).to_string()
             );
-            let language_name = get_language_name(uri, options).unwrap();
-            let language_data = backend.language_map.get(&language_name).unwrap();
+        }
+        for (language_name, symbols, fields, supertypes) in languages {
+            let language_data = backend.language_map.get(language_name).unwrap();
             assert!(language_data.symbols_vec.len() == symbols.len());
             assert!(language_data.symbols_set.len() == symbols.len());
             for symbol in symbols {
@@ -325,7 +320,6 @@ mod test {
                     label: String::from(*supertype)
                 }))
             }
-            assert_eq!(imported_urls, &doc.imported_uris);
         }
     }
 }

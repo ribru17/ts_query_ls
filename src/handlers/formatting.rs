@@ -362,18 +362,8 @@ mod test {
     #[tokio::test(flavor = "current_thread")]
     async fn server_formatting(#[case] before: &str, #[case] after: &str) {
         // Arrange
-        let mut service = initialize_server(
-            &[(
-                TEST_URI.clone(),
-                before,
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-            )],
-            &Default::default(),
-        )
-        .await;
+        let mut service =
+            initialize_server(&[(TEST_URI.clone(), before)], &[], &Default::default()).await;
 
         // Act
         let delta = service

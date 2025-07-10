@@ -185,7 +185,7 @@ mod test {
     #[tokio::test(flavor = "current_thread")]
     async fn server_did_open_document() {
         // Arrange
-        let mut service = initialize_server(&[], &Default::default()).await;
+        let mut service = initialize_server(&[], &[], &Default::default()).await;
         let source = r#""[" @cap"#;
 
         // Act

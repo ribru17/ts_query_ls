@@ -224,13 +224,12 @@ mod test {
 (foo)
         ";
         let mut service = initialize_server(
+            &[(TEST_URI.clone(), source)],
             &[(
-                TEST_URI.clone(),
-                source,
+                String::from("js"),
                 Vec::new(),
                 Vec::new(),
                 vec!["supertype"],
-                Vec::new(),
             )],
             &Default::default(),
         )
