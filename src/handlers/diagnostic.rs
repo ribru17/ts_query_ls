@@ -178,8 +178,8 @@ pub async fn get_diagnostics(
         uri,
         document_map,
         document,
-        language_data,
-        options_arc,
+        language_data.clone(),
+        options_arc.clone(),
         cache,
         &mut HashSet::new(),
     )
@@ -187,6 +187,28 @@ pub async fn get_diagnostics(
 
     if let Some(diagnostic) = missing_language_diag {
         full_report.push(diagnostic);
+    }
+
+    // Check ABI version
+    let options = options_arc.read().await;
+    if let (Some(language_info), Some(abi_range)) =
+        (language_data.as_deref(), &options.supported_abi_versions)
+    {
+        let abi = language_info.language.abi_version() as u32;
+        if !abi_range.contains(&abi) {
+            let start = abi_range.start();
+            let end = abi_range.end();
+            let range_str = if start == end {
+                start.to_string()
+            } else {
+                format!("{start} through {end}")
+            };
+            full_report.push(Diagnostic {
+                message: format!("Unsupported parser ABI {abi}, expected {range_str}"),
+                severity: WARNING_SEVERITY,
+                ..Default::default()
+            });
+        }
     }
 
     full_report
@@ -1680,6 +1702,68 @@ mod test {
         Default::default(),
         &[Diagnostic {
             message: String::from("Language name could not be determined"),
+            range: Range::new(Position::new(0, 0), Position::new(0, 0)),
+            severity: WARNING_SEVERITY,
+            ..Default::default()
+        }],
+    )]
+    #[case(
+        (QUERY_TEST_URI.clone(), ""),
+        {
+            // Just in case our query language object changes ABI unexpectedly; we want to make
+            // sure we are testing what we want to.
+            pretty_assertions::assert_eq!(crate::QUERY_LANGUAGE.abi_version(), 15, "Unexpected ABI version");
+            Options {
+                supported_abi_versions: Some(13..=14),
+                ..Default::default()
+            }
+        },
+        &[Diagnostic {
+            message: String::from("Unsupported parser ABI 15, expected 13 through 14"),
+            range: Range::new(Position::new(0, 0), Position::new(0, 0)),
+            severity: WARNING_SEVERITY,
+            ..Default::default()
+        }],
+    )]
+    #[case(
+        (QUERY_TEST_URI.clone(), ""),
+        {
+            // Just in case our query language object changes ABI unexpectedly; we want to make
+            // sure we are testing what we want to.
+            pretty_assertions::assert_eq!(crate::QUERY_LANGUAGE.abi_version(), 15, "Unexpected ABI version");
+            Options {
+                supported_abi_versions: Some(13..=15),
+                ..Default::default()
+            }
+        },
+        &[],
+    )]
+    #[case(
+        (QUERY_TEST_URI.clone(), ""),
+        {
+            // Just in case our query language object changes ABI unexpectedly; we want to make
+            // sure we are testing what we want to.
+            pretty_assertions::assert_eq!(crate::QUERY_LANGUAGE.abi_version(), 15, "Unexpected ABI version");
+            Options {
+                supported_abi_versions: Some(15..=15),
+                ..Default::default()
+            }
+        },
+        &[],
+    )]
+    #[case(
+        (QUERY_TEST_URI.clone(), ""),
+        {
+            // Just in case our query language object changes ABI unexpectedly; we want to make
+            // sure we are testing what we want to.
+            pretty_assertions::assert_eq!(crate::QUERY_LANGUAGE.abi_version(), 15, "Unexpected ABI version");
+            Options {
+                supported_abi_versions: Some(13..=13),
+                ..Default::default()
+            }
+        },
+        &[Diagnostic {
+            message: String::from("Unsupported parser ABI 15, expected 13"),
             range: Range::new(Position::new(0, 0), Position::new(0, 0)),
             severity: WARNING_SEVERITY,
             ..Default::default()
