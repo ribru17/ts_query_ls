@@ -114,29 +114,39 @@ pub struct Options {
     /// Supports environment variable expansion of the form `${VAR}`.
     #[serde(default, deserialize_with = "deserialize_and_expand")]
     pub parser_install_directories: Vec<String>,
+
     /// A map of parser aliases.
     #[serde(default)]
     pub parser_aliases: BTreeMap<String, String>,
+
     /// A list of patterns to aid the LSP in finding a language, given a file path.
     /// Patterns must have one capture group which represents the language name. Ordered
     /// from highest to lowest precedence.
     #[serde(default = "default_regexes", deserialize_with = "add_default_regexes")]
     pub language_retrieval_patterns: Vec<SerializableRegex>,
+
     /// A map from query file name to valid captures. Valid captures are represented as a map from
     /// capture name (sans `@`) to a short (markdown format) description. Note that captures
     /// prefixed with an underscore are always permissible.
     #[serde(default)]
     pub valid_captures: HashMap<String, BTreeMap<String, String>>,
+
     /// A map of predicate names (sans `#` and `?`) to parameter specifications.
     #[serde(default, deserialize_with = "add_prefixes")]
     #[cfg_attr(feature = "schema", schemars(schema_with = "prefixes_schema"))]
     pub valid_predicates: BTreeMap<String, Predicate>,
+
     /// A map of directive names (sans `#` and `!`) to parameter specifications.
     #[serde(default)]
     pub valid_directives: BTreeMap<String, Predicate>,
+
     /// Options related to diagnostics
     #[serde(default)]
     pub diagnostic_options: DiagnosticOptions,
+
+    /// An inclusive range of ABI versions supported by your tool. The end of the range must be
+    /// greater than or equal to the start.
+    pub supported_abi_versions: Option<std::ops::RangeInclusive<u32>>,
 }
 
 #[cfg(feature = "schema")]

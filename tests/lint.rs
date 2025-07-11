@@ -10,11 +10,6 @@ mod test {
     use ts_query_ls::{Options, Predicate, PredicateParameter};
 
     static CONFIG: LazyLock<Options> = LazyLock::new(|| Options {
-        parser_install_directories: Vec::new(),
-        language_retrieval_patterns: Vec::new(),
-        parser_aliases: BTreeMap::new(),
-        diagnostic_options: Default::default(),
-        valid_directives: BTreeMap::new(),
         valid_predicates: BTreeMap::from([
             (
                 String::from("pred-name"),
@@ -49,6 +44,7 @@ mod test {
                 BTreeMap::from([(String::from("type"), String::from("A type."))]),
             ),
         ]),
+        ..Default::default()
     });
 
     #[rstest]

@@ -24,6 +24,10 @@ its ancestor directories. Below is an example file:
       "variable.parameter": "Parameters of a function"
     }
   },
+  "supported_abi_versions": {
+    "start": 13,
+    "end": 15
+  },
   "valid_predicates": {
     "eq": {
       "parameters": [
@@ -201,6 +205,20 @@ vim.api.nvim_create_autocmd('FileType', {
     }
   end,
 })
+```
+
+#### `supported_abi_versions`
+
+An inclusive range of ABI versions supported by your tool. The end of the range
+must be greater than or equal to the start.
+
+```json
+{
+  "supported_abi_versions": {
+    "start": 13,
+    "end": 15
+  }
+}
 ```
 
 ## Features

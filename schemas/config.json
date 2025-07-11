@@ -43,6 +43,17 @@
         "type": "string"
       }
     },
+    "supported_abi_versions": {
+      "description": "An inclusive range of ABI versions supported by your tool. The end of the range must be greater than or equal to the start.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Range_of_uint32"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "valid_captures": {
       "description": "A map from query file name to valid captures. Valid captures are represented as a map from capture name (sans `@`) to a short (markdown format) description. Note that captures prefixed with an underscore are always permissible.",
       "default": {},
@@ -230,6 +241,25 @@
           ]
         }
       ]
+    },
+    "Range_of_uint32": {
+      "type": "object",
+      "required": [
+        "end",
+        "start"
+      ],
+      "properties": {
+        "end": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "start": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      }
     },
     "Regex": {
       "description": "A regular expression string (compiled at deserialization time)",
