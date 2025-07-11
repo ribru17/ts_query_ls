@@ -1845,9 +1845,7 @@ mod test {
             .unwrap()
             .call(lsp_request_to_jsonrpc_request::<DocumentDiagnosticRequest>(
                 DocumentDiagnosticParams {
-                    text_document: TextDocumentIdentifier {
-                        uri: document.0.clone(),
-                    },
+                    text_document: TextDocumentIdentifier { uri: document.0 },
                     identifier: None,
                     previous_result_id: None,
                     work_done_progress_params: Default::default(),
@@ -1855,7 +1853,7 @@ mod test {
                 },
             ))
             .await
-            .map_err(|e| format!("textDocument/completion call returned error: {e}"))
+            .map_err(|e| format!("textDocument/diagnostic call returned error: {e}"))
             .unwrap();
 
         // Assert
