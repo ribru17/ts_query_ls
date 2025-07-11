@@ -1769,6 +1769,66 @@ mod test {
             ..Default::default()
         }],
     )]
+    #[case(
+        (QUERY_TEST_URI.clone(), "(named_node/identifier) @capture"),
+        Default::default(),
+        &[
+            Diagnostic {
+                message: String::from("Invalid pattern structure"),
+                range: Range::new(Position::new(0, 0), Position::new(0, 32)),
+                severity: ERROR_SEVERITY,
+                ..Default::default()
+            },
+            Diagnostic {
+                message: String::from("Node \"named_node\" is not a supertype"),
+                range: Range::new(Position::new(0, 1), Position::new(0, 11)),
+                severity: ERROR_SEVERITY,
+                ..Default::default()
+            },
+        ],
+    )]
+    #[case(
+        (QUERY_TEST_URI.clone(), "(definition/escape_sequence) @capture"),
+        Default::default(),
+        &[
+            Diagnostic {
+                message: String::from("Invalid pattern structure"),
+                range: Range::new(Position::new(0, 0), Position::new(0, 37)),
+                severity: ERROR_SEVERITY,
+                ..Default::default()
+            },
+            Diagnostic {
+                message: String::from("Node \"escape_sequence\" is not a subtype of \"definition\""),
+                range: Range::new(Position::new(0, 12), Position::new(0, 27)),
+                severity: ERROR_SEVERITY,
+                ..Default::default()
+            },
+        ],
+    )]
+    #[case(
+        (QUERY_TEST_URI.clone(), "(definition/ecape_sequence) @capture"),
+        Default::default(),
+        &[
+            Diagnostic {
+                message: String::from("Node \"ecape_sequence\" is not a subtype of \"definition\""),
+                range: Range::new(Position::new(0, 12), Position::new(0, 26)),
+                severity: ERROR_SEVERITY,
+                ..Default::default()
+            },
+        ],
+    )]
+    #[case(
+        (QUERY_TEST_URI.clone(), "(deefinition/escape_sequence) @capture"),
+        Default::default(),
+        &[
+            Diagnostic {
+                message: String::from("Node \"deefinition\" is not a supertype"),
+                range: Range::new(Position::new(0, 1), Position::new(0, 12)),
+                severity: ERROR_SEVERITY,
+                ..Default::default()
+            },
+        ],
+    )]
     #[tokio::test(flavor = "current_thread")]
     async fn server_diagnostics(
         #[case] document: Document<'_>,
