@@ -446,7 +446,7 @@ async fn get_diagnostics_recursively(
                                 ),
                                 severity: WARNING_SEVERITY,
                                 range,
-                                data: serde_json::to_value(CodeActions::PrefixUnderscore).ok(),
+                                data: Some(CodeActions::PrefixUnderscore.into()),
                                 ..Default::default()
                             });
                         } else if suffix.starts_with('_') && warn_unused_underscore_caps {
@@ -474,7 +474,7 @@ async fn get_diagnostics_recursively(
                                     severity: WARNING_SEVERITY,
                                     range,
                                     tags: Some(vec![DiagnosticTag::UNNECESSARY]),
-                                    data: serde_json::to_value(CodeActions::Remove).ok(),
+                                    data: Some(CodeActions::Remove.into()),
                                     ..Default::default()
                                 });
                             }
@@ -514,7 +514,7 @@ async fn get_diagnostics_recursively(
                             message: String::from("Unnecessary escape sequence (fix available)"),
                             severity: WARNING_SEVERITY,
                             range,
-                            data: serde_json::to_value(CodeActions::RemoveBackslash).ok(),
+                            data: Some(CodeActions::RemoveBackslash.into()),
                             ..Default::default()
                         });
                     }
@@ -530,7 +530,7 @@ async fn get_diagnostics_recursively(
                             range,
                             severity: WARNING_SEVERITY,
                             tags: Some(vec![DiagnosticTag::UNNECESSARY]),
-                            data: serde_json::to_value(CodeActions::Remove).ok(),
+                            data: Some(CodeActions::Remove.into()),
                             ..Default::default()
                         });
                     }
@@ -555,7 +555,7 @@ async fn get_diagnostics_recursively(
                         message: String::from("Unnecessary quotations (fix available)"),
                         range,
                         severity: HINT_SEVERITY,
-                        data: serde_json::to_value(CodeActions::Trim).ok(),
+                        data: Some(CodeActions::Trim.into()),
                         ..Default::default()
                     });
                 }
@@ -568,7 +568,7 @@ async fn get_diagnostics_recursively(
                         message: String::from("Unquoted string argument (fix available)"),
                         range,
                         severity: HINT_SEVERITY,
-                        data: serde_json::to_value(CodeActions::Enquote).ok(),
+                        data: Some(CodeActions::Enquote.into()),
                         ..Default::default()
                     });
                 }
@@ -838,7 +838,7 @@ mod test {
             },
             severity: WARNING_SEVERITY,
             message: String::from("Unsupported capture name \"@constant\" (fix available)"),
-            data: Some(serde_json::to_value(CodeActions::PrefixUnderscore).unwrap()),
+            data: Some(CodeActions::PrefixUnderscore.into()),
             ..Default::default()
         }, Diagnostic {
             range: Range {
@@ -877,7 +877,7 @@ mod test {
             },
             severity: WARNING_SEVERITY,
             message: String::from("Unsupported capture name \"@constant\" (fix available)"),
-            data: Some(serde_json::to_value(CodeActions::PrefixUnderscore).unwrap()),
+            data: Some(CodeActions::PrefixUnderscore.into()),
             ..Default::default()
         }],
     )]
@@ -901,7 +901,7 @@ mod test {
             },
             severity: WARNING_SEVERITY,
             message: String::from("Unsupported capture name \"@keyword\" (fix available)"),
-            data: Some(serde_json::to_value(CodeActions::PrefixUnderscore).unwrap()),
+            data: Some(CodeActions::PrefixUnderscore.into()),
             ..Default::default()
         }],
     )]
@@ -925,7 +925,7 @@ mod test {
             },
             severity: WARNING_SEVERITY,
             message: String::from("Unsupported capture name \"@keyword\" (fix available)"),
-            data: Some(serde_json::to_value(CodeActions::PrefixUnderscore).unwrap()),
+            data: Some(CodeActions::PrefixUnderscore.into()),
             ..Default::default()
         }],
     )]
@@ -949,7 +949,7 @@ mod test {
             },
             severity: WARNING_SEVERITY,
             message: String::from("Unsupported capture name \"@keyword\" (fix available)"),
-            data: Some(serde_json::to_value(CodeActions::PrefixUnderscore).unwrap()),
+            data: Some(CodeActions::PrefixUnderscore.into()),
             ..Default::default()
         }],
     )]
@@ -1168,7 +1168,7 @@ mod test {
             message: String::from("Unnecessary quotations (fix available)"),
             related_information: None,
             tags: None,
-            data: Some(serde_json::to_value(CodeActions::Trim).unwrap()),
+            data: Some(CodeActions::Trim.into()),
         }],
     )]
     #[case(
@@ -1211,7 +1211,7 @@ mod test {
             message: String::from("Unquoted string argument (fix available)"),
             related_information: None,
             tags: None,
-            data: Some(serde_json::to_value(CodeActions::Enquote).unwrap()),
+            data: Some(CodeActions::Enquote.into()),
         }, Diagnostic {
             range: Range {
                 start: Position { line: 1, character: 30, },
@@ -1224,7 +1224,7 @@ mod test {
             message: String::from("Unquoted string argument (fix available)"),
             related_information: None,
             tags: None,
-            data: Some(serde_json::to_value(CodeActions::Enquote).unwrap()),
+            data: Some(CodeActions::Enquote.into()),
         }],
     )]
     #[case(
@@ -1263,7 +1263,7 @@ mod test {
             message: String::from("Unused `_`-prefixed capture (fix available)"),
             related_information: None,
             tags: Some(vec![DiagnosticTag::UNNECESSARY]),
-            data: Some(serde_json::to_value(CodeActions::Remove).unwrap()),
+            data: Some(CodeActions::Remove.into()),
         }],
     )]
     #[case(
@@ -1515,7 +1515,7 @@ mod test {
             },
             severity: WARNING_SEVERITY,
             message: String::from("Unnecessary escape sequence (fix available)"),
-            data: Some(serde_json::to_value(CodeActions::RemoveBackslash).unwrap()),
+            data: Some(CodeActions::RemoveBackslash.into()),
             ..Default::default()
         }, Diagnostic {
             range: Range {
@@ -1530,7 +1530,7 @@ mod test {
             },
             severity: WARNING_SEVERITY,
             message: String::from("Unnecessary escape sequence (fix available)"),
-            data: Some(serde_json::to_value(CodeActions::RemoveBackslash).unwrap()),
+            data: Some(CodeActions::RemoveBackslash.into()),
             ..Default::default()
         }],
     )]
@@ -1555,7 +1555,7 @@ mod test {
             },
             severity: WARNING_SEVERITY,
             message: String::from("This pattern has no captures, and will not be processed"),
-            data: Some(serde_json::to_value(CodeActions::Remove).unwrap()),
+            data: Some(CodeActions::Remove.into()),
             tags: Some(vec![DiagnosticTag::UNNECESSARY]),
             ..Default::default()
         }],
