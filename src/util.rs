@@ -15,7 +15,7 @@ use tree_sitter::{
     WasmStore,
 };
 
-use crate::{Backend, ENGINE, ImportedUri, Options, QUERY_LANGUAGE};
+use crate::{Backend, DocumentData, ENGINE, ImportedUri, Options, QUERY_LANGUAGE};
 
 pub static CAPTURES_QUERY: LazyLock<Query> =
     LazyLock::new(|| Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap());
@@ -492,4 +492,36 @@ pub fn is_subsequence(sub: &str, main: &str) -> bool {
     }
 
     true
+}
+
+pub fn get_imported_module_under_cursor<'d>(
+    document: &'d DocumentData,
+    position: &Position,
+) -> Option<&'d ImportedUri> {
+    if position.line != 0 {
+        return None;
+    }
+    let tree = &document.tree;
+    let rope = &document.rope;
+    let ts_point = position.to_ts_point(rope);
+    let comment_node = tree
+        .root_node()
+        .descendant_for_point_range(ts_point, ts_point)
+        .filter(|node| node.kind() == "comment")?;
+    let node_text = comment_node.text(rope);
+    let modules = INHERITS_REGEX.captures(&node_text).and_then(|c| c.get(1))?;
+    let cursor_offset = lsp_position_to_byte_offset(*position, rope).ok()?;
+    let mut comment_offset = comment_node.start_byte() + modules.start();
+
+    let module_name = modules.as_str().split(',').find_map(|module| {
+        let end = comment_offset + module.len();
+        let cursor_in_module = cursor_offset >= comment_offset && cursor_offset < end;
+        comment_offset = end + 1;
+        cursor_in_module.then(|| module.to_string())
+    })?;
+
+    document
+        .imported_uris
+        .iter()
+        .find(|import| import.name == module_name)
 }

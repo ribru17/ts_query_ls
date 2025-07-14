@@ -1,45 +1,17 @@
-use ropey::Rope;
 use tower_lsp::{
     jsonrpc::Result,
-    lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, Location, Position},
+    lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, Location},
 };
 use tracing::{info, warn};
-use tree_sitter::{Parser, QueryCursor, Tree};
+use tree_sitter::{Parser, QueryCursor};
 
 use crate::{
     Backend, QUERY_LANGUAGE,
     util::{
-        CAPTURES_QUERY, INHERITS_REGEX, NodeUtil, TextProviderRope, ToTsPoint,
-        get_current_capture_node, get_file_uris, get_references, lsp_position_to_byte_offset,
-        uri_to_basename,
+        CAPTURES_QUERY, NodeUtil, TextProviderRope, ToTsPoint, get_current_capture_node,
+        get_imported_module_under_cursor, get_references,
     },
 };
-
-fn get_imported_module_under_cursor(
-    rope: &Rope,
-    tree: &Tree,
-    position: &Position,
-) -> Option<String> {
-    if position.line != 0 {
-        return None;
-    }
-    let ts_point = position.to_ts_point(rope);
-    let current_node = tree
-        .root_node()
-        .descendant_for_point_range(ts_point, ts_point)
-        .filter(|node| node.kind() == "comment")?;
-    let node_text = current_node.text(rope);
-    let modules = INHERITS_REGEX.captures(&node_text).and_then(|c| c.get(1))?;
-    let cursor_offset = lsp_position_to_byte_offset(*position, rope).ok()?;
-    let mut comment_offset = current_node.start_byte() + modules.start();
-
-    modules.as_str().split(',').find_map(|module| {
-        let end = comment_offset + module.len();
-        let cursor_in_module = cursor_offset >= comment_offset && cursor_offset < end;
-        comment_offset = end + 1;
-        cursor_in_module.then(|| module.to_string())
-    })
-}
 
 pub async fn goto_definition(
     backend: &Backend,
@@ -55,26 +27,14 @@ pub async fn goto_definition(
     let tree = &doc.tree;
     let cur_pos = params.text_document_position_params.position;
 
-    if let (Some(module), Some(query_name)) = (
-        get_imported_module_under_cursor(rope, tree, &cur_pos),
-        uri_to_basename(uri),
-    ) {
-        let workspace_uris = backend.workspace_uris.read().unwrap().clone();
-        let options = backend.options.read().await;
-        let uris = get_file_uris(&workspace_uris, &options, &module, &query_name);
-        if uris.is_empty() {
-            return Ok(None);
-        }
-
-        return Ok(Some(
-            uris.into_iter()
-                .map(|uri| Location {
-                    uri,
-                    range: Default::default(),
-                })
-                .collect::<Vec<_>>()
-                .into(),
-        ));
+    if let Some(module) = get_imported_module_under_cursor(&doc, &cur_pos) {
+        return Ok(module.uri.clone().map(|uri| {
+            Location {
+                uri,
+                range: Default::default(),
+            }
+            .into()
+        }));
     }
 
     let Some(current_node) = get_current_capture_node(tree.root_node(), cur_pos.to_ts_point(rope))
