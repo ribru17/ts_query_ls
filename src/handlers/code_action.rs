@@ -30,6 +30,12 @@ pub enum CodeActions {
     Enquote,
 }
 
+impl From<CodeActions> for serde_json::Value {
+    fn from(value: CodeActions) -> Self {
+        serde_json::to_value(value).expect("Invalid code action value")
+    }
+}
+
 impl From<CodeActions> for u8 {
     fn from(e: CodeActions) -> Self {
         e as u8
