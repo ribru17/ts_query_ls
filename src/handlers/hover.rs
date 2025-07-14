@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::LazyLock};
 
 use tower_lsp::{
     jsonrpc::Result,
-    lsp_types::{Hover, HoverContents, HoverParams, MarkupContent, MarkupKind},
+    lsp_types::{Hover, HoverContents, HoverParams, MarkupContent, MarkupKind, Position, Range},
 };
 use tracing::warn;
 use tree_sitter::Query;
@@ -10,7 +10,8 @@ use tree_sitter::Query;
 use crate::{
     Backend, QUERY_LANGUAGE, SymbolInfo,
     util::{
-        FORMAT_IGNORE_REGEX, INHERITS_REGEX, NodeUtil, ToTsPoint, capture_at_pos, uri_to_basename,
+        FORMAT_IGNORE_REGEX, INHERITS_REGEX, NodeUtil, ToTsPoint, capture_at_pos,
+        get_imported_module_under_cursor, uri_to_basename,
     },
 };
 
@@ -169,6 +170,29 @@ pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hove
         }
         "comment" => {
             if position.line == 0 && INHERITS_REGEX.is_match(&capture_text) {
+                if let Some(module) = get_imported_module_under_cursor(&doc, &position) {
+                    let range = Some(Range::new(
+                        Position::new(0, module.start_col),
+                        Position::new(0, module.end_col),
+                    ));
+                    let hover_content = if let Some(import_doc) = module
+                        .uri
+                        .as_ref()
+                        .and_then(|uri| backend.document_map.get(uri))
+                    {
+                        let doc_text = import_doc.rope.to_string();
+                        format!("```query\n{doc_text}\n```")
+                    } else {
+                        String::from("*Document not found*")
+                    };
+                    return Ok(Some(Hover {
+                        range,
+                        contents: HoverContents::Markup(MarkupContent {
+                            kind: MarkupKind::Markdown,
+                            value: hover_content,
+                        }),
+                    }));
+                };
                 return Ok(Some(Hover {
                     range,
                     contents: HoverContents::Markup(MarkupContent {
@@ -401,6 +425,16 @@ An error node", BTreeMap::from([(String::from("error"), String::from("An error n
         end: Position::new(0, 17)
     },
     "## `; format-ignore`\n\nThe formatter will ignore nodes that are preceeded by a comment starting with\n`format-ignore`.\n\n```query\n((call_expression\n  function: (identifier) @function.builtin)\n  ; format-ignore\n  (#any-of? @function.builtin\n    \"printf\"   \"printf_s\"\n    \"vprintf\"  \"vprintf_s\"\n    \"scanf\"    \"scanf_s\"\n    \"vscanf\"   \"vscanf_s\"\n    \"wprintf\"  \"wprintf_s\"\n    \"vwprintf\" \"vwprintf_s\"\n    \"wscanf\"   \"wscanf_s\"\n    \"vwscanf\"  \"vwscanf_s\"\n    \"cscanf\"   \"_cscanf\"\n    \"printw\"\n    \"scanw\"))\n```\n", BTreeMap::default())]
+    #[case("; inherits: cpp", Position { line: 0, character: 13 }, Range {
+        start: Position::new(0, 12),
+        end: Position::new(0, 15)
+    },
+    "```query\n; test query\n\n(squid)\n\n```", BTreeMap::default())]
+    #[case("; inherits: squidward", Position { line: 0, character: 13 }, Range {
+        start: Position::new(0, 12),
+        end: Position::new(0, 21)
+    },
+    "*Document not found*", BTreeMap::default())]
     #[tokio::test(flavor = "current_thread")]
     async fn hover(
         #[case] source: &str,
