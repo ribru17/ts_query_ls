@@ -105,7 +105,7 @@ where
 }
 
 /// Configuration options for the language server.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Options {
     /// A list of strings representing directories to search for parsers, of the form
@@ -147,6 +147,21 @@ pub struct Options {
     /// An inclusive range of ABI versions supported by your tool. The end of the range must be
     /// greater than or equal to the start.
     pub supported_abi_versions: Option<std::ops::RangeInclusive<u32>>,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            language_retrieval_patterns: default_regexes(),
+            valid_predicates: Default::default(),
+            valid_directives: Default::default(),
+            valid_captures: Default::default(),
+            diagnostic_options: Default::default(),
+            parser_aliases: Default::default(),
+            parser_install_directories: Default::default(),
+            supported_abi_versions: Default::default(),
+        }
+    }
 }
 
 #[cfg(feature = "schema")]
