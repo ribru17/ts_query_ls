@@ -603,12 +603,12 @@ async fn get_imported_query_diagnostics(
                 continue;
             }
             seen.insert(uri.clone());
-            if let Some(doc) = document_map.get(uri).as_deref().cloned() {
+            if let Some(document) = document_map.get(uri).map(|doc| doc.clone()) {
                 let mut severity = DiagnosticSeverity::HINT;
                 let inner_diags = get_diagnostics_recursively(
                     uri,
                     document_map,
-                    doc,
+                    document,
                     language_data.clone(),
                     options_arc.clone(),
                     true,
