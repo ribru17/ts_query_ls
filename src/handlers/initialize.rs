@@ -28,6 +28,11 @@ pub async fn initialize(backend: &Backend, params: InitializeParams) -> Result<I
         }
     }
 
+    {
+        let mut client_capabilities = backend.client_capabilities.write().await;
+        *client_capabilities = params.capabilities;
+    }
+
     set_configuration_options(
         backend,
         params.initialization_options,
@@ -71,7 +76,8 @@ mod test {
     async fn server_initialize() {
         // Arrange
         let (mut service, _socket) = LspService::build(|client| Backend {
-            _client: client,
+            client,
+            client_capabilities: Default::default(),
             document_map: Default::default(),
             language_map: Default::default(),
             workspace_uris: Default::default(),

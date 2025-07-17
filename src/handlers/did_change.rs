@@ -6,15 +6,15 @@ use crate::{
     Backend, QUERY_LANGUAGE,
     util::{
         byte_offset_to_lsp_position, edit_rope, get_imported_uris,
-        lsp_textdocchange_to_ts_inputedit,
+        lsp_textdocchange_to_ts_inputedit, push_diagnostics,
     },
 };
 
 use super::did_open::populate_import_documents;
 
 pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) {
-    let uri = &params.text_document.uri;
-    let Some(mut document) = backend.document_map.get_mut(uri) else {
+    let uri = params.text_document.uri;
+    let Some(mut document) = backend.document_map.get_mut(&uri) else {
         warn!("No document found for URI: {uri} when handling did_change");
         return;
     };
@@ -58,23 +58,25 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
 
     document.tree = tree;
 
+    let rope = document.rope.clone();
+    let tree = document.tree.clone();
+
+    // We must not hold a reference to something in the `document_map` while populating the import
+    // documents.
+    drop(document);
+
     if recalculate_imports {
-        let rope = document.rope.clone();
-        let tree = document.tree.clone();
-
-        // We must not hold a mutable reference to something in the `document_map` while populating
-        // the import documents
-        drop(document);
-
         let workspace_uris = backend.workspace_uris.read().unwrap().clone();
         let options = backend.options.read().await;
-        let uris = get_imported_uris(&workspace_uris, &options, uri, &rope, &tree);
+        let uris = get_imported_uris(&workspace_uris, &options, &uri, &rope, &tree);
         populate_import_documents(&backend.document_map, &workspace_uris, &options, &uris);
 
-        if let Some(mut document) = backend.document_map.get_mut(uri) {
+        if let Some(mut document) = backend.document_map.get_mut(&uri) {
             document.imported_uris = uris;
         };
     }
+
+    push_diagnostics(backend, uri).await;
 }
 
 #[cfg(test)]

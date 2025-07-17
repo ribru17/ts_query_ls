@@ -15,7 +15,10 @@ use tree_sitter::{
     WasmStore,
 };
 
-use crate::{Backend, DocumentData, ENGINE, ImportedUri, Options, QUERY_LANGUAGE};
+use crate::{
+    Backend, DocumentData, ENGINE, ImportedUri, Options, QUERY_LANGUAGE,
+    handlers::diagnostic::get_diagnostics,
+};
 
 pub static CAPTURES_QUERY: LazyLock<Query> =
     LazyLock::new(|| Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap());
@@ -524,4 +527,49 @@ pub fn get_imported_module_under_cursor<'d>(
         .imported_uris
         .iter()
         .find(|import| import.name == module_name)
+}
+
+/// Push diagnostics to the client (only if it does not support pull diagnostics).
+pub async fn push_diagnostics(backend: &Backend, uri: Url) {
+    if backend
+        .client_capabilities
+        .read()
+        .await
+        .text_document
+        .as_ref()
+        .and_then(|td| td.diagnostic.as_ref())
+        .is_none()
+        // WARNING: This is *NOT* the same as `.get().as_deref().cloned()`!!!! That will still
+        // allow deadlocks to occur while this code will not!!! This is because as_deref() keeps the
+        // borrowed ref in scope, in the backround, until the cloned value is dropped. When using
+        // map(), the ref is dropped within the map closure and thus deadlocks are prevented. Many
+        // Bothans died to bring us this information.
+        && let Some(document) = backend.document_map.get(&uri).map(|doc| doc.clone())
+    {
+        let language_data = document
+            .language_name
+            .as_ref()
+            .and_then(|name| backend.language_map.get(name))
+            .as_deref()
+            .cloned();
+        let ignore_missing_language = false;
+        let cache = true;
+        let version = document.version;
+
+        let diagnostics = get_diagnostics(
+            &uri,
+            &backend.document_map,
+            document,
+            language_data,
+            backend.options.clone(),
+            ignore_missing_language,
+            cache,
+        )
+        .await;
+
+        backend
+            .client
+            .publish_diagnostics(uri, diagnostics, Some(version))
+            .await;
+    }
 }
