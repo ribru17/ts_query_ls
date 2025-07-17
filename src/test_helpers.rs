@@ -9,7 +9,8 @@ pub mod helpers {
         LspService,
         jsonrpc::{Request, Response},
         lsp_types::{
-            ClientCapabilities, DidOpenTextDocumentParams, InitializeParams, Position, Range,
+            ClientCapabilities, DiagnosticClientCapabilities, DidOpenTextDocumentParams,
+            InitializeParams, Position, Range, TextDocumentClientCapabilities,
             TextDocumentContentChangeEvent, TextDocumentItem, TextEdit, Url, WorkspaceFolder,
             notification::DidOpenTextDocument, request::Initialize,
         },
@@ -30,6 +31,18 @@ pub mod helpers {
         "/queries/example_test_files/complex.scm"
     ));
 
+    pub static TEST_CLIENT_CAPABILITIES: LazyLock<ClientCapabilities> =
+        LazyLock::new(|| ClientCapabilities {
+            text_document: Some(TextDocumentClientCapabilities {
+                diagnostic: Some(DiagnosticClientCapabilities {
+                    dynamic_registration: Some(false),
+                    related_document_support: Some(true),
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+
     /// Always test with id of 1 for simplicity
     const ID: i64 = 1;
 
@@ -43,7 +56,8 @@ pub mod helpers {
     ) -> LspService<Backend> {
         let options_value = serde_json::to_value(options).unwrap();
         let (mut service, _socket) = LspService::build(|client| Backend {
-            _client: client,
+            client,
+            client_capabilities: Default::default(),
             document_map: Default::default(),
             language_map: Default::default(),
             workspace_uris: Default::default(),
@@ -58,7 +72,7 @@ pub mod helpers {
             .unwrap()
             .call(lsp_request_to_jsonrpc_request::<Initialize>(
                 InitializeParams {
-                    capabilities: ClientCapabilities::default(),
+                    capabilities: TEST_CLIENT_CAPABILITIES.clone(),
                     workspace_folders: Some(vec![WorkspaceFolder {
                         name: String::from("test_workspace"),
                         uri: Url::from_file_path(concat!(
@@ -188,7 +202,9 @@ mod test {
     use pretty_assertions::assert_eq;
     use rstest::rstest;
 
-    use crate::test_helpers::helpers::{COMPLEX_FILE, SIMPLE_FILE, TEST_URI, initialize_server};
+    use crate::test_helpers::helpers::{
+        COMPLEX_FILE, SIMPLE_FILE, TEST_CLIENT_CAPABILITIES, TEST_URI, initialize_server,
+    };
 
     use super::helpers::Document;
 
@@ -236,5 +252,9 @@ mod test {
                 (*source).to_string()
             );
         }
+        assert_eq!(
+            backend.client_capabilities.deref().read().await.deref(),
+            TEST_CLIENT_CAPABILITIES.deref()
+        );
     }
 }

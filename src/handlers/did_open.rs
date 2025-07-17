@@ -13,11 +13,11 @@ use ts_query_ls::Options;
 
 use crate::{
     Backend, DocumentData, ImportedUri, LanguageData, QUERY_LANGUAGE, SymbolInfo,
-    util::{get_imported_uris, get_language, get_language_name},
+    util::{get_imported_uris, get_language, get_language_name, push_diagnostics},
 };
 
 pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
-    let uri = &params.text_document.uri;
+    let uri = params.text_document.uri;
     info!("ts_query_ls did_open: {uri}");
     let contents = params.text_document.text;
     let rope = Rope::from_str(&contents);
@@ -28,9 +28,9 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     let tree = parser.parse(&contents, None).unwrap();
 
     let options = backend.options.read().await;
-    let language_name = get_language_name(uri, &options);
+    let language_name = get_language_name(&uri, &options);
     let workspace_uris = backend.workspace_uris.read().unwrap().clone();
-    let imported_uris = get_imported_uris(&workspace_uris, &options, uri, &rope, &tree);
+    let imported_uris = get_imported_uris(&workspace_uris, &options, &uri, &rope, &tree);
 
     populate_import_documents(
         &backend.document_map,
@@ -52,20 +52,25 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
         },
     );
 
-    let language_name = match language_name {
-        Some(name) => name,
-        None => return,
-    };
-    if backend.language_map.contains_key(&language_name) {
-        return;
+    fn populate_language_info(backend: &Backend, language_name: Option<String>, options: &Options) {
+        let Some(language_name) = language_name else {
+            return;
+        };
+        if backend.language_map.contains_key(&language_name) {
+            return;
+        }
+        let Some(lang) = get_language(&language_name, options) else {
+            return;
+        };
+        let language_data = init_language_data(lang, language_name.clone());
+        backend
+            .language_map
+            .insert(language_name, language_data.into());
     }
-    let Some(lang) = get_language(&language_name, &options) else {
-        return;
-    };
-    let language_data = init_language_data(lang, language_name.clone());
-    backend
-        .language_map
-        .insert(language_name, language_data.into());
+
+    populate_language_info(backend, language_name, &options);
+
+    push_diagnostics(backend, uri).await;
 }
 
 pub fn init_language_data(language: Language, name: String) -> LanguageData {

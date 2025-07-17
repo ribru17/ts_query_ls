@@ -21,21 +21,21 @@ use tower_lsp::{
     Client, LanguageServer, LspService, Server,
     jsonrpc::Result,
     lsp_types::{
-        CodeActionKind, CodeActionOptions, CodeActionParams, CodeActionProviderCapability,
-        CodeActionResponse, CompletionOptions, CompletionParams, CompletionResponse,
-        DiagnosticOptions, DiagnosticServerCapabilities, DidChangeConfigurationParams,
-        DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-        DidSaveTextDocumentParams, DocumentDiagnosticParams, DocumentDiagnosticReportResult,
-        DocumentFormattingParams, DocumentHighlight, DocumentHighlightParams, DocumentSymbolParams,
-        DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams,
-        HoverProviderCapability, InitializeParams, InitializeResult, Location, OneOf,
-        ReferenceParams, RenameParams, SelectionRange, SelectionRangeParams,
-        SelectionRangeProviderCapability, SemanticTokenModifier, SemanticTokenType,
-        SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
-        SemanticTokensParams, SemanticTokensRangeParams, SemanticTokensRangeResult,
-        SemanticTokensResult, SemanticTokensServerCapabilities, ServerCapabilities,
-        SymbolInformation, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
-        WorkspaceEdit, WorkspaceSymbolParams,
+        ClientCapabilities, CodeActionKind, CodeActionOptions, CodeActionParams,
+        CodeActionProviderCapability, CodeActionResponse, CompletionOptions, CompletionParams,
+        CompletionResponse, DiagnosticOptions, DiagnosticServerCapabilities,
+        DidChangeConfigurationParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
+        DidOpenTextDocumentParams, DidSaveTextDocumentParams, DocumentDiagnosticParams,
+        DocumentDiagnosticReportResult, DocumentFormattingParams, DocumentHighlight,
+        DocumentHighlightParams, DocumentSymbolParams, DocumentSymbolResponse,
+        GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams, HoverProviderCapability,
+        InitializeParams, InitializeResult, Location, OneOf, ReferenceParams, RenameParams,
+        SelectionRange, SelectionRangeParams, SelectionRangeProviderCapability,
+        SemanticTokenModifier, SemanticTokenType, SemanticTokensFullOptions, SemanticTokensLegend,
+        SemanticTokensOptions, SemanticTokensParams, SemanticTokensRangeParams,
+        SemanticTokensRangeResult, SemanticTokensResult, SemanticTokensServerCapabilities,
+        ServerCapabilities, SymbolInformation, TextDocumentSyncCapability, TextDocumentSyncKind,
+        TextEdit, Url, WorkspaceEdit, WorkspaceSymbolParams,
     },
 };
 use tree_sitter::{Language, Tree, wasmtime::Engine};
@@ -153,7 +153,8 @@ struct LanguageData {
 }
 
 struct Backend {
-    _client: Client,
+    client: Client,
+    client_capabilities: Arc<tokio::sync::RwLock<ClientCapabilities>>,
     document_map: DashMap<Url, DocumentData>,
     language_map: DashMap<String, Arc<LanguageData>>,
     options: Arc<tokio::sync::RwLock<Options>>,
@@ -417,10 +418,11 @@ async fn main() {
         tracing_subscriber::registry().with(lsp_layer).init();
 
         Backend {
-            _client: client,
+            client,
             document_map: Default::default(),
             language_map: Default::default(),
             workspace_uris: Default::default(),
+            client_capabilities: Default::default(),
             options,
         }
     })
