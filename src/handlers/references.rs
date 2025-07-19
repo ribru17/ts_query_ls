@@ -1,11 +1,11 @@
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{Location, ReferenceParams};
 use tracing::warn;
-use tree_sitter::{Parser, QueryCursor};
+use tree_sitter::QueryCursor;
 
 use crate::util::{CAPTURES_QUERY, NodeUtil, ToTsPoint};
 use crate::{
-    Backend, QUERY_LANGUAGE,
+    Backend,
     util::{TextProviderRope, get_current_capture_node, get_references},
 };
 
@@ -31,11 +31,6 @@ pub async fn references(
     let query = &CAPTURES_QUERY;
     let mut cursor = QueryCursor::new();
     let provider = TextProviderRope(rope);
-
-    let mut parser = Parser::new();
-    parser
-        .set_language(&QUERY_LANGUAGE)
-        .expect("Error setting language for Query parser");
 
     Ok(Some(
         get_references(

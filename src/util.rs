@@ -1,4 +1,5 @@
 use std::{
+    cell::RefCell,
     fs::{self},
     path::{Path, PathBuf},
     sync::LazyLock,
@@ -11,7 +12,7 @@ use streaming_iterator::StreamingIterator;
 use tower_lsp::lsp_types::{Position, Range, TextDocumentContentChangeEvent, Url};
 use tracing::warn;
 use tree_sitter::{
-    InputEdit, Language, Node, Point, Query, QueryCapture, QueryCursor, TextProvider, Tree,
+    InputEdit, Language, Node, Parser, Point, Query, QueryCapture, QueryCursor, TextProvider, Tree,
     WasmStore,
 };
 
@@ -26,6 +27,34 @@ pub static INHERITS_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^;+\s*inherits: ([a-zA-Z0-9\-_,]+)").unwrap());
 pub static FORMAT_IGNORE_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^;+\s*(format-ignore)").unwrap());
+
+thread_local! {
+    static QUERY_PARSER: RefCell<Parser> = {
+        let mut parser = Parser::new();
+        parser.set_language(&QUERY_LANGUAGE).expect("Query language should load");
+        parser.into()
+    };
+}
+
+pub fn parse(rope: &Rope, old_tree: Option<&Tree>) -> Tree {
+    QUERY_PARSER.with_borrow_mut(|parser| {
+        let len_bytes = rope.len_bytes();
+        parser
+            .parse_with_options(
+                &mut |byte, _| {
+                    if byte <= len_bytes {
+                        let (chunk, start_byte, _, _) = rope.chunk_at_byte(byte);
+                        &chunk.as_bytes()[byte - start_byte..]
+                    } else {
+                        &[]
+                    }
+                },
+                old_tree,
+                None,
+            )
+            .expect("Parsing should have completed")
+    })
+}
 
 /// Returns the starting byte of the character if the position is in the middle of a character.
 pub fn lsp_position_to_byte_offset(position: Position, rope: &Rope) -> Result<usize, ropey::Error> {

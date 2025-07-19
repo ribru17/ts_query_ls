@@ -4,7 +4,7 @@ use streaming_iterator::StreamingIterator;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams};
 use tracing::warn;
-use tree_sitter::{Parser, Query, QueryCursor};
+use tree_sitter::{Query, QueryCursor};
 
 use crate::util::{CAPTURES_QUERY, NodeUtil, TextProviderRope, ToTsPoint, get_references};
 use crate::{Backend, QUERY_LANGUAGE};
@@ -45,11 +45,6 @@ pub async fn document_highlight(
     let ident_query = &IDENT_QUERY;
     let mut cursor = QueryCursor::new();
     let provider = TextProviderRope(rope);
-
-    let mut parser = Parser::new();
-    parser
-        .set_language(&QUERY_LANGUAGE)
-        .expect("Error setting language for Query parser");
 
     if current_node.kind() == "capture" {
         Ok(Some(

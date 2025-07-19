@@ -5,11 +5,11 @@ use tower_lsp::{
     jsonrpc::Result,
     lsp_types::{Location, SymbolInformation, SymbolKind, Url, WorkspaceSymbolParams},
 };
-use tree_sitter::{Parser, QueryCursor, StreamingIterator};
+use tree_sitter::{QueryCursor, StreamingIterator};
 
 use crate::{
-    Backend, QUERY_LANGUAGE,
-    util::{CAPTURES_QUERY, NodeUtil, TextProviderRope, get_scm_files, is_subsequence},
+    Backend,
+    util::{CAPTURES_QUERY, NodeUtil, TextProviderRope, get_scm_files, is_subsequence, parse},
 };
 
 pub async fn symbol(
@@ -26,15 +26,10 @@ pub async fn symbol(
         .cloned()
         .unwrap_or_default();
 
-    let mut parser = Parser::new();
-    parser
-        .set_language(&QUERY_LANGUAGE)
-        .expect("Language should load");
-
     for path in get_scm_files(&dirs) {
         if let (Ok(content), Ok(uri)) = (fs::read_to_string(&path), Url::from_file_path(path)) {
             let rope = &Rope::from_str(&content);
-            let tree = parser.parse(&content, None).expect("Tree should exist");
+            let tree = parse(rope, None);
 
             let provider = &TextProviderRope(rope);
             let mut cursor = QueryCursor::new();
