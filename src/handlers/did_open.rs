@@ -8,24 +8,19 @@ use dashmap::DashMap;
 use ropey::Rope;
 use tower_lsp::lsp_types::{DidOpenTextDocumentParams, Url};
 use tracing::info;
-use tree_sitter::{Language, Parser};
+use tree_sitter::Language;
 use ts_query_ls::Options;
 
 use crate::{
-    Backend, DocumentData, ImportedUri, LanguageData, QUERY_LANGUAGE, SymbolInfo,
-    util::{get_imported_uris, get_language, get_language_name, push_diagnostics},
+    Backend, DocumentData, ImportedUri, LanguageData, SymbolInfo,
+    util::{get_imported_uris, get_language, get_language_name, parse, push_diagnostics},
 };
 
 pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     let uri = params.text_document.uri;
     info!("ts_query_ls did_open: {uri}");
-    let contents = params.text_document.text;
-    let rope = Rope::from_str(&contents);
-    let mut parser = Parser::new();
-    parser
-        .set_language(&QUERY_LANGUAGE)
-        .expect("Error loading Query grammar");
-    let tree = parser.parse(&contents, None).unwrap();
+    let rope = Rope::from_str(&params.text_document.text);
+    let tree = parse(&rope, None);
 
     let options = backend.options.read().await;
     let language_name = get_language_name(&uri, &options);
@@ -156,11 +151,7 @@ pub fn populate_import_documents(
                 .and_then(|path| fs::read_to_string(path).map_err(|_| ()))
         {
             let rope = Rope::from_str(&contents);
-            let mut parser = Parser::new();
-            parser
-                .set_language(&QUERY_LANGUAGE)
-                .expect("Error loading Query grammar");
-            let tree = parser.parse(&contents, None).unwrap();
+            let tree = parse(&rope, None);
             let nested_imported_uris =
                 get_imported_uris(workspace_dirs, options, uri, &rope, &tree);
             document_map.insert(

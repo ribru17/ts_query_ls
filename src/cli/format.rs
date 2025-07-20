@@ -8,7 +8,10 @@ use anstyle::{AnsiColor, Color, Style};
 use futures::future::join_all;
 use ropey::Rope;
 
-use crate::{QUERY_LANGUAGE, handlers::formatting, util::get_scm_files};
+use crate::{
+    handlers::formatting,
+    util::{get_scm_files, parse},
+};
 
 pub async fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
     if directories.is_empty() {
@@ -39,12 +42,8 @@ pub async fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
                 exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
                 return;
             };
-            let mut parser = tree_sitter::Parser::new();
-            parser
-                .set_language(&QUERY_LANGUAGE)
-                .expect("Error loading Query grammar");
-            let tree = parser.parse(contents.as_str(), None).unwrap();
             let rope = Rope::from(contents.as_str());
+            let tree = parse(&rope, None);
             let Some(formatted) = formatting::format_document(&rope, &tree.root_node()) else {
                 exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
                 eprintln!("No formatting performed -- invalid syntax detected at {path_str:?}");

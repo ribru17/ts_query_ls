@@ -3,10 +3,10 @@ use tower_lsp::{
     lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, Location},
 };
 use tracing::{info, warn};
-use tree_sitter::{Parser, QueryCursor};
+use tree_sitter::QueryCursor;
 
 use crate::{
-    Backend, QUERY_LANGUAGE,
+    Backend,
     util::{
         CAPTURES_QUERY, NodeUtil, TextProviderRope, ToTsPoint, get_current_capture_node,
         get_imported_module_under_cursor, get_references,
@@ -45,11 +45,6 @@ pub async fn goto_definition(
     let query = &CAPTURES_QUERY;
     let mut cursor = QueryCursor::new();
     let provider = TextProviderRope(rope);
-
-    let mut parser = Parser::new();
-    parser
-        .set_language(&QUERY_LANGUAGE)
-        .expect("Error setting language for Query parser");
 
     let defs = get_references(
         &tree.root_node(),

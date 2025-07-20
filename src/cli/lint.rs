@@ -11,12 +11,12 @@ use tower_lsp::lsp_types::{CodeAction, CodeActionOrCommand, DiagnosticSeverity, 
 use ts_query_ls::Options;
 
 use crate::{
-    DocumentData, LanguageData, QUERY_LANGUAGE,
+    DocumentData, LanguageData,
     handlers::{
         code_action::diag_to_code_action, diagnostic::get_diagnostics,
         did_open::populate_import_documents,
     },
-    util::{edit_rope, get_imported_uris, get_language_name, get_scm_files},
+    util::{edit_rope, get_imported_uris, get_language_name, get_scm_files, parse},
 };
 
 #[allow(clippy::too_many_arguments)] // TODO: Refactor this
@@ -31,14 +31,8 @@ pub(super) async fn lint_file(
     language_data: Option<Arc<LanguageData>>,
     exit_code: &AtomicI32,
 ) -> Option<String> {
-    let mut parser = tree_sitter::Parser::new();
-    parser
-        .set_language(&QUERY_LANGUAGE)
-        .expect("Error loading Query grammar");
-    let tree = parser
-        .parse(source, None)
-        .expect("Parsing should've completed");
     let rope = Rope::from(source);
+    let tree = parse(&rope, None);
     let options_val = options.clone().read().await.clone();
     let language_name = get_language_name(uri, &options_val);
     let workspace_uris = &[workspace.to_owned()];

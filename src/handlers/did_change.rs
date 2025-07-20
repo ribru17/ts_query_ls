@@ -1,12 +1,11 @@
 use tower_lsp::lsp_types::{DidChangeTextDocumentParams, Position, Range};
 use tracing::warn;
-use tree_sitter::Parser;
 
 use crate::{
-    Backend, QUERY_LANGUAGE,
+    Backend,
     util::{
         byte_offset_to_lsp_position, edit_rope, get_imported_uris,
-        lsp_textdocchange_to_ts_inputedit, push_diagnostics,
+        lsp_textdocchange_to_ts_inputedit, parse, push_diagnostics,
     },
 };
 
@@ -20,10 +19,6 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
     };
     let version = params.text_document.version;
     document.version = version;
-    let mut parser = Parser::new();
-    parser
-        .set_language(&QUERY_LANGUAGE)
-        .expect("Error loading Query grammar");
 
     let mut edits = vec![];
     let mut recalculate_imports = false;
@@ -44,22 +39,15 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
         edits.push(lsp_textdocchange_to_ts_inputedit(rope, change).unwrap());
         edit_rope(rope, range, new_text);
     }
-    let contents = document.rope.to_string();
-    let mut old_tree = document.tree.clone();
 
     for edit in edits {
-        old_tree.edit(&edit);
+        document.tree.edit(&edit);
     }
 
-    let Some(tree) = parser.parse(&contents, Some(&old_tree)) else {
-        warn!("Failure during tree parse");
-        return;
-    };
-
-    document.tree = tree;
-
     let rope = document.rope.clone();
-    let tree = document.tree.clone();
+    let tree = parse(&rope, (&document.tree).into());
+
+    document.tree = tree.clone();
 
     // We must not hold a reference to something in the `document_map` while populating the import
     // documents.
