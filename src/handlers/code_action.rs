@@ -14,8 +14,8 @@ use tree_sitter::{QueryCursor, Tree};
 use crate::{
     Backend,
     util::{
-        CAPTURES_QUERY, NodeUtil, TextProviderRope, ToTsPoint, get_current_capture_node,
-        get_references, lsp_position_to_byte_offset,
+        CAPTURES_QUERY, NodeUtil, RangeUtil, TextProviderRope, ToTsPoint, get_current_capture_node,
+        get_references,
     },
 };
 
@@ -143,16 +143,10 @@ pub fn diag_to_code_action(
             ..Default::default()
         })),
         Ok(CodeActions::Trim) => {
-            let new_text = rope
-                .byte_slice(
-                    lsp_position_to_byte_offset(diagnostic.range.start, rope)
-                        .map(|byte| byte + 1)
-                        .unwrap_or_default()
-                        ..lsp_position_to_byte_offset(diagnostic.range.end, rope)
-                            .map(|byte| byte - 1)
-                            .unwrap_or_default(),
-                )
-                .to_string();
+            let mut range = diagnostic.range;
+            range.start.character += 1;
+            range.end.character -= 1;
+            let new_text = range.text(rope);
             Some(CodeActionOrCommand::CodeAction(CodeAction {
                 title: String::from("Trim quotations from string"),
                 kind: Some(CodeActionKind::QUICKFIX),
@@ -172,13 +166,7 @@ pub fn diag_to_code_action(
             }))
         }
         Ok(CodeActions::Enquote) => {
-            let new_text = rope
-                .byte_slice(
-                    lsp_position_to_byte_offset(diagnostic.range.start, rope).unwrap_or_default()
-                        ..lsp_position_to_byte_offset(diagnostic.range.end, rope)
-                            .unwrap_or_default(),
-                )
-                .to_string();
+            let new_text = diagnostic.range.text(rope);
             let new_text = format!("\"{new_text}\"");
             Some(CodeActionOrCommand::CodeAction(CodeAction {
                 title: String::from("Add quotations"),

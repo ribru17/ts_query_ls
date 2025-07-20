@@ -63,8 +63,8 @@ pub fn diff(left: &str, right: &str, rope: &Rope) -> Vec<TextEdit> {
         if let (Chunk::Delete(deleted), Some(&Chunk::Insert(inserted))) = (chunk, chunks.peek()) {
             chunks.next().unwrap();
             let deleted_len = deleted.len();
-            let start = byte_offset_to_lsp_position(offset, rope).unwrap();
-            let end = byte_offset_to_lsp_position(offset + deleted_len, rope).unwrap();
+            let start = byte_offset_to_lsp_position(offset, rope);
+            let end = byte_offset_to_lsp_position(offset + deleted_len, rope);
             edits.push(TextEdit {
                 new_text: inserted.to_owned(),
                 range: Range { start, end },
@@ -79,8 +79,8 @@ pub fn diff(left: &str, right: &str, rope: &Rope) -> Vec<TextEdit> {
             }
             Chunk::Delete(deleted) => {
                 let deleted_len = deleted.len();
-                let start = byte_offset_to_lsp_position(offset, rope).unwrap();
-                let end = byte_offset_to_lsp_position(offset + deleted_len, rope).unwrap();
+                let start = byte_offset_to_lsp_position(offset, rope);
+                let end = byte_offset_to_lsp_position(offset + deleted_len, rope);
                 edits.push(TextEdit {
                     new_text: String::new(),
                     range: Range { start, end },
@@ -88,7 +88,7 @@ pub fn diff(left: &str, right: &str, rope: &Rope) -> Vec<TextEdit> {
                 offset += deleted_len;
             }
             Chunk::Insert(inserted) => {
-                let pos = byte_offset_to_lsp_position(offset, rope).unwrap();
+                let pos = byte_offset_to_lsp_position(offset, rope);
                 edits.push(TextEdit {
                     new_text: inserted.to_owned(),
                     range: Range {

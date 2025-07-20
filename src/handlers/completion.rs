@@ -11,9 +11,8 @@ use tree_sitter::QueryCursor;
 use ts_query_ls::{PredicateParameterArity, PredicateParameterType};
 
 use crate::util::{
-    CAPTURES_QUERY, NodeUtil, TextProviderRope, ToTsPoint, get_current_capture_node,
-    get_language_name_raw, get_scm_files, lsp_position_to_byte_offset, node_is_or_has_ancestor,
-    uri_to_basename,
+    CAPTURES_QUERY, NodeUtil, PosUtil, TextProviderRope, ToTsPoint, get_current_capture_node,
+    get_language_name_raw, get_scm_files, node_is_or_has_ancestor, uri_to_basename,
 };
 use crate::{Backend, SymbolInfo};
 
@@ -130,9 +129,8 @@ pub async fn completion(
     }
 
     // Predicates and directives completions
-    let cursor_after_hashtag = lsp_position_to_byte_offset(position, rope)
-        .and_then(|b| rope.try_byte_to_char(b))
-        .is_ok_and(|c| rope.char(c) == '#');
+    let char = position.char(rope);
+    let cursor_after_hashtag = char == '#';
     if cursor_after_hashtag
         || current_node
             .prev_sibling()
@@ -200,10 +198,8 @@ pub async fn completion(
     let mut completion_items = vec![];
 
     // Node and field name completions
-    let char_idx =
-        lsp_position_to_byte_offset(position, rope).and_then(|b| rope.try_byte_to_char(b));
-    let cursor_after_at_sign = char_idx.is_ok_and(|c| rope.char(c) == '@');
-    let cursor_after_exclamation_point = char_idx.is_ok_and(|c| rope.char(c) == '!');
+    let cursor_after_at_sign = char == '@';
+    let cursor_after_exclamation_point = char == '!';
     let root = tree.root_node();
     let in_capture = cursor_after_at_sign || node_is_or_has_ancestor(root, current_node, "capture");
     let in_predicate = node_is_or_has_ancestor(root, current_node, "predicate");

@@ -57,38 +57,63 @@ pub fn parse(rope: &Rope, old_tree: Option<&Tree>) -> Tree {
 }
 
 /// Returns the starting byte of the character if the position is in the middle of a character.
-pub fn lsp_position_to_byte_offset(position: Position, rope: &Rope) -> Result<usize, ropey::Error> {
-    let line_char = rope.try_line_to_char(position.line as usize)?;
-    let line_cu = rope.try_char_to_utf16_cu(line_char)?;
-    rope.try_char_to_byte(rope.try_utf16_cu_to_char(line_cu + position.character as usize)?)
+fn lsp_position_to_byte_offset(position: Position, rope: &Rope) -> usize {
+    rope.char_to_byte(position.to_char_idx(rope))
 }
 
-pub fn byte_offset_to_lsp_position(offset: usize, rope: &Rope) -> Result<Position, ropey::Error> {
-    let line_idx = rope.try_byte_to_line(offset)?;
+pub trait PosUtil {
+    fn to_char_idx(&self, rope: &Rope) -> usize;
+
+    fn char(&self, rope: &Rope) -> char {
+        rope.char(self.to_char_idx(rope))
+    }
+}
+
+impl PosUtil for Position {
+    fn to_char_idx(&self, rope: &Rope) -> usize {
+        let row_char_idx = rope.line_to_char(self.line as usize);
+        let row_cu = rope.char_to_utf16_cu(row_char_idx);
+        rope.utf16_cu_to_char(row_cu + self.character as usize)
+    }
+}
+
+pub trait RangeUtil {
+    fn text(&self, rope: &Rope) -> String;
+}
+
+impl RangeUtil for Range {
+    fn text(&self, rope: &Rope) -> String {
+        rope.slice(self.start.to_char_idx(rope)..self.end.to_char_idx(rope))
+            .to_string()
+    }
+}
+
+pub fn byte_offset_to_lsp_position(offset: usize, rope: &Rope) -> Position {
+    let line_idx = rope.byte_to_line(offset);
 
     let line_utf16_cu_idx = {
-        let char_idx = rope.try_line_to_char(line_idx)?;
-        rope.try_char_to_utf16_cu(char_idx)?
+        let char_idx = rope.line_to_char(line_idx);
+        rope.char_to_utf16_cu(char_idx)
     };
 
     let character_utf16_cu_idx = {
-        let char_idx = rope.try_byte_to_char(offset)?;
-        rope.try_char_to_utf16_cu(char_idx)?
+        let char_idx = rope.byte_to_char(offset);
+        rope.char_to_utf16_cu(char_idx)
     };
 
     let line = line_idx as u32;
     let character = (character_utf16_cu_idx - line_utf16_cu_idx) as u32;
 
-    Ok(Position { line, character })
+    Position { line, character }
 }
 
-fn byte_offset_to_ts_point(index: usize, rope: &Rope) -> Result<Point, ropey::Error> {
-    let line = rope.try_byte_to_line(index)?;
-    let char = index - rope.try_line_to_byte(line)?;
-    Ok(Point {
+fn byte_offset_to_ts_point(index: usize, rope: &Rope) -> Point {
+    let line = rope.byte_to_line(index);
+    let char = index - rope.line_to_byte(line);
+    Point {
         row: line,
         column: char,
-    })
+    }
 }
 
 pub trait ToTsPoint {
@@ -97,13 +122,13 @@ pub trait ToTsPoint {
 
 impl ToTsPoint for Position {
     fn to_ts_point(&self, rope: &Rope) -> Point {
-        byte_offset_to_ts_point(lsp_position_to_byte_offset(*self, rope).unwrap(), rope).unwrap()
+        byte_offset_to_ts_point(lsp_position_to_byte_offset(*self, rope), rope)
     }
 }
 
 fn ts_point_to_lsp_position(point: Point, rope: &Rope) -> Position {
     let offset = rope.line_to_byte(point.row) + point.column;
-    byte_offset_to_lsp_position(offset, rope).unwrap()
+    byte_offset_to_lsp_position(offset, rope)
 }
 
 pub fn get_current_capture_node(root: Node, point: Point) -> Option<Node> {
@@ -169,64 +194,58 @@ pub fn node_is_or_has_ancestor(root: Node, node: Node, kind: &str) -> bool {
 }
 
 pub fn edit_rope(rope: &mut Rope, range: Range, new_text: &str) {
-    let start_row_char_idx = rope.line_to_char(range.start.line as usize);
-    let start_row_cu = rope.char_to_utf16_cu(start_row_char_idx);
-    let start_col_char_idx =
-        rope.utf16_cu_to_char(start_row_cu + range.start.character as usize) - start_row_char_idx;
-    let end_row_char_idx = rope.line_to_char(range.end.line as usize);
-    let end_row_cu = rope.char_to_utf16_cu(end_row_char_idx);
-    let end_col_char_idx =
-        rope.utf16_cu_to_char(end_row_cu + range.end.character as usize) - end_row_char_idx;
-
-    let start_char_idx = start_row_char_idx + start_col_char_idx;
-    let end_char_idx = end_row_char_idx + end_col_char_idx;
-    rope.remove(start_char_idx..end_char_idx);
+    let start_char = range.start.to_char_idx(rope);
+    let end_char = range.end.to_char_idx(rope);
+    rope.remove(start_char..end_char);
 
     if !new_text.is_empty() {
-        rope.insert(start_char_idx, new_text);
+        rope.insert(start_char, new_text);
     }
 }
 
-pub fn lsp_textdocchange_to_ts_inputedit(
-    rope: &Rope,
-    change: &TextDocumentContentChangeEvent,
-) -> Result<InputEdit, Box<dyn std::error::Error>> {
-    let text = change.text.as_str();
-    let text_end_byte_count = text.len();
+pub trait TextDocChangeUtil {
+    fn to_tsedit(&self, rope: &Rope) -> InputEdit;
+}
 
-    let range = change.range.unwrap_or_else(|| {
-        let start = Position::new(0, 0);
-        let end = byte_offset_to_lsp_position(rope.len_bytes() - 1, rope).unwrap();
-        Range { start, end }
-    });
+impl TextDocChangeUtil for TextDocumentContentChangeEvent {
+    fn to_tsedit(&self, rope: &Rope) -> InputEdit {
+        let text = self.text.as_str();
+        let text_end_byte_count = text.len();
 
-    let start_position = range.start.to_ts_point(rope);
-    let start_byte = lsp_position_to_byte_offset(range.start, rope)?;
-    let old_end_position = range.end.to_ts_point(rope);
-    let old_end_byte = lsp_position_to_byte_offset(range.end, rope)?;
+        let range = self.range.unwrap_or_else(|| {
+            let start = Position::new(0, 0);
+            let end = byte_offset_to_lsp_position(rope.len_bytes() - 1, rope);
+            Range { start, end }
+        });
 
-    let new_end_byte = start_byte + text_end_byte_count;
+        let start_position = range.start.to_ts_point(rope);
+        let start_byte = lsp_position_to_byte_offset(range.start, rope);
+        let old_end_position = range.end.to_ts_point(rope);
+        let old_end_byte = lsp_position_to_byte_offset(range.end, rope);
 
-    let new_end_position = {
-        if new_end_byte >= rope.len_bytes() {
-            let line_idx = text.lines().count();
-            let line_byte_idx = ropey::str_utils::line_to_byte_idx(text, line_idx);
-            let row = rope.len_lines() + line_idx;
-            let column = text_end_byte_count - line_byte_idx;
-            Ok(Point { row, column })
-        } else {
-            byte_offset_to_ts_point(new_end_byte, rope)
+        let new_end_byte = start_byte + text_end_byte_count;
+
+        let new_end_position = {
+            if new_end_byte >= rope.len_bytes() {
+                let line_idx = text.lines().count();
+                let line_byte_idx = ropey::str_utils::line_to_byte_idx(text, line_idx);
+                let row = rope.len_lines() + line_idx;
+                let column = text_end_byte_count - line_byte_idx;
+                Point { row, column }
+            } else {
+                byte_offset_to_ts_point(new_end_byte, rope)
+            }
+        };
+
+        InputEdit {
+            start_byte,
+            old_end_byte,
+            new_end_byte,
+            start_position,
+            old_end_position,
+            new_end_position,
         }
-    }?;
-
-    Ok(InputEdit {
-        start_byte,
-        old_end_byte,
-        new_end_byte,
-        start_position,
-        old_end_position,
-        new_end_position,
-    })
+    }
 }
 
 const DYLIB_EXTENSIONS: [&str; 3] = [".so", ".dll", ".dylib"];
@@ -542,7 +561,7 @@ pub fn get_imported_module_under_cursor<'d>(
         .filter(|node| node.kind() == "comment")?;
     let node_text = comment_node.text(rope);
     let modules = INHERITS_REGEX.captures(&node_text).and_then(|c| c.get(1))?;
-    let cursor_offset = lsp_position_to_byte_offset(*position, rope).ok()?;
+    let cursor_offset = lsp_position_to_byte_offset(*position, rope);
     let mut comment_offset = comment_node.start_byte() + modules.start();
 
     let module_name = modules.as_str().split(',').find_map(|module| {
