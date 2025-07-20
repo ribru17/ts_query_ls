@@ -4,8 +4,8 @@ use tracing::warn;
 use crate::{
     Backend,
     util::{
-        byte_offset_to_lsp_position, edit_rope, get_imported_uris,
-        lsp_textdocchange_to_ts_inputedit, parse, push_diagnostics,
+        TextDocChangeUtil, byte_offset_to_lsp_position, edit_rope, get_imported_uris, parse,
+        push_diagnostics,
     },
 };
 
@@ -28,7 +28,7 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
 
         let range = change.range.unwrap_or_else(|| {
             let start = Position::new(0, 0);
-            let end = byte_offset_to_lsp_position(rope.len_bytes() - 1, rope).unwrap_or_default();
+            let end = byte_offset_to_lsp_position(rope.len_bytes() - 1, rope);
             Range { start, end }
         });
 
@@ -36,7 +36,7 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
             recalculate_imports = true;
         }
 
-        edits.push(lsp_textdocchange_to_ts_inputedit(rope, change).unwrap());
+        edits.push(change.to_tsedit(rope));
         edit_rope(rope, range, new_text);
     }
 
