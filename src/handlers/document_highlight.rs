@@ -6,7 +6,7 @@ use tower_lsp::lsp_types::{DocumentHighlight, DocumentHighlightKind, DocumentHig
 use tracing::warn;
 use tree_sitter::{Query, QueryCursor};
 
-use crate::util::{CAPTURES_QUERY, NodeUtil, TextProviderRope, ToTsPoint, get_references};
+use crate::util::{CAPTURES_QUERY, NodeUtil, PosUtil, TextProviderRope, get_references};
 use crate::{Backend, QUERY_LANGUAGE};
 
 static IDENT_QUERY: LazyLock<Query> =

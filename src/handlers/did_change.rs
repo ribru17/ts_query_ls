@@ -3,10 +3,7 @@ use tracing::warn;
 
 use crate::{
     Backend,
-    util::{
-        TextDocChangeUtil, byte_offset_to_lsp_position, edit_rope, get_imported_uris, parse,
-        push_diagnostics,
-    },
+    util::{ByteUtil, TextDocChangeUtil, edit_rope, get_imported_uris, parse, push_diagnostics},
 };
 
 use super::did_open::populate_import_documents;
@@ -28,7 +25,7 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
 
         let range = change.range.unwrap_or_else(|| {
             let start = Position::new(0, 0);
-            let end = byte_offset_to_lsp_position(rope.len_bytes() - 1, rope);
+            let end = (rope.len_bytes() - 1).to_lsp_pos(rope);
             Range { start, end }
         });
 

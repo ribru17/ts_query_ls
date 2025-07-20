@@ -11,7 +11,7 @@ use tree_sitter::QueryCursor;
 use ts_query_ls::{PredicateParameterArity, PredicateParameterType};
 
 use crate::util::{
-    CAPTURES_QUERY, NodeUtil, PosUtil, TextProviderRope, ToTsPoint, get_current_capture_node,
+    CAPTURES_QUERY, NodeUtil, PosUtil, TextProviderRope, get_current_capture_node,
     get_language_name_raw, get_scm_files, node_is_or_has_ancestor, uri_to_basename,
 };
 use crate::{Backend, SymbolInfo};

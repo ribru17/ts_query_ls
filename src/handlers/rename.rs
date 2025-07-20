@@ -11,7 +11,7 @@ use tree_sitter::QueryCursor;
 use crate::{
     Backend,
     util::{
-        CAPTURES_QUERY, NodeUtil, TextProviderRope, ToTsPoint, get_current_capture_node,
+        CAPTURES_QUERY, NodeUtil, PosUtil, TextProviderRope, get_current_capture_node,
         get_references,
     },
 };
