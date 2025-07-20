@@ -12,7 +12,7 @@ use tree_sitter::{Query, QueryCursor, StreamingIterator};
 
 use crate::{
     Backend, QUERY_LANGUAGE, SymbolInfo,
-    util::{FORMAT_IGNORE_REGEX, INHERITS_REGEX, NodeUtil, TextProviderRope, ToTsPoint},
+    util::{FORMAT_IGNORE_REGEX, INHERITS_REGEX, NodeUtil, PosUtil, TextProviderRope},
 };
 
 static SEM_TOK_QUERY: LazyLock<Query> = LazyLock::new(|| {

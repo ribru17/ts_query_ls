@@ -10,7 +10,7 @@ use tree_sitter::Query;
 use crate::{
     Backend, QUERY_LANGUAGE, SymbolInfo,
     util::{
-        FORMAT_IGNORE_REGEX, INHERITS_REGEX, NodeUtil, ToTsPoint, capture_at_pos,
+        FORMAT_IGNORE_REGEX, INHERITS_REGEX, NodeUtil, PosUtil, capture_at_pos,
         get_imported_module_under_cursor, uri_to_basename,
     },
 };

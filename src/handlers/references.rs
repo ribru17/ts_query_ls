@@ -3,7 +3,7 @@ use tower_lsp::lsp_types::{Location, ReferenceParams};
 use tracing::warn;
 use tree_sitter::QueryCursor;
 
-use crate::util::{CAPTURES_QUERY, NodeUtil, ToTsPoint};
+use crate::util::{CAPTURES_QUERY, NodeUtil, PosUtil};
 use crate::{
     Backend,
     util::{TextProviderRope, get_current_capture_node, get_references},
