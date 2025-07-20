@@ -21,6 +21,7 @@ pub async fn completion(
     params: CompletionParams,
 ) -> Result<Option<CompletionResponse>> {
     let uri = &params.text_document_position.text_document.uri;
+    let options = backend.options.read().await;
 
     let Some(doc) = backend.document_map.get(uri) else {
         warn!("No document found for URI: {uri} when handling completion");
@@ -79,14 +80,13 @@ pub async fn completion(
         let Some(query_type) = path.file_stem() else {
             return Ok(None);
         };
-        let options = &backend.options.read().await;
         return Ok(Some(CompletionResponse::Array(
             get_scm_files(&backend.workspace_uris.read().unwrap())
                 .filter_map(|file| {
                     if file.file_stem().is_none_or(|stem| stem != query_type) {
                         return None;
                     }
-                    get_language_name_raw(&file, options)
+                    get_language_name_raw(&file, &options)
                 })
                 .map(|file| CompletionItem {
                     label: file,
@@ -136,7 +136,6 @@ pub async fn completion(
             .prev_sibling()
             .is_some_and(|sib| sib.kind() == "#")
     {
-        let options = backend.options.read().await;
         let predicates = &options.valid_predicates;
         let directives = &options.valid_directives;
         let range = if cursor_after_hashtag {
@@ -318,28 +317,26 @@ pub async fn completion(
                 }
             }
         }
-    } else if in_capture {
-        let options = backend.options.read().await;
-        if let Some(valid_captures) =
+    } else if in_capture
+        && let Some(valid_captures) =
             uri_to_basename(uri).and_then(|base| options.valid_captures.get(&base))
-        {
-            completion_items.extend(valid_captures.iter().map(|cap| {
-                let label = "@".to_string() + cap.0;
-                if let Some(CompletionTextEdit::Edit(edit)) = text_edit.as_mut() {
-                    edit.new_text = label.clone();
-                };
-                CompletionItem {
-                    label,
-                    documentation: Some(Documentation::MarkupContent(MarkupContent {
-                        kind: MarkupKind::Markdown,
-                        value: cap.1.clone(),
-                    })),
-                    kind: Some(CompletionItemKind::VARIABLE),
-                    text_edit: text_edit.clone(),
-                    ..Default::default()
-                }
-            }));
-        }
+    {
+        completion_items.extend(valid_captures.iter().map(|cap| {
+            let label = "@".to_string() + cap.0;
+            if let Some(CompletionTextEdit::Edit(edit)) = text_edit.as_mut() {
+                edit.new_text = label.clone();
+            };
+            CompletionItem {
+                label,
+                documentation: Some(Documentation::MarkupContent(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: cap.1.clone(),
+                })),
+                kind: Some(CompletionItemKind::VARIABLE),
+                text_edit: text_edit.clone(),
+                ..Default::default()
+            }
+        }));
     }
 
     Ok(Some(CompletionResponse::Array(completion_items)))
