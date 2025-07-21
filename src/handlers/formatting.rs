@@ -525,6 +525,31 @@ mod test {
 ",
         Range::new(Position::new(7, 0), Position::new(7, 6))
     )]
+    #[case(
+        "(expand (expand (expand (expand) @cap)))
+
+(no_expand)    @cap
+",
+        "(expand (expand (expand (expand) @cap)))
+
+(no_expand) @cap
+",
+        Range::new(Position::new(2, 0), Position::new(3, 0))
+    )]
+    #[case(
+        "(expand (expand (expand (expand) @cap)) )
+
+(no_expand)    @cap
+",
+        "(expand
+  (expand
+    (expand
+      (expand) @cap)))
+
+(no_expand)    @cap
+",
+        Range::new(Position::new(0, 0), Position::new(1, 0))
+    )]
     #[tokio::test(flavor = "current_thread")]
     async fn server_range_formatting(
         #[case] before: &str,
