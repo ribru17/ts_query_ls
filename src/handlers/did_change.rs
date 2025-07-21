@@ -103,6 +103,16 @@ mod test {
             TestEdit::new("punctuation.delimiter", (2, 5), (2, 14)),
         ]
     )]
+    #[case(
+        r#"; Some comment with emojis 🚀🛳️🫡
+(node_name) @hello
+";" @semicolon"#,
+        r#"; Some comment with emojis 🚀🛳️🫡(node_name) @hello
+";" @semicolon"#,
+        &[
+            TestEdit::new("", (0, 34), (0, 35)),
+        ]
+    )]
     #[tokio::test(flavor = "current_thread")]
     async fn server_did_change(
         #[case] original: &str,

@@ -233,7 +233,7 @@ impl TextDocChangeUtil for TextDocumentContentChangeEvent {
         let start_position = range.start.to_ts_point(rope);
         let start_byte = range.start.to_byte_offset(rope);
         let old_end_position = range.end.to_ts_point(rope);
-        let old_end_byte = range.start.to_byte_offset(rope);
+        let old_end_byte = range.end.to_byte_offset(rope);
 
         let new_end_byte = start_byte + text_end_byte_count;
 
