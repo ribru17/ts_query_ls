@@ -27,15 +27,16 @@ use tower_lsp::{
         DidChangeConfigurationParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
         DidOpenTextDocumentParams, DidSaveTextDocumentParams, DocumentDiagnosticParams,
         DocumentDiagnosticReportResult, DocumentFormattingParams, DocumentHighlight,
-        DocumentHighlightParams, DocumentSymbolParams, DocumentSymbolResponse,
-        GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams, HoverProviderCapability,
-        InitializeParams, InitializeResult, Location, OneOf, ReferenceParams, RenameParams,
-        SelectionRange, SelectionRangeParams, SelectionRangeProviderCapability,
-        SemanticTokenModifier, SemanticTokenType, SemanticTokensFullOptions, SemanticTokensLegend,
-        SemanticTokensOptions, SemanticTokensParams, SemanticTokensRangeParams,
-        SemanticTokensRangeResult, SemanticTokensResult, SemanticTokensServerCapabilities,
-        ServerCapabilities, SymbolInformation, TextDocumentSyncCapability, TextDocumentSyncKind,
-        TextEdit, Url, WorkspaceEdit, WorkspaceSymbolParams,
+        DocumentHighlightParams, DocumentRangeFormattingParams, DocumentSymbolParams,
+        DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams,
+        HoverProviderCapability, InitializeParams, InitializeResult, Location, OneOf,
+        ReferenceParams, RenameParams, SelectionRange, SelectionRangeParams,
+        SelectionRangeProviderCapability, SemanticTokenModifier, SemanticTokenType,
+        SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
+        SemanticTokensParams, SemanticTokensRangeParams, SemanticTokensRangeResult,
+        SemanticTokensResult, SemanticTokensServerCapabilities, ServerCapabilities,
+        SymbolInformation, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
+        WorkspaceEdit, WorkspaceSymbolParams,
     },
 };
 use tree_sitter::{Language, Tree, wasmtime::Engine};
@@ -66,6 +67,7 @@ static SERVER_CAPABILITIES: LazyLock<ServerCapabilities> = LazyLock::new(|| Serv
     rename_provider: Some(OneOf::Left(true)),
     definition_provider: Some(OneOf::Left(true)),
     document_formatting_provider: Some(OneOf::Left(true)),
+    document_range_formatting_provider: Some(OneOf::Left(true)),
     completion_provider: Some(CompletionOptions {
         trigger_characters: Some(
             ["@", "\"", "\\", "(", "/", ".", "#", "!"]
@@ -219,6 +221,13 @@ impl LanguageServer for Backend {
 
     async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
         formatting::formatting(self, params).await
+    }
+
+    async fn range_formatting(
+        &self,
+        params: DocumentRangeFormattingParams,
+    ) -> Result<Option<Vec<TextEdit>>> {
+        formatting::range_formatting(self, params).await
     }
 
     async fn semantic_tokens_full(

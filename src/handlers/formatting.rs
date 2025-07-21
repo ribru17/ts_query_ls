@@ -5,7 +5,9 @@ use std::sync::LazyLock;
 use regex::Regex;
 use ropey::Rope;
 use tower_lsp::jsonrpc::Result;
-use tower_lsp::lsp_types::{DocumentFormattingParams, Range, TextEdit};
+use tower_lsp::lsp_types::{
+    DocumentFormattingParams, DocumentRangeFormattingParams, Range, TextEdit,
+};
 use tracing::warn;
 use tree_sitter::{
     Node, Query, QueryCursor, QueryMatch, QueryPredicateArg, StreamingIterator as _, TreeCursor,
@@ -27,11 +29,29 @@ pub async fn formatting(
     let rope = &doc.rope;
     let root = &doc.tree.root_node();
 
-    if let Some(formatted_doc) = format_document(rope, root) {
-        Ok(Some(diff(rope.to_string().as_str(), &formatted_doc, rope)))
-    } else {
-        Ok(None)
-    }
+    Ok(format_document(rope, root).map(|formatted_doc| {
+        diffs(rope.to_string().as_str(), &formatted_doc, rope.clone()).collect()
+    }))
+}
+
+pub async fn range_formatting(
+    backend: &Backend,
+    params: DocumentRangeFormattingParams,
+) -> Result<Option<Vec<TextEdit>>> {
+    let uri = &params.text_document.uri;
+    let Some(doc) = backend.document_map.get(uri) else {
+        warn!("No document found for URI: {uri} when handling formatting");
+        return Ok(None);
+    };
+    let rope = &doc.rope;
+    let root = &doc.tree.root_node();
+    let range = params.range;
+
+    Ok(format_document(rope, root).map(|formatted_doc| {
+        diffs(rope.to_string().as_str(), &formatted_doc, rope.clone())
+            .filter(|d| d.range.end >= range.start && d.range.start <= range.end)
+            .collect()
+    }))
 }
 
 static LINE_START: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([^\S\r\n]*)").unwrap());
@@ -50,56 +70,55 @@ static FORMAT_QUERY: LazyLock<Query> = LazyLock::new(|| {
     .unwrap()
 });
 
-pub fn diff(left: &str, right: &str, rope: &Rope) -> Vec<TextEdit> {
+pub fn diffs<'a>(left: &'a str, right: &'a str, rope: Rope) -> impl Iterator<Item = TextEdit> + 'a {
     use dissimilar::Chunk;
 
-    let chunks = dissimilar::diff(left, right);
-
     let mut offset = 0;
-    let mut edits = vec![];
+    let mut chunks = dissimilar::diff(left, right).into_iter().peekable();
 
-    let mut chunks = chunks.into_iter().peekable();
-    while let Some(chunk) = chunks.next() {
-        if let (Chunk::Delete(deleted), Some(&Chunk::Insert(inserted))) = (chunk, chunks.peek()) {
-            chunks.next().unwrap();
-            let deleted_len = deleted.len();
-            let start = offset.to_lsp_pos(rope);
-            let end = (offset + deleted_len).to_lsp_pos(rope);
-            edits.push(TextEdit {
-                new_text: inserted.to_owned(),
-                range: Range { start, end },
-            });
-            offset += deleted_len;
-            continue;
-        }
-
-        match chunk {
-            Chunk::Equal(text) => {
-                offset += text.len();
-            }
-            Chunk::Delete(deleted) => {
+    std::iter::from_fn(move || {
+        loop {
+            let chunk = chunks.next()?;
+            if let (Chunk::Delete(deleted), Some(&Chunk::Insert(inserted))) = (chunk, chunks.peek())
+            {
+                chunks.next().unwrap();
                 let deleted_len = deleted.len();
-                let start = offset.to_lsp_pos(rope);
-                let end = (offset + deleted_len).to_lsp_pos(rope);
-                edits.push(TextEdit {
-                    new_text: String::new(),
+                let start = offset.to_lsp_pos(&rope);
+                let end = (offset + deleted_len).to_lsp_pos(&rope);
+                offset += deleted_len;
+                return Some(TextEdit {
+                    new_text: inserted.to_owned(),
                     range: Range { start, end },
                 });
-                offset += deleted_len;
             }
-            Chunk::Insert(inserted) => {
-                let pos = offset.to_lsp_pos(rope);
-                edits.push(TextEdit {
-                    new_text: inserted.to_owned(),
-                    range: Range {
-                        start: pos,
-                        end: pos,
-                    },
-                });
+
+            match chunk {
+                Chunk::Equal(text) => {
+                    offset += text.len();
+                }
+                Chunk::Delete(deleted) => {
+                    let deleted_len = deleted.len();
+                    let start = offset.to_lsp_pos(&rope);
+                    let end = (offset + deleted_len).to_lsp_pos(&rope);
+                    offset += deleted_len;
+                    return Some(TextEdit {
+                        new_text: String::new(),
+                        range: Range { start, end },
+                    });
+                }
+                Chunk::Insert(inserted) => {
+                    let pos = offset.to_lsp_pos(&rope);
+                    return Some(TextEdit {
+                        new_text: inserted.to_owned(),
+                        range: Range {
+                            start: pos,
+                            end: pos,
+                        },
+                    });
+                }
             }
         }
-    }
-    edits
+    })
 }
 
 const INDENT_STR: &str = "  ";
@@ -328,9 +347,11 @@ mod test {
     use rstest::rstest;
     use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
-        DidChangeTextDocumentParams, DocumentFormattingParams, FormattingOptions,
-        TextDocumentContentChangeEvent, TextDocumentIdentifier, VersionedTextDocumentIdentifier,
-        WorkDoneProgressParams, notification::DidChangeTextDocument, request::Formatting,
+        DidChangeTextDocumentParams, DocumentFormattingParams, DocumentRangeFormattingParams,
+        FormattingOptions, Position, Range, TextDocumentContentChangeEvent, TextDocumentIdentifier,
+        VersionedTextDocumentIdentifier, WorkDoneProgressParams,
+        notification::DidChangeTextDocument,
+        request::{Formatting, RangeFormatting},
     };
 
     use crate::test_helpers::helpers::{
@@ -383,6 +404,156 @@ mod test {
             .unwrap();
         let mut edits =
             jsonrpc_response_to_lsp_value::<Formatting>(delta.unwrap()).unwrap_or_default();
+        edits.sort_by(|a, b| {
+            let range_a = a.range;
+            let range_b = b.range;
+            range_b.start.cmp(&range_a.start)
+        });
+        service
+            .ready()
+            .await
+            .unwrap()
+            .call(
+                lsp_notification_to_jsonrpc_request::<DidChangeTextDocument>(
+                    DidChangeTextDocumentParams {
+                        text_document: VersionedTextDocumentIdentifier {
+                            uri: TEST_URI.clone(),
+                            version: 1,
+                        },
+                        content_changes: edits
+                            .iter()
+                            .map(|e| TextDocumentContentChangeEvent {
+                                range: Some(e.range),
+                                text: e.new_text.clone(),
+                                range_length: None,
+                            })
+                            .collect(),
+                    },
+                ),
+            )
+            .await
+            .unwrap();
+
+        // Assert
+        let doc = service.inner().document_map.get(&TEST_URI).unwrap();
+        assert_eq!(doc.rope.to_string(), String::from(after));
+    }
+
+    #[rstest]
+    #[case(
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_syntax_error.scm")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/after_syntax_error.scm")),
+        Range::new(Position::new(0, 0), Position::new(1, 0)),
+    )]
+    #[case(
+        r#"   (
+        (   identifier  )
+        @type
+  (   .lua-match?   @type"^[A-Z]"_    asdf ))
+"#,
+        r#"((identifier) @type
+  (   .lua-match?   @type"^[A-Z]"_    asdf ))
+"#,
+        Range::new(Position::new(0, 0), Position::new(1, 0))
+    )]
+    #[case(
+        r#"   (
+        (   identifier  )
+        @type
+  (   .lua-match?   @type"^[A-Z]"_    asdf ))
+"#,
+        r#"   (
+        (   identifier  )
+        @type
+  (#lua-match? @type "^[A-Z]" _ asdf))
+"#,
+        Range::new(Position::new(3, 0), Position::new(4, 0))
+    )]
+    #[case(
+        r#"   (
+        (   identifier  )
+        @type
+  (   .lua-match?   @type"^[A-Z]"_    asdf ))
+"#,
+        r#"((identifier) @type
+  (#lua-match? @type "^[A-Z]" _ asdf))
+"#,
+        Range::new(Position::new(0, 0), Position::new(4, 0))
+    )]
+    #[case(
+        "  (idented
+    (indented)   @cap)
+
+
+  (indented_again) @cap
+
+  (indented
+    (yet
+      (again) @cap))
+",
+        "  (idented
+    (indented)   @cap)
+
+(indented_again) @cap
+
+  (indented
+    (yet
+      (again) @cap))
+",
+        Range::new(Position::new(4, 0), Position::new(5, 0))
+    )]
+    #[case(
+        "  (idented
+    (indented)   @cap)
+
+
+  (indented_again) @cap
+
+  (indented
+    (yet
+      (again) @cap))
+",
+        "  (idented
+    (indented)   @cap)
+
+
+  (indented_again) @cap
+
+  (indented
+  (yet
+      (again) @cap))
+",
+        Range::new(Position::new(7, 0), Position::new(7, 6))
+    )]
+    #[tokio::test(flavor = "current_thread")]
+    async fn server_range_formatting(
+        #[case] before: &str,
+        #[case] after: &str,
+        #[case] range: Range,
+    ) {
+        // Arrange
+        let mut service =
+            initialize_server(&[(TEST_URI.clone(), before)], &Default::default()).await;
+
+        // Act
+        let delta = service
+            .ready()
+            .await
+            .unwrap()
+            .call(lsp_request_to_jsonrpc_request::<RangeFormatting>(
+                DocumentRangeFormattingParams {
+                    text_document: TextDocumentIdentifier {
+                        uri: TEST_URI.clone(),
+                    },
+                    work_done_progress_params: WorkDoneProgressParams::default(),
+                    range,
+                    options: FormattingOptions::default(),
+                },
+            ))
+            .await
+            .unwrap();
+        let mut edits =
+            jsonrpc_response_to_lsp_value::<RangeFormatting>(delta.unwrap()).unwrap_or_default();
         edits.sort_by(|a, b| {
             let range_a = a.range;
             let range_b = b.range;

@@ -50,8 +50,8 @@ pub async fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
                 return;
             };
             if check {
-                let edits = formatting::diff(&contents, &formatted, &rope);
-                if !edits.is_empty() {
+                let mut edits = formatting::diffs(&contents, &formatted, rope);
+                if edits.next().is_some() {
                     exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
                     eprintln!("{}", paint(purple, &format!("{path_str:?}:")));
                     let patch = diffy::create_patch(&contents, &formatted).to_string();
