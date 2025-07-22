@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     ops::Deref,
     sync::{Arc, LazyLock},
 };
@@ -11,8 +11,8 @@ use tower_lsp::{
     jsonrpc::{Error, ErrorCode, Result},
     lsp_types::{
         Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, DiagnosticTag,
-        DocumentDiagnosticParams, DocumentDiagnosticReport, DocumentDiagnosticReportResult,
-        FullDocumentDiagnosticReport, Location, Position, Range,
+        DocumentDiagnosticParams, DocumentDiagnosticReport, DocumentDiagnosticReportKind,
+        DocumentDiagnosticReportResult, FullDocumentDiagnosticReport, Location, Position, Range,
         RelatedFullDocumentDiagnosticReport, Url,
     },
 };
@@ -85,6 +85,36 @@ pub async fn diagnostic(
             data: None,
         });
     };
+
+    let full_document_diagnostic_report = create_diagnostic_report(backend, document, uri).await;
+
+    let mut seen = HashSet::from([uri.clone()]);
+    let mut related_documents = HashMap::new();
+
+    add_related_diagnostics(&mut related_documents, &mut seen, backend, uri).await;
+
+    let related_documents = if related_documents.is_empty() {
+        None
+    } else {
+        Some(related_documents)
+    };
+
+    Ok(DocumentDiagnosticReportResult::Report(
+        DocumentDiagnosticReport::Full(RelatedFullDocumentDiagnosticReport {
+            related_documents,
+            full_document_diagnostic_report,
+        }),
+    ))
+}
+
+static QUERY_SCAN_CACHE: LazyLock<DashMap<(String, String), Option<usize>>> =
+    LazyLock::new(DashMap::new);
+
+async fn create_diagnostic_report(
+    backend: &Backend,
+    document: DocumentData,
+    uri: &Url,
+) -> FullDocumentDiagnosticReport {
     let language_data = document
         .language_name
         .as_ref()
@@ -105,20 +135,45 @@ pub async fn diagnostic(
     )
     .await;
 
-    Ok(DocumentDiagnosticReportResult::Report(
-        DocumentDiagnosticReport::Full(RelatedFullDocumentDiagnosticReport {
-            // TODO: Pass related diagnostics for queries that depend on this one
-            related_documents: None,
-            full_document_diagnostic_report: FullDocumentDiagnosticReport {
-                result_id: None,
-                items,
-            },
-        }),
-    ))
+    FullDocumentDiagnosticReport {
+        result_id: None,
+        items,
+    }
 }
 
-static QUERY_SCAN_CACHE: LazyLock<DashMap<(String, String), Option<usize>>> =
-    LazyLock::new(DashMap::new);
+async fn add_related_diagnostics(
+    related_documents: &mut HashMap<Url, DocumentDiagnosticReportKind>,
+    seen: &mut HashSet<Url>,
+    backend: &Backend,
+    uri: &Url,
+) {
+    let deps = backend
+        .dependents
+        .get(uri)
+        .map(|deps| deps.clone())
+        .unwrap_or_default();
+    for uri in deps {
+        if seen.contains(&uri) {
+            continue;
+        }
+        seen.insert(uri.clone());
+        if let Some(document) = backend.document_map.get(&uri).map(|doc| doc.clone()) {
+            related_documents.insert(
+                uri.clone(),
+                DocumentDiagnosticReportKind::Full(
+                    create_diagnostic_report(backend, document, &uri).await,
+                ),
+            );
+        }
+        Box::pin(add_related_diagnostics(
+            related_documents,
+            seen,
+            backend,
+            &uri,
+        ))
+        .await
+    }
+}
 
 fn get_pattern_diagnostic_cached(
     pattern_node: Node,
@@ -835,9 +890,10 @@ mod test {
     use rstest::rstest;
     use tower_lsp::lsp_types::{
         Diagnostic, DiagnosticRelatedInformation, DiagnosticTag, DocumentDiagnosticParams,
-        DocumentDiagnosticReport, DocumentDiagnosticReportResult, FullDocumentDiagnosticReport,
-        Location, Position, Range, RelatedFullDocumentDiagnosticReport, TextDocumentIdentifier,
-        Url, request::DocumentDiagnosticRequest,
+        DocumentDiagnosticReport, DocumentDiagnosticReportKind, DocumentDiagnosticReportResult,
+        FullDocumentDiagnosticReport, Location, Position, Range,
+        RelatedFullDocumentDiagnosticReport, TextDocumentIdentifier, Url,
+        request::DocumentDiagnosticRequest,
     };
     use ts_query_ls::{
         DiagnosticOptions, Options, ParameterConstraint, Predicate, PredicateParameter,
@@ -850,7 +906,8 @@ mod test {
             diagnostic::{ERROR_SEVERITY, HINT_SEVERITY, WARNING_SEVERITY},
         },
         test_helpers::helpers::{
-            Document, QUERY_TEST_URI, TEST_URI, TestService, initialize_server,
+            CPP_HIGHLIGHTS_WS_URI, Document, FOO_HIGHLIGHTS_WS_URI, QUERY_TEST_URI, TEST_URI,
+            TestService, initialize_server,
         },
     };
 
@@ -871,11 +928,11 @@ mod test {
 
     #[rstest]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"((identifier) @constant
 (#match? @cons "^[A-Z][A-Z\\d_]*$"))"#,
-        ),
+        )],
         Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([
@@ -914,13 +971,14 @@ mod test {
             message: String::from("Undeclared capture: \"@cons\""),
             ..Default::default()
         }],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"("*" @constant
 (#match? @constant "^[A-Z][A-Z\\d_]*$"))"#,
-        ),
+        )],
         Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([
@@ -939,12 +997,13 @@ mod test {
             data: Some(CodeActions::PrefixUnderscore.into()),
             ..Default::default()
         }],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"(MISSING "*") @keyword"#,
-        ),
+        )],
         Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([
@@ -963,12 +1022,13 @@ mod test {
             data: Some(CodeActions::PrefixUnderscore.into()),
             ..Default::default()
         }],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"[ "*" ] @keyword"#,
-        ),
+        )],
         Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([
@@ -987,12 +1047,13 @@ mod test {
             data: Some(CodeActions::PrefixUnderscore.into()),
             ..Default::default()
         }],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"("*") @keyword"#,
-        ),
+        )],
         Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([
@@ -1011,15 +1072,16 @@ mod test {
             data: Some(CodeActions::PrefixUnderscore.into()),
             ..Default::default()
         }],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"((identifierr) @_constant
 (#match? @_constant "^[A-Z][A-Z\\d_]*$"))
 
 (identifier) @variable"#,
-        ),
+        )],
         Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([
@@ -1043,13 +1105,14 @@ mod test {
             message: String::from("Invalid node type: \"identifierr\""),
             ..Default::default()
         }],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"((identifier) @variable
 (#match? @variable "^[A-Z][A-Z\\d_]*$"))"#,
-        ),
+        )],
         Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([
@@ -1059,13 +1122,14 @@ mod test {
             ..Default::default()
         },
         &[],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"((identifier) @variable.builtin
 (#eq? @variable.builtin self))"#,
-        ),
+        )],
         Options {
             valid_predicates: BTreeMap::from([(String::from("eq"), Predicate {
                 description: String::from("Checks for equality"),
@@ -1082,13 +1146,14 @@ mod test {
             ..Default::default()
         },
         &[],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"((identifier) @variable.builtin
 (#eq? @variable.builtin))"#,
-        ),
+        )],
         Options {
             valid_predicates: BTreeMap::from([(String::from("eq"), Predicate {
                 description: String::from("Checks for equality"),
@@ -1118,13 +1183,14 @@ mod test {
             tags: None,
             data: None,
         }],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"((identifier) @variable.builtin
 (#eq? @variable.builtin self @variable.builtin))"#,
-        ),
+        )],
         Options {
             valid_predicates: BTreeMap::from([(String::from("eq"), Predicate {
                 description: String::from("Checks for equality"),
@@ -1154,13 +1220,14 @@ mod test {
             tags: None,
             data: None,
         }],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"((identifier) @variable.builtin
 (#set! @variable.builtin "self" "asdf" bar))"#,
-        ),
+        )],
         Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
@@ -1179,13 +1246,14 @@ mod test {
             ..Default::default()
         },
         &[],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"((identifier) @variable.builtin
 (#set! @variable.builtin self asdf "bar"))"#,
-        ),
+        )],
         Options {
             diagnostic_options: DiagnosticOptions {
                 string_argument_style: StringArgumentStyle::PreferUnquoted,
@@ -1221,13 +1289,14 @@ mod test {
             tags: None,
             data: Some(CodeActions::Trim.into()),
         }],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"((identifier) @variable.builtin
 (#set! @variable.builtin self _ "bar"))"#,
-        ),
+        )],
         Options {
             diagnostic_options: DiagnosticOptions {
                 string_argument_style: StringArgumentStyle::PreferQuoted,
@@ -1276,12 +1345,13 @@ mod test {
             tags: None,
             data: Some(CodeActions::Enquote.into()),
         }],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"(identifier) @_capture"#,
-        ),
+        )],
         Options {
             diagnostic_options: DiagnosticOptions::default(),
             valid_predicates: Default::default(),
@@ -1314,13 +1384,14 @@ mod test {
             tags: Some(vec![DiagnosticTag::UNNECESSARY]),
             data: Some(CodeActions::Remove.into()),
         }],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"((identifier) @variable.builtin
 (#set! @variable.builtin self asdf bar @variable.builtin))"#,
-        ),
+        )],
         Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
@@ -1353,14 +1424,15 @@ mod test {
                 tags: None,
                 data: None,
             },
-        ]
+        ],
+            None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"((identifier) @variable.builtin
 (#set! @variable.builtin self asdf bar @variable.builtin))"#,
-        ),
+        )],
         Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
@@ -1378,14 +1450,15 @@ mod test {
                 BTreeMap::from([(String::from("variable.builtin"), String::default())]))]),
             ..Default::default()
         },
-        &[]
+        &[],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"((identifier) @variable.builtin
 (#set! @variable.builtin))"#,
-        ),
+        )],
         Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
@@ -1403,14 +1476,15 @@ mod test {
                 BTreeMap::from([(String::from("variable.builtin"), String::default())]))]),
             ..Default::default()
         },
-        &[]
+        &[],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"((identifier) @variable.builtin
 (#set! @variable.builtin))"#,
-        ),
+        )],
         Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
@@ -1428,14 +1502,15 @@ mod test {
                 BTreeMap::from([(String::from("variable.builtin"), String::default())]))]),
             ..Default::default()
         },
-        &[]
+        &[],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"((identifier) @variable.builtin
 (#set! @variable.builtin self))"#,
-        ),
+        )],
         Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
@@ -1453,14 +1528,15 @@ mod test {
                 BTreeMap::from([(String::from("variable.builtin"), String::default())]))]),
             ..Default::default()
         },
-        &[]
+        &[],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"((identifier) @variable.builtin
 (#set! @variable.builtin self asdf))"#,
-        ),
+        )],
         Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
@@ -1493,14 +1569,15 @@ mod test {
                 tags: None,
                 data: None,
             },
-        ]
+        ],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"((identifier) @variable.builtin
 (#sett! @variable.builtin self asdf bar @variable.builtin))"#,
-        ),
+        )],
         Options {
             valid_predicates: Default::default(),
             valid_directives: BTreeMap::from([(String::from("set"), Predicate {
@@ -1533,13 +1610,14 @@ mod test {
                 tags: None,
                 data: None,
             },
-        ]
+        ],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"((definition) @_cap (#match? @_cap "\p\\")) "\?" @capture "#,
-        ),
+        )],
         Options {
             diagnostic_options: DiagnosticOptions { warn_unused_underscore_captures: false, ..Default::default() },
             ..Default::default()
@@ -1575,12 +1653,13 @@ mod test {
             data: Some(CodeActions::RemoveBackslash.into()),
             ..Default::default()
         }],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"(identifier (identifier) (#set! foo bar))"#,
-        ),
+        )],
         Options::default(),
         &[Diagnostic {
             range: Range {
@@ -1601,12 +1680,13 @@ mod test {
             tags: Some(vec![DiagnosticTag::UNNECESSARY]),
             ..Default::default()
         }],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"(identifier name: (identifier) @capture)  (identifier asdf: (identifier) @capture)"#,
-        ),
+        )],
         Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([(String::from("capture"), String::default())]))]),
@@ -1629,12 +1709,13 @@ mod test {
             message: String::from("Invalid field name: \"asdf\""),
             ..Default::default()
         }],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"(identifier !asdf) @capture"#,
-        ),
+        )],
         Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([(String::from("capture"), String::default())]))]),
@@ -1649,13 +1730,14 @@ mod test {
             message: String::from("Invalid field name: \"asdf\""),
             ..Default::default()
         }],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"; inherits: cpp
 (identifier) @capture"#,
-        ),
+        )],
         Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([(String::from("capture"), String::default())]))]),
@@ -1683,13 +1765,14 @@ mod test {
             ]),
             ..Default::default()
         }],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"; inherits: other
 (identifier) @capture"#,
-        ),
+        )],
         Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([(String::from("capture"), String::default())]))]),
@@ -1710,13 +1793,14 @@ mod test {
             ]),
             ..Default::default()
         }],
+        None,
     )]
     #[case(
-        (
+        &[(
             TEST_URI.clone(),
             r#"; inherits: css,
 (squid) @capture"#,
-        ),
+        )],
         Options {
             valid_captures: HashMap::from([(String::from("test"),
                 BTreeMap::from([(String::from("capture"), String::default())]))]),
@@ -1738,9 +1822,10 @@ mod test {
             severity: WARNING_SEVERITY,
             ..Default::default()
         }],
+        None,
     )]
     #[case(
-        (Url::parse("file:///tmp/test.scm").unwrap(), ""),
+        &[(Url::parse("file:///tmp/test.scm").unwrap(), "")],
         Default::default(),
         &[Diagnostic {
             message: String::from("Language name could not be determined"),
@@ -1748,9 +1833,10 @@ mod test {
             severity: WARNING_SEVERITY,
             ..Default::default()
         }],
+        None,
     )]
     #[case(
-        (QUERY_TEST_URI.clone(), ""),
+        &[(QUERY_TEST_URI.clone(), "")],
         {
             // Just in case our query language object changes ABI unexpectedly; we want to make
             // sure we are testing what we want to.
@@ -1766,9 +1852,10 @@ mod test {
             severity: WARNING_SEVERITY,
             ..Default::default()
         }],
+        None,
     )]
     #[case(
-        (QUERY_TEST_URI.clone(), ""),
+        &[(QUERY_TEST_URI.clone(), "")],
         {
             // Just in case our query language object changes ABI unexpectedly; we want to make
             // sure we are testing what we want to.
@@ -1779,9 +1866,10 @@ mod test {
             }
         },
         &[],
+        None,
     )]
     #[case(
-        (QUERY_TEST_URI.clone(), ""),
+        &[(QUERY_TEST_URI.clone(), "")],
         {
             // Just in case our query language object changes ABI unexpectedly; we want to make
             // sure we are testing what we want to.
@@ -1792,9 +1880,10 @@ mod test {
             }
         },
         &[],
+        None,
     )]
     #[case(
-        (QUERY_TEST_URI.clone(), ""),
+        &[(QUERY_TEST_URI.clone(), "")],
         {
             // Just in case our query language object changes ABI unexpectedly; we want to make
             // sure we are testing what we want to.
@@ -1810,9 +1899,10 @@ mod test {
             severity: WARNING_SEVERITY,
             ..Default::default()
         }],
+        None,
     )]
     #[case(
-        (QUERY_TEST_URI.clone(), "(named_node/identifier) @capture"),
+        &[(QUERY_TEST_URI.clone(), "(named_node/identifier) @capture")],
         Default::default(),
         &[
             Diagnostic {
@@ -1828,9 +1918,10 @@ mod test {
                 ..Default::default()
             },
         ],
+        None,
     )]
     #[case(
-        (QUERY_TEST_URI.clone(), "(definition/escape_sequence) @capture"),
+        &[(QUERY_TEST_URI.clone(), "(definition/escape_sequence) @capture")],
         Default::default(),
         &[
             Diagnostic {
@@ -1846,9 +1937,10 @@ mod test {
                 ..Default::default()
             },
         ],
+        None,
     )]
     #[case(
-        (QUERY_TEST_URI.clone(), "(definition/ecape_sequence) @capture"),
+        &[(QUERY_TEST_URI.clone(), "(definition/ecape_sequence) @capture")],
         Default::default(),
         &[
             Diagnostic {
@@ -1858,9 +1950,10 @@ mod test {
                 ..Default::default()
             },
         ],
+        None,
     )]
     #[case(
-        (QUERY_TEST_URI.clone(), "(deefinition/escape_sequence) @capture"),
+        &[(QUERY_TEST_URI.clone(), "(deefinition/escape_sequence) @capture")],
         Default::default(),
         &[
             Diagnostic {
@@ -1870,13 +1963,14 @@ mod test {
                 ..Default::default()
             },
         ],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"((_) @cap
 (#is? @cap self named_node "named_n\ode" named_nod))"#,
-        ),
+        )],
         Options {
             valid_predicates: BTreeMap::from([(String::from("is"), Predicate {
                 description: String::from("Checks if a node is a certain kind"),
@@ -1913,13 +2007,14 @@ mod test {
                 ..Default::default()
             },
         ],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"((_) @cap
 (#not-is? @cap self named_node "named_n\ode" named_nod))"#,
-        ),
+        )],
         Options {
             valid_predicates: BTreeMap::from([(String::from("is"), Predicate {
                 description: String::from("Checks if a node is a certain kind"),
@@ -1956,13 +2051,14 @@ mod test {
                 ..Default::default()
             },
         ],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"((_) @cap
 (#offset! @cap 0 1 p -1))"#,
-        ),
+        )],
         Options {
             valid_directives: BTreeMap::from([(String::from("offset"), Predicate {
                 description: String::from("Offsets a node's range"),
@@ -1986,13 +2082,14 @@ mod test {
                 ..Default::default()
             },
         ],
+        None,
     )]
     #[case(
-        (
+        &[(
             QUERY_TEST_URI.clone(),
             r#"((_) @cap
 (#offset! @cap squid sponge "123" "ward"))"#,
-        ),
+        )],
         Options {
             valid_directives: BTreeMap::from([(String::from("offset"), Predicate {
                 description: String::from("Offsets a node's range"),
@@ -2034,20 +2131,98 @@ mod test {
                 ..Default::default()
             },
         ],
+        None,
+    )]
+    #[case(
+        &[(
+            CPP_HIGHLIGHTS_WS_URI.clone(),
+            r#"((identifier) @variable.builtn
+(#eq? @variable.builtn))"#,
+        ), (
+            FOO_HIGHLIGHTS_WS_URI.clone(),
+            "; inherits: cpp"
+        )],
+        Options {
+            valid_captures: HashMap::from([
+                (
+                    String::from("test"),
+                    BTreeMap::from([(String::from("variable.builtin"), String::default())])
+                )
+            ]),
+            ..Default::default()
+        },
+        &[
+            Diagnostic {
+                range: Range {
+                    start: Position {
+                        line: 0,
+                        character: 14,
+                    },
+                    end: Position {
+                        line: 0,
+                        character: 30,
+                    },
+                },
+                severity: WARNING_SEVERITY,
+                message: String::from("Unsupported capture name \"@variable.builtn\" (fix available)"),
+                data: Some(CodeActions::PrefixUnderscore.into()),
+                ..Default::default()
+            },
+            Diagnostic {
+                range: Range::default(),
+                severity: WARNING_SEVERITY,
+                message: String::from("Language object for \"cpp\" not found"),
+                ..Default::default()
+            },
+        ],
+        Some(HashMap::from([
+            (
+                FOO_HIGHLIGHTS_WS_URI.clone(),
+                DocumentDiagnosticReportKind::Full(FullDocumentDiagnosticReport {
+                    result_id: None,
+                    items: vec![
+                        Diagnostic {
+                            range: Range::new(Position::new(0, 12), Position::new(0, 15)),
+                            severity: WARNING_SEVERITY,
+                            message: String::from("Issues in module \"cpp\""),
+                            related_information: Some(vec![
+                                DiagnosticRelatedInformation {
+                                    location: Location {
+                                        range: Range::new(Position::new(0, 14), Position::new(0, 30)),
+                                        uri: CPP_HIGHLIGHTS_WS_URI.clone()
+                                    },
+                                    message: String::from("Unsupported capture name \"@variable.builtn\" (fix available)")
+                                }
+                            ]),
+                            ..Default::default()
+                        },
+                        Diagnostic {
+                            range: Range::default(),
+                            severity: WARNING_SEVERITY,
+                            message: String::from("Language object for \"foo\" not found"),
+                            ..Default::default()
+                        },
+                    ]
+                })
+            )
+        ])),
     )]
     #[tokio::test(flavor = "current_thread")]
     async fn server_diagnostics(
-        #[case] document: Document<'_>,
+        #[case] documents: &[Document<'_>],
         #[case] options: Options,
         #[case] expected_diagnostics: &[Diagnostic],
+        #[case] related_documents: Option<HashMap<Url, DocumentDiagnosticReportKind>>,
     ) {
         // Arrange
-        let mut service = initialize_server(&[document.clone()], &options).await;
+        let mut service = initialize_server(documents, &options).await;
 
         // Act
         let actual_diagnostics = service
             .request::<DocumentDiagnosticRequest>(DocumentDiagnosticParams {
-                text_document: TextDocumentIdentifier { uri: document.0 },
+                text_document: TextDocumentIdentifier {
+                    uri: documents[0].0.clone(),
+                },
                 identifier: None,
                 previous_result_id: None,
                 work_done_progress_params: Default::default(),
@@ -2059,7 +2234,7 @@ mod test {
         assert_eq!(
             DocumentDiagnosticReportResult::Report(DocumentDiagnosticReport::Full(
                 RelatedFullDocumentDiagnosticReport {
-                    related_documents: None,
+                    related_documents,
                     full_document_diagnostic_report: FullDocumentDiagnosticReport {
                         result_id: None,
                         items: expected_diagnostics.to_vec(),

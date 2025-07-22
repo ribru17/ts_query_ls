@@ -22,6 +22,20 @@ pub mod helpers {
         LazyLock::new(|| Url::parse("file:///tmp/queries/js/test.scm").unwrap());
     pub static QUERY_TEST_URI: LazyLock<Url> =
         LazyLock::new(|| Url::parse("file:///tmp/queries/query/test.scm").unwrap());
+    pub static CPP_HIGHLIGHTS_WS_URI: LazyLock<Url> = LazyLock::new(|| {
+        Url::from_file_path(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/queries/test_workspace/queries/cpp/test.scm"
+        ))
+        .unwrap()
+    });
+    pub static FOO_HIGHLIGHTS_WS_URI: LazyLock<Url> = LazyLock::new(|| {
+        Url::from_file_path(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/queries/test_workspace/queries/foo/test.scm"
+        ))
+        .unwrap()
+    });
     pub const SIMPLE_FILE: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/queries/example_test_files/simple.scm"
@@ -61,6 +75,7 @@ pub mod helpers {
             document_map: Default::default(),
             language_map: Default::default(),
             workspace_uris: Default::default(),
+            dependents: Default::default(),
             options: Default::default(),
         })
         .finish();
