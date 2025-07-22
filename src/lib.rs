@@ -220,7 +220,7 @@ pub struct Predicate {
 ///
 /// Parameters can be one or both of two types (a capture or a string), and can be required,
 /// optional, or "variadic" (there can be zero-to-many of them).
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PredicateParameter {
     /// An optional description of this parameter.
@@ -232,10 +232,40 @@ pub struct PredicateParameter {
     /// The arity of the predicate parameter. Must be `"required"`, `"optional"`, or `"variadic"`.
     #[serde(default)]
     pub arity: PredicateParameterArity,
+    /// An optional constraint for the parameter. Only applies when it is a `string`.
+    #[serde(default)]
+    pub constraint: ParameterConstraint,
+}
+
+/// Constraint for a predicate parameter.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Default)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum ParameterConstraint {
+    /// Enforce no constraint.
+    #[default]
+    None,
+    /// Enforce that the parameter matches a named node kind.
+    NamedNode,
+    /// Enforce that the parameter is an integer.
+    Integer,
+    /// Enforce that the parameter one of the given values.
+    Enum(Vec<String>),
+}
+
+impl Display for ParameterConstraint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => write!(f, "none"),
+            Self::NamedNode => write!(f, "named node"),
+            Self::Integer => write!(f, "integer"),
+            Self::Enum(values) => write!(f, "`{values:?}`"),
+        }
+    }
 }
 
 /// The type of the predicate parameter.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Default)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum PredicateParameterType {
@@ -244,6 +274,7 @@ pub enum PredicateParameterType {
     /// Must be a string (e.g. `foo`).
     String,
     /// Can be either a capture or a string.
+    #[default]
     Any,
 }
 
@@ -258,11 +289,12 @@ impl Display for PredicateParameterType {
 }
 
 /// The arity of the predicate parameter.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Default)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum PredicateParameterArity {
     /// A regular, required parameter.
+    #[default]
     Required,
     /// A parameter which can be omitted. Must only be followed by other optional parameters.
     Optional,
@@ -277,12 +309,6 @@ impl Display for PredicateParameterArity {
             Self::Optional => write!(f, "optional"),
             Self::Variadic => write!(f, "variadic"),
         }
-    }
-}
-
-impl Default for PredicateParameterArity {
-    fn default() -> Self {
-        Self::Required
     }
 }
 

@@ -103,6 +103,48 @@
         }
       }
     },
+    "ParameterConstraint": {
+      "description": "Constraint for a predicate parameter.",
+      "oneOf": [
+        {
+          "description": "Enforce no constraint.",
+          "type": "string",
+          "enum": [
+            "none"
+          ]
+        },
+        {
+          "description": "Enforce that the parameter matches a named node kind.",
+          "type": "string",
+          "enum": [
+            "named_node"
+          ]
+        },
+        {
+          "description": "Enforce that the parameter is an integer.",
+          "type": "string",
+          "enum": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Enforce that the parameter one of the given values.",
+          "type": "object",
+          "required": [
+            "enum"
+          ],
+          "properties": {
+            "enum": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
     "Predicate": {
       "description": "A type specification for a directive.",
       "type": "object",
@@ -170,6 +212,15 @@
           "allOf": [
             {
               "$ref": "#/definitions/PredicateParameterArity"
+            }
+          ]
+        },
+        "constraint": {
+          "description": "An optional constraint for the parameter. Only applies when it is a `string`.",
+          "default": "none",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ParameterConstraint"
             }
           ]
         },

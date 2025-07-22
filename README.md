@@ -131,6 +131,15 @@ required, optional, or "variadic" (there can be zero-to-many of them). Optional
 parameters cannot be followed by required parameters, and a variadic parameter
 may only appear once, as the last parameter.
 
+Parameters can also be given **constraints** which are checked when they are
+string values (not captures). The optional `constraint` field accepts the
+following values:
+
+- `none`: no constraint enforced (default)
+- `integer`: parameter must be a valid integer
+- `named_node`: parameter must be a named node kind
+- `enum`: parameter must be one of the specified values
+
 ```json
 {
   "valid_predicates": {
@@ -142,11 +151,15 @@ may only appear once, as the last parameter.
         },
         {
           "type": "string",
-          "arity": "required"
+          "arity": "required",
+          "constraint": {
+            "enum": ["0", "1"]
+          }
         },
         {
           "type": "string",
-          "arity": "variadic"
+          "arity": "variadic",
+          "constraint": "integer"
         }
       ],
       "description": "Checks for equality between multiple strings"
