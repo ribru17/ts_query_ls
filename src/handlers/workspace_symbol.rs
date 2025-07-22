@@ -27,6 +27,10 @@ pub async fn symbol(
         .unwrap_or_default();
 
     for path in get_scm_files(&dirs) {
+        let container_name = path
+            .file_name()
+            .and_then(|f| f.to_str())
+            .map(ToString::to_string);
         if let (Ok(content), Ok(uri)) = (fs::read_to_string(&path), Url::from_file_path(path)) {
             let rope = &Rope::from_str(&content);
             let tree = parse(rope, None);
@@ -45,7 +49,7 @@ pub async fn symbol(
                             name: node_text,
                             kind: SymbolKind::VARIABLE,
                             location: Location::new(uri.clone(), capture_node.lsp_range(rope)),
-                            container_name: None,
+                            container_name: container_name.clone(),
                             tags: None,
                             #[allow(deprecated)]
                             deprecated: None,
@@ -121,7 +125,7 @@ mod test {
                 },
                 deprecated: None,
                 tags: None,
-                container_name: None,
+                container_name: Some(String::from("folds.scm")),
             },
             SymbolInformation {
                 name: String::from("@fold.imports"),
@@ -132,7 +136,7 @@ mod test {
                 },
                 deprecated: None,
                 tags: None,
-                container_name: None,
+                container_name: Some(String::from("folds.scm")),
             },
             SymbolInformation {
                 name: String::from("@variable"),
@@ -143,7 +147,7 @@ mod test {
                 },
                 deprecated: None,
                 tags: None,
-                container_name: None,
+                container_name: Some(String::from("highlights.scm")),
             },
             SymbolInformation {
                 name: String::from("@function"),
@@ -154,7 +158,7 @@ mod test {
                 },
                 deprecated: None,
                 tags: None,
-                container_name: None,
+                container_name: Some(String::from("highlights.scm")),
             },
             SymbolInformation {
                 name: String::from("@constant"),
@@ -165,7 +169,7 @@ mod test {
                 },
                 deprecated: None,
                 tags: None,
-                container_name: None,
+                container_name: Some(String::from("highlights.scm")),
             },
         ]));
         assert_eq!(
