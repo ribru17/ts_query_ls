@@ -324,7 +324,7 @@ enum Commands {
         format: bool,
 
         /// Apply fixes to diagnostics that have them.
-        #[arg(long, short)]
+        #[arg(long)]
         fix: bool,
     },
     /// Lint the query files in the given directories for errors. This differs from `check` because
