@@ -19,6 +19,7 @@ mod test {
                         description: None,
                         type_: ts_query_ls::PredicateParameterType::Any,
                         arity: ts_query_ls::PredicateParameterArity::Variadic,
+                        ..Default::default()
                     }],
                 },
             ),
@@ -30,6 +31,7 @@ mod test {
                         description: None,
                         type_: ts_query_ls::PredicateParameterType::Any,
                         arity: ts_query_ls::PredicateParameterArity::Variadic,
+                        ..Default::default()
                     }],
                 },
             ),

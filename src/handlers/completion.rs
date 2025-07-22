@@ -688,12 +688,10 @@ mod test {
                     description: String::from("Equality check"),
                     parameters: vec![PredicateParameter {
                         type_: PredicateParameterType::Capture,
-                        arity: PredicateParameterArity::Required,
-                        description: None,
+                    ..Default::default()
                     }, PredicateParameter {
                         type_: PredicateParameterType::Any,
-                        arity: PredicateParameterArity::Required,
-                        description: None,
+                    ..Default::default()
                     }]
                 })
             ]),
@@ -702,16 +700,14 @@ mod test {
                     description: String::from("Set metadata"),
                     parameters: vec![PredicateParameter {
                         type_: PredicateParameterType::Any,
-                        arity: PredicateParameterArity::Required,
-                        description: None,
+                    ..Default::default()
                     }, PredicateParameter {
                         type_: PredicateParameterType::String,
-                        arity: PredicateParameterArity::Required,
-                        description: None,
+                    ..Default::default()
                     }, PredicateParameter {
                         type_: PredicateParameterType::String,
                         arity: PredicateParameterArity::Optional,
-                        description: None,
+                    ..Default::default()
                     }]
                 })
             ]),

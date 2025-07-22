@@ -21,8 +21,8 @@ use tree_sitter::{
     TreeCursor,
 };
 use ts_query_ls::{
-    Options, PredicateParameter, PredicateParameterArity, PredicateParameterType,
-    StringArgumentStyle,
+    Options, ParameterConstraint, PredicateParameter, PredicateParameterArity,
+    PredicateParameterType, StringArgumentStyle,
 };
 
 use crate::{
@@ -71,6 +71,7 @@ static CAPTURE_REFERENCES_QUERY: LazyLock<Query> = LazyLock::new(|| {
 });
 pub static IDENTIFIER_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9_-][a-zA-Z0-9_.-]*$").unwrap());
+pub static INTEGER_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^-?\d+$").unwrap());
 
 pub async fn diagnostic(
     backend: &Backend,
@@ -495,6 +496,7 @@ async fn get_diagnostics_recursively(
                             &mut diagnostics,
                             &mut tree_cursor,
                             rope,
+                            language_data.clone(),
                             &predicate.parameters,
                             capture.node,
                         );
@@ -690,6 +692,7 @@ fn validate_predicate<'a>(
     diagnostics: &mut Vec<Diagnostic>,
     tree_cursor: &mut TreeCursor<'a>,
     rope: &Rope,
+    language_data: Option<Arc<LanguageData>>,
     predicate_params: &[PredicateParameter],
     predicate_node: Node<'a>,
 ) {
@@ -708,22 +711,81 @@ fn validate_predicate<'a>(
         }
     };
 
-    let param_type_mismatch = |is_capture: bool, param_spec: &PredicateParameter| {
-        is_capture && param_spec.type_ == PredicateParameterType::String
+    let param_type_mismatch = |param: Node, param_spec: &PredicateParameter| {
+        let range = param.lsp_range(rope);
+        let is_capture = param.kind() == "capture";
+        let severity = WARNING_SEVERITY;
+        if is_capture && param_spec.type_ == PredicateParameterType::String
             || !is_capture && param_spec.type_ == PredicateParameterType::Capture
-    };
+        {
+            return Some(Diagnostic {
+                message: format!(
+                    "Parameter type mismatch: expected \"{}\", got \"{}\"",
+                    param_spec.type_,
+                    if is_capture { "capture" } else { "string" }
+                ),
+                severity,
+                range,
+                ..Default::default()
+            });
+        }
 
-    let type_mismatch_diag =
-        |is_capture: bool, param: Node<'a>, param_spec: &PredicateParameter| Diagnostic {
-            message: format!(
-                "Parameter type mismatch: expected \"{}\", got \"{}\"",
-                param_spec.type_,
-                if is_capture { "capture" } else { "string" }
-            ),
-            severity: WARNING_SEVERITY,
-            range: param.lsp_range(rope),
-            ..Default::default()
+        if is_capture {
+            return None;
+        }
+
+        let param_text = param.text(rope);
+        let param_text = if param.kind() == "string" {
+            remove_unnecessary_escapes(&param_text[1..param_text.len() - 1])
+        } else {
+            param_text
         };
+        match &param_spec.constraint {
+            ParameterConstraint::None => None,
+            ParameterConstraint::NamedNode => {
+                let sym = &SymbolInfo {
+                    label: param_text,
+                    named: true,
+                };
+                if let Some(ld) = &language_data
+                    && !ld.symbols_set.contains(sym)
+                {
+                    Some(Diagnostic {
+                        message: format!("Expected named node kind, got \"{}\"", sym.label),
+                        severity,
+                        range,
+                        ..Default::default()
+                    })
+                } else {
+                    None
+                }
+            }
+            ParameterConstraint::Integer => {
+                if INTEGER_REGEX.is_match(&param_text) {
+                    None
+                } else {
+                    Some(Diagnostic {
+                        message: format!("Expected a valid integer, got {param_text:?}"),
+                        severity,
+                        range,
+                        ..Default::default()
+                    })
+                }
+            }
+            ParameterConstraint::Enum(values) => {
+                if values.contains(&param_text) {
+                    None
+                } else {
+                    Some(Diagnostic {
+                        message: format!("Expected one of {values:?}, got {param_text:?}"),
+                        severity,
+                        range,
+                        ..Default::default()
+                    })
+                }
+            }
+        }
+    };
 
     for param in params_node.children(tree_cursor) {
         if param.is_missing() {
@@ -731,10 +793,9 @@ fn validate_predicate<'a>(
             // error diagnostic.
             break;
         }
-        let is_capture = param.kind() == "capture";
         if let Some(param_spec) = param_spec_iter.next() {
-            if param_type_mismatch(is_capture, param_spec) {
-                diagnostics.push(type_mismatch_diag(is_capture, param, param_spec));
+            if let Some(diag) = param_type_mismatch(param, param_spec) {
+                diagnostics.push(diag);
             }
             prev_param_spec = param_spec;
         } else if prev_param_spec.arity != PredicateParameterArity::Variadic {
@@ -744,14 +805,14 @@ fn validate_predicate<'a>(
                 range: param.lsp_range(rope),
                 ..Default::default()
             });
-        } else if param_type_mismatch(is_capture, prev_param_spec) {
-            diagnostics.push(type_mismatch_diag(is_capture, param, prev_param_spec));
+        } else if let Some(diag) = param_type_mismatch(param, prev_param_spec) {
+            diagnostics.push(diag);
         }
     }
     if let Some(PredicateParameter {
         type_,
-        description: _,
         arity: PredicateParameterArity::Required,
+        ..
     }) = param_spec_iter.next()
     {
         diagnostics.push(Diagnostic {
@@ -780,8 +841,8 @@ mod test {
         Url, request::DocumentDiagnosticRequest,
     };
     use ts_query_ls::{
-        DiagnosticOptions, Options, Predicate, PredicateParameter, PredicateParameterArity,
-        PredicateParameterType, StringArgumentStyle,
+        DiagnosticOptions, Options, ParameterConstraint, Predicate, PredicateParameter,
+        PredicateParameterArity, PredicateParameterType, StringArgumentStyle,
     };
 
     use crate::{
@@ -1012,12 +1073,10 @@ mod test {
                 description: String::from("Checks for equality"),
                 parameters: vec![PredicateParameter {
                     type_: PredicateParameterType::Capture,
-                    arity: PredicateParameterArity::Required,
-                    description: None,
+                    ..Default::default()
                 }, PredicateParameter {
                     type_: PredicateParameterType::Any,
-                    arity: PredicateParameterArity::Required,
-                    description: None,
+                    ..Default::default()
                 }],
             })]),
             valid_captures: HashMap::from([(String::from("test"),
@@ -1037,12 +1096,10 @@ mod test {
                 description: String::from("Checks for equality"),
                 parameters: vec![PredicateParameter {
                     type_: PredicateParameterType::Capture,
-                    arity: PredicateParameterArity::Required,
-                    description: None,
+                    ..Default::default()
                 }, PredicateParameter {
                     type_: PredicateParameterType::Any,
-                    arity: PredicateParameterArity::Required,
-                    description: None,
+                    ..Default::default()
                 }],
             })]),
             valid_captures: HashMap::from([(String::from("test"),
@@ -1075,12 +1132,10 @@ mod test {
                 description: String::from("Checks for equality"),
                 parameters: vec![PredicateParameter {
                     type_: PredicateParameterType::Capture,
-                    arity: PredicateParameterArity::Required,
-                    description: None,
+                    ..Default::default()
                 }, PredicateParameter {
                     type_: PredicateParameterType::Any,
-                    arity: PredicateParameterArity::Required,
-                    description: None,
+                    ..Default::default()
                 }],
             })]),
             valid_captures: HashMap::from([(String::from("test"),
@@ -1114,12 +1169,11 @@ mod test {
                 description: String::from("Checks for equality"),
                 parameters: vec![PredicateParameter {
                     type_: PredicateParameterType::Capture,
-                    arity: PredicateParameterArity::Required,
-                    description: None,
+                    ..Default::default()
                 }, PredicateParameter {
                     type_: PredicateParameterType::String,
                     arity: PredicateParameterArity::Variadic,
-                    description: None,
+                    ..Default::default()
                 }],
             })]),
             valid_captures: HashMap::from([(String::from("test"),
@@ -1144,12 +1198,11 @@ mod test {
                 description: String::from("Checks for equality"),
                 parameters: vec![PredicateParameter {
                     type_: PredicateParameterType::Capture,
-                    arity: PredicateParameterArity::Required,
-                    description: None,
+                    ..Default::default()
                 }, PredicateParameter {
                     type_: PredicateParameterType::String,
                     arity: PredicateParameterArity::Variadic,
-                    description: None,
+                    ..Default::default()
                 }],
             })]),
             valid_captures: HashMap::from([(String::from("test"),
@@ -1187,12 +1240,11 @@ mod test {
                 description: String::from("Checks for equality"),
                 parameters: vec![PredicateParameter {
                     type_: PredicateParameterType::Capture,
-                    arity: PredicateParameterArity::Required,
-                    description: None,
+                    ..Default::default()
                 }, PredicateParameter {
                     type_: PredicateParameterType::String,
                     arity: PredicateParameterArity::Variadic,
-                    description: None,
+                    ..Default::default()
                 }],
             })]),
             valid_captures: HashMap::from([(String::from("test"),
@@ -1239,12 +1291,11 @@ mod test {
                 description: String::from("Checks for equality"),
                 parameters: vec![PredicateParameter {
                     type_: PredicateParameterType::Capture,
-                    arity: PredicateParameterArity::Required,
-                    description: None,
+                    ..Default::default()
                 }, PredicateParameter {
                     type_: PredicateParameterType::String,
                     arity: PredicateParameterArity::Variadic,
-                    description: None,
+                    ..Default::default()
                 }],
             })]),
             valid_captures: HashMap::from([(String::from("test"),
@@ -1278,12 +1329,11 @@ mod test {
                 description: String::from("Checks for equality"),
                 parameters: vec![PredicateParameter {
                     type_: PredicateParameterType::Capture,
-                    arity: PredicateParameterArity::Required,
-                    description: None,
+                    ..Default::default()
                 }, PredicateParameter {
                     type_: PredicateParameterType::String,
                     arity: PredicateParameterArity::Variadic,
-                    description: None,
+                    ..Default::default()
                 }],
             })]),
             valid_captures: HashMap::from([(String::from("test"),
@@ -1319,12 +1369,11 @@ mod test {
                 description: String::from("Checks for equality"),
                 parameters: vec![PredicateParameter {
                     type_: PredicateParameterType::Capture,
-                    arity: PredicateParameterArity::Required,
-                    description: None,
+                    ..Default::default()
                 }, PredicateParameter {
                     type_: PredicateParameterType::Any,
                     arity: PredicateParameterArity::Variadic,
-                    description: None,
+                    ..Default::default()
                 }],
             })]),
             valid_captures: HashMap::from([(String::from("test"),
@@ -1345,12 +1394,11 @@ mod test {
                 description: String::from("Checks for equality"),
                 parameters: vec![PredicateParameter {
                     type_: PredicateParameterType::Capture,
-                    arity: PredicateParameterArity::Required,
-                    description: None,
+                    ..Default::default()
                 }, PredicateParameter {
                     type_: PredicateParameterType::Any,
                     arity: PredicateParameterArity::Variadic,
-                    description: None,
+                    ..Default::default()
                 }],
             })]),
             valid_captures: HashMap::from([(String::from("test"),
@@ -1371,12 +1419,11 @@ mod test {
                 description: String::from("Checks for equality"),
                 parameters: vec![PredicateParameter {
                     type_: PredicateParameterType::Capture,
-                    arity: PredicateParameterArity::Required,
-                    description: None,
+                    ..Default::default()
                 }, PredicateParameter {
                     type_: PredicateParameterType::Any,
                     arity: PredicateParameterArity::Optional,
-                    description: None,
+                    ..Default::default()
                 }],
             })]),
             valid_captures: HashMap::from([(String::from("test"),
@@ -1397,12 +1444,11 @@ mod test {
                 description: String::from("Checks for equality"),
                 parameters: vec![PredicateParameter {
                     type_: PredicateParameterType::Capture,
-                    arity: PredicateParameterArity::Required,
-                    description: None,
+                    ..Default::default()
                 }, PredicateParameter {
                     type_: PredicateParameterType::Any,
                     arity: PredicateParameterArity::Optional,
-                    description: None,
+                    ..Default::default()
                 }],
             })]),
             valid_captures: HashMap::from([(String::from("test"),
@@ -1423,12 +1469,11 @@ mod test {
                 description: String::from("Checks for equality"),
                 parameters: vec![PredicateParameter {
                     type_: PredicateParameterType::Capture,
-                    arity: PredicateParameterArity::Required,
-                    description: None,
+                    ..Default::default()
                 }, PredicateParameter {
                     type_: PredicateParameterType::Any,
                     arity: PredicateParameterArity::Optional,
-                    description: None,
+                    ..Default::default()
                 }],
             })]),
             valid_captures: HashMap::from([(String::from("test"),
@@ -1464,12 +1509,11 @@ mod test {
                 description: String::from("Checks for equality"),
                 parameters: vec![PredicateParameter {
                     type_: PredicateParameterType::Capture,
-                    arity: PredicateParameterArity::Required,
-                    description: None,
+                    ..Default::default()
                 }, PredicateParameter {
                     type_: PredicateParameterType::Any,
                     arity: PredicateParameterArity::Variadic,
-                    description: None,
+                    ..Default::default()
                 }],
             })]),
             valid_captures: HashMap::from([(String::from("test"),
@@ -1825,6 +1869,170 @@ mod test {
                 message: String::from("Node \"deefinition\" is not a supertype"),
                 range: Range::new(Position::new(0, 1), Position::new(0, 12)),
                 severity: ERROR_SEVERITY,
+                ..Default::default()
+            },
+        ],
+    )]
+    #[case(
+        (
+            QUERY_TEST_URI.clone(),
+            r#"((_) @cap
+(#is? @cap self named_node "named_n\ode" named_nod))"#,
+        ),
+        Options {
+            valid_predicates: BTreeMap::from([(String::from("is"), Predicate {
+                description: String::from("Checks if a node is a certain kind"),
+                parameters: vec![PredicateParameter {
+                    type_: PredicateParameterType::Capture,
+                    ..Default::default()
+                }, PredicateParameter {
+                    type_: PredicateParameterType::String,
+                    arity: PredicateParameterArity::Variadic,
+                    constraint: ParameterConstraint::NamedNode,
+                    ..Default::default()
+                }],
+            })]),
+            ..Default::default()
+        },
+        &[
+            Diagnostic {
+                message: String::from("Expected named node kind, got \"self\""),
+                severity: WARNING_SEVERITY,
+                range: Range::new(Position::new(1, 11), Position::new(1, 15)),
+                ..Default::default()
+            },
+            Diagnostic {
+                message: String::from("Expected named node kind, got \"named_nod\""),
+                severity: WARNING_SEVERITY,
+                range: Range::new(Position::new(1, 41), Position::new(1, 50)),
+                ..Default::default()
+            },
+            Diagnostic {
+                message: String::from("Unnecessary escape sequence (fix available)"),
+                severity: WARNING_SEVERITY,
+                range: Range::new(Position::new(1, 35), Position::new(1, 37)),
+                data: Some(CodeActions::RemoveBackslash.into()),
+                ..Default::default()
+            },
+        ],
+    )]
+    #[case(
+        (
+            QUERY_TEST_URI.clone(),
+            r#"((_) @cap
+(#not-is? @cap self named_node "named_n\ode" named_nod))"#,
+        ),
+        Options {
+            valid_predicates: BTreeMap::from([(String::from("is"), Predicate {
+                description: String::from("Checks if a node is a certain kind"),
+                parameters: vec![PredicateParameter {
+                    type_: PredicateParameterType::Capture,
+                    ..Default::default()
+                }, PredicateParameter {
+                    type_: PredicateParameterType::String,
+                    arity: PredicateParameterArity::Variadic,
+                    constraint: ParameterConstraint::NamedNode,
+                    ..Default::default()
+                }],
+            })]),
+            ..Default::default()
+        },
+        &[
+            Diagnostic {
+                message: String::from("Expected named node kind, got \"self\""),
+                severity: WARNING_SEVERITY,
+                range: Range::new(Position::new(1, 15), Position::new(1, 19)),
+                ..Default::default()
+            },
+            Diagnostic {
+                message: String::from("Expected named node kind, got \"named_nod\""),
+                severity: WARNING_SEVERITY,
+                range: Range::new(Position::new(1, 45), Position::new(1, 54)),
+                ..Default::default()
+            },
+            Diagnostic {
+                message: String::from("Unnecessary escape sequence (fix available)"),
+                severity: WARNING_SEVERITY,
+                range: Range::new(Position::new(1, 39), Position::new(1, 41)),
+                data: Some(CodeActions::RemoveBackslash.into()),
+                ..Default::default()
+            },
+        ],
+    )]
+    #[case(
+        (
+            QUERY_TEST_URI.clone(),
+            r#"((_) @cap
+(#offset! @cap 0 1 p -1))"#,
+        ),
+        Options {
+            valid_directives: BTreeMap::from([(String::from("offset"), Predicate {
+                description: String::from("Offsets a node's range"),
+                parameters: vec![PredicateParameter {
+                    type_: PredicateParameterType::Capture,
+                    ..Default::default()
+                }, PredicateParameter {
+                    type_: PredicateParameterType::String,
+                    arity: PredicateParameterArity::Variadic,
+                    constraint: ParameterConstraint::Integer,
+                    ..Default::default()
+                }],
+            })]),
+            ..Default::default()
+        },
+        &[
+            Diagnostic {
+                message: String::from("Expected a valid integer, got \"p\""),
+                severity: WARNING_SEVERITY,
+                range: Range::new(Position::new(1, 19), Position::new(1, 20)),
+                ..Default::default()
+            },
+        ],
+    )]
+    #[case(
+        (
+            QUERY_TEST_URI.clone(),
+            r#"((_) @cap
+(#offset! @cap squid sponge "123" "ward"))"#,
+        ),
+        Options {
+            valid_directives: BTreeMap::from([(String::from("offset"), Predicate {
+                description: String::from("Offsets a node's range"),
+                parameters: vec![
+                    PredicateParameter {
+                        type_: PredicateParameterType::Any,
+                        constraint: ParameterConstraint::Enum(vec![String::from("squid"), String::from("ward")]),
+                        ..Default::default()
+                    },
+                    PredicateParameter {
+                        type_: PredicateParameterType::String,
+                        constraint: ParameterConstraint::Enum(vec![String::from("squid"), String::from("ward")]),
+                        ..Default::default()
+                    },
+                    PredicateParameter {
+                        type_: PredicateParameterType::Any,
+                        constraint: ParameterConstraint::Enum(vec![String::from("squid"), String::from("ward")]),
+                        ..Default::default()
+                    },
+                    PredicateParameter {
+                        type_: PredicateParameterType::String,
+                        constraint: ParameterConstraint::Integer,
+                        ..Default::default()
+                    },
+                    PredicateParameter {
+                        type_: PredicateParameterType::String,
+                        constraint: ParameterConstraint::Enum(vec![String::from("squid"), String::from("ward")]),
+                        ..Default::default()
+                    },
+                ],
+            })]),
+            ..Default::default()
+        },
+        &[
+            Diagnostic {
+                message: String::from("Expected one of [\"squid\", \"ward\"], got \"sponge\""),
+                severity: WARNING_SEVERITY,
+                range: Range::new(Position::new(1, 21), Position::new(1, 27)),
                 ..Default::default()
             },
         ],

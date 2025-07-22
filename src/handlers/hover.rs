@@ -6,6 +6,7 @@ use tower_lsp::{
 };
 use tracing::warn;
 use tree_sitter::Query;
+use ts_query_ls::{ParameterConstraint, PredicateParameterType};
 
 use crate::{
     Backend, QUERY_LANGUAGE, SymbolInfo,
@@ -152,7 +153,19 @@ pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hove
             if let Some(predicate) = validator.get(&predicate_name.text(rope)) {
                 let mut value = format!("{}\n\n---\n\n## Parameters:\n\n", predicate.description);
                 for param in &predicate.parameters {
-                    value += format!("- Type: `{}` ({})\n", param.type_, param.arity).as_str();
+                    value += format!(
+                        "- Type: `{}` ({}{})\n",
+                        param.type_,
+                        param.arity,
+                        if param.type_ != PredicateParameterType::Capture
+                            && param.constraint != ParameterConstraint::None
+                        {
+                            format!("; constraint: {}", param.constraint)
+                        } else {
+                            String::new()
+                        }
+                    )
+                    .as_str();
                     if let Some(desc) = &param.description {
                         value += format!("  - {desc}\n").as_str();
                     }
@@ -222,7 +235,8 @@ mod test {
     use std::collections::{BTreeMap, HashMap};
 
     use ts_query_ls::{
-        Options, Predicate, PredicateParameter, PredicateParameterArity, PredicateParameterType,
+        Options, ParameterConstraint, Predicate, PredicateParameter, PredicateParameterArity,
+        PredicateParameterType,
     };
 
     use pretty_assertions::assert_eq;
@@ -384,18 +398,18 @@ An error node", BTreeMap::from([(String::from("error"), String::from("An error n
         start: Position::new(15, 18),
         end: Position::new(15, 23)
     },
-    "Set a property\n\n---\n\n## Parameters:\n\n- Type: `string` (required)\n  - A property\n", BTreeMap::default())]
+    "Set a property\n\n---\n\n## Parameters:\n\n- Type: `string` (required; constraint: `[\"here\", \"there\"]`)\n  - A property\n", BTreeMap::default())]
     #[case(SOURCE, Position { line: 15, character: 22 }, Range {
         start: Position::new(15, 18),
         end: Position::new(15, 23)
     },
-    "Set a property\n\n---\n\n## Parameters:\n\n- Type: `string` (required)\n  - A property\n", BTreeMap::default())]
+    "Set a property\n\n---\n\n## Parameters:\n\n- Type: `string` (required; constraint: `[\"here\", \"there\"]`)\n  - A property\n", BTreeMap::default())]
     #[case(SOURCE, Position { line: 15, character: 23 }, Range::default(), "", BTreeMap::default())]
     #[case(SOURCE, Position { line: 15, character: 21 }, Range {
         start: Position::new(15, 18),
         end: Position::new(15, 23)
     },
-    "Set a property\n\n---\n\n## Parameters:\n\n- Type: `string` (required)\n  - A property\n", BTreeMap::default())]
+    "Set a property\n\n---\n\n## Parameters:\n\n- Type: `string` (required; constraint: `[\"here\", \"there\"]`)\n  - A property\n", BTreeMap::default())]
     #[case(SOURCE, Position { line: 17, character: 12 }, Range {
         start: Position::new(17, 12),
         end: Position::new(17, 13),
@@ -457,11 +471,13 @@ An error node", BTreeMap::from([(String::from("error"), String::from("An error n
                                 description: Some(String::from("A capture")),
                                 type_: PredicateParameterType::Capture,
                                 arity: PredicateParameterArity::Required,
+                                constraint: ParameterConstraint::None,
                             },
                             PredicateParameter {
                                 description: Some(String::from("A string")),
                                 type_: PredicateParameterType::String,
                                 arity: PredicateParameterArity::Required,
+                                constraint: ParameterConstraint::None,
                             },
                         ],
                     },
@@ -474,6 +490,10 @@ An error node", BTreeMap::from([(String::from("error"), String::from("An error n
                             description: Some(String::from("A property")),
                             type_: PredicateParameterType::String,
                             arity: PredicateParameterArity::Required,
+                            constraint: ParameterConstraint::Enum(vec![
+                                String::from("here"),
+                                String::from("there"),
+                            ]),
                         }],
                     },
                 )]),
