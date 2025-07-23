@@ -68,7 +68,6 @@ pub async fn goto_definition(
 mod test {
     use pretty_assertions::assert_eq;
     use rstest::rstest;
-    use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
         GotoDefinitionParams, GotoDefinitionResponse, Location, PartialResultParams, Position,
         Range, TextDocumentIdentifier, TextDocumentPositionParams, Url, WorkDoneProgressParams,
@@ -76,8 +75,7 @@ mod test {
     };
 
     use crate::test_helpers::helpers::{
-        COMPLEX_FILE, SIMPLE_FILE, TEST_URI, initialize_server, lsp_request_to_jsonrpc_request,
-        lsp_response_to_jsonrpc_response,
+        COMPLEX_FILE, SIMPLE_FILE, TEST_URI, TestService, initialize_server,
     };
 
     type Coordinate = ((u32, u32), (u32, u32));
@@ -110,28 +108,22 @@ mod test {
 
         // Act
         let refs = service
-            .ready()
-            .await
-            .unwrap()
-            .call(lsp_request_to_jsonrpc_request::<GotoDefinition>(
-                GotoDefinitionParams {
-                    partial_result_params: PartialResultParams {
-                        partial_result_token: None,
-                    },
-                    work_done_progress_params: WorkDoneProgressParams::default(),
-                    text_document_position_params: TextDocumentPositionParams {
-                        text_document: TextDocumentIdentifier {
-                            uri: TEST_URI.clone(),
-                        },
-                        position,
-                    },
+            .request::<GotoDefinition>(GotoDefinitionParams {
+                partial_result_params: PartialResultParams {
+                    partial_result_token: None,
                 },
-            ))
-            .await
-            .unwrap();
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                text_document_position_params: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier {
+                        uri: TEST_URI.clone(),
+                    },
+                    position,
+                },
+            })
+            .await;
 
         // Assert
-        let actual = if locations.1.is_empty() {
+        let expected = if locations.1.is_empty() {
             None
         } else {
             Some(GotoDefinitionResponse::Array(
@@ -154,9 +146,6 @@ mod test {
                     .collect(),
             ))
         };
-        assert_eq!(
-            refs,
-            Some(lsp_response_to_jsonrpc_response::<GotoDefinition>(actual))
-        );
+        assert_eq!(expected, refs);
     }
 }

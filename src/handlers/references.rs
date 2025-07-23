@@ -59,17 +59,13 @@ pub async fn references(
 mod test {
     use pretty_assertions::assert_eq;
     use rstest::rstest;
-    use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
         Location, PartialResultParams, Position, Range, ReferenceContext, ReferenceParams,
         TextDocumentIdentifier, TextDocumentPositionParams, WorkDoneProgressParams,
         request::References,
     };
 
-    use crate::test_helpers::helpers::{
-        COMPLEX_FILE, TEST_URI, initialize_server, lsp_request_to_jsonrpc_request,
-        lsp_response_to_jsonrpc_response,
-    };
+    use crate::test_helpers::helpers::{COMPLEX_FILE, TEST_URI, TestService, initialize_server};
 
     type Coordinate = ((u32, u32), (u32, u32));
 
@@ -125,31 +121,25 @@ function: (identifier) @function)",
 
         // Act
         let refs = service
-            .ready()
-            .await
-            .unwrap()
-            .call(lsp_request_to_jsonrpc_request::<References>(
-                ReferenceParams {
-                    context: ReferenceContext {
-                        include_declaration,
-                    },
-                    partial_result_params: PartialResultParams {
-                        partial_result_token: None,
-                    },
-                    work_done_progress_params: WorkDoneProgressParams::default(),
-                    text_document_position: TextDocumentPositionParams {
-                        text_document: TextDocumentIdentifier {
-                            uri: TEST_URI.clone(),
-                        },
-                        position,
-                    },
+            .request::<References>(ReferenceParams {
+                context: ReferenceContext {
+                    include_declaration,
                 },
-            ))
-            .await
-            .unwrap();
+                partial_result_params: PartialResultParams {
+                    partial_result_token: None,
+                },
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                text_document_position: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier {
+                        uri: TEST_URI.clone(),
+                    },
+                    position,
+                },
+            })
+            .await;
 
         // Assert
-        let actual = if ranges.is_empty() {
+        let expected = if ranges.is_empty() {
             None
         } else {
             Some(
@@ -171,9 +161,6 @@ function: (identifier) @function)",
                     .collect(),
             )
         };
-        assert_eq!(
-            refs,
-            Some(lsp_response_to_jsonrpc_response::<References>(actual))
-        );
+        assert_eq!(expected, refs);
     }
 }

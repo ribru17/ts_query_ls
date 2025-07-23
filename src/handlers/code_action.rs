@@ -217,7 +217,6 @@ mod test {
 
     use pretty_assertions::assert_eq;
     use rstest::rstest;
-    use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
         CodeAction, CodeActionContext, CodeActionKind, Diagnostic, Position, Range,
         TextDocumentIdentifier, TextEdit, WorkspaceEdit,
@@ -229,10 +228,7 @@ mod test {
     use ts_query_ls::Options;
 
     use crate::handlers::code_action::CodeActions;
-    use crate::test_helpers::helpers::{TEST_URI, initialize_server};
-    use crate::test_helpers::helpers::{
-        lsp_request_to_jsonrpc_request, lsp_response_to_jsonrpc_response,
-    };
+    use crate::test_helpers::helpers::{TEST_URI, TestService, initialize_server};
 
     #[rstest]
     #[case(r#""\p" @_somecap"#, Default::default(), Position::new(0, 2), CodeActionContext {
@@ -343,31 +339,19 @@ mod test {
 
         // Act
         let code_actions = service
-            .ready()
-            .await
-            .unwrap()
-            .call(lsp_request_to_jsonrpc_request::<CodeActionRequest>(
-                CodeActionParams {
-                    context,
-                    range: Range::new(cursor, cursor),
-                    text_document: TextDocumentIdentifier {
-                        uri: TEST_URI.clone(),
-                    },
-                    work_done_progress_params: WorkDoneProgressParams::default(),
-                    partial_result_params: PartialResultParams::default(),
+            .request::<CodeActionRequest>(CodeActionParams {
+                context,
+                range: Range::new(cursor, cursor),
+                text_document: TextDocumentIdentifier {
+                    uri: TEST_URI.clone(),
                 },
-            ))
-            .await
-            .map_err(|e| format!("textDocument/codeAction call returned error: {e}"))
-            .unwrap();
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                partial_result_params: PartialResultParams::default(),
+            })
+            .await;
 
         // Assert
         let expected_code_actions = Some(expected_code_actions.to_vec());
-        assert_eq!(
-            code_actions,
-            Some(lsp_response_to_jsonrpc_response::<CodeActionRequest>(
-                expected_code_actions
-            ))
-        )
+        assert_eq!(expected_code_actions, code_actions)
     }
 }

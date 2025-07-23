@@ -830,7 +830,6 @@ mod test {
         collections::{BTreeMap, HashMap},
         sync::LazyLock,
     };
-    use tower::{Service as _, ServiceExt as _};
 
     use pretty_assertions::assert_eq;
     use rstest::rstest;
@@ -851,8 +850,7 @@ mod test {
             diagnostic::{ERROR_SEVERITY, HINT_SEVERITY, WARNING_SEVERITY},
         },
         test_helpers::helpers::{
-            Document, QUERY_TEST_URI, TEST_URI, initialize_server, lsp_request_to_jsonrpc_request,
-            lsp_response_to_jsonrpc_response,
+            Document, QUERY_TEST_URI, TEST_URI, TestService, initialize_server,
         },
     };
 
@@ -2048,37 +2046,26 @@ mod test {
 
         // Act
         let actual_diagnostics = service
-            .ready()
-            .await
-            .unwrap()
-            .call(lsp_request_to_jsonrpc_request::<DocumentDiagnosticRequest>(
-                DocumentDiagnosticParams {
-                    text_document: TextDocumentIdentifier { uri: document.0 },
-                    identifier: None,
-                    previous_result_id: None,
-                    work_done_progress_params: Default::default(),
-                    partial_result_params: Default::default(),
-                },
-            ))
-            .await
-            .map_err(|e| format!("textDocument/diagnostic call returned error: {e}"))
-            .unwrap();
+            .request::<DocumentDiagnosticRequest>(DocumentDiagnosticParams {
+                text_document: TextDocumentIdentifier { uri: document.0 },
+                identifier: None,
+                previous_result_id: None,
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            })
+            .await;
 
         // Assert
         assert_eq!(
-            Some(
-                lsp_response_to_jsonrpc_response::<DocumentDiagnosticRequest>(
-                    DocumentDiagnosticReportResult::Report(DocumentDiagnosticReport::Full(
-                        RelatedFullDocumentDiagnosticReport {
-                            related_documents: None,
-                            full_document_diagnostic_report: FullDocumentDiagnosticReport {
-                                result_id: None,
-                                items: expected_diagnostics.to_vec(),
-                            },
-                        }
-                    ),)
-                )
-            ),
+            DocumentDiagnosticReportResult::Report(DocumentDiagnosticReport::Full(
+                RelatedFullDocumentDiagnosticReport {
+                    related_documents: None,
+                    full_document_diagnostic_report: FullDocumentDiagnosticReport {
+                        result_id: None,
+                        items: expected_diagnostics.to_vec(),
+                    },
+                }
+            )),
             actual_diagnostics
         );
     }

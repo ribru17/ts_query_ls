@@ -82,7 +82,6 @@ pub async fn rename(backend: &Backend, params: RenameParams) -> Result<Option<Wo
 mod test {
     use pretty_assertions::assert_eq;
     use rstest::rstest;
-    use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
         DocumentChanges, OneOf, OptionalVersionedTextDocumentIdentifier, Position, RenameParams,
         TextDocumentEdit, TextDocumentIdentifier, TextDocumentPositionParams,
@@ -90,8 +89,7 @@ mod test {
     };
 
     use crate::test_helpers::helpers::{
-        COMPLEX_FILE, SIMPLE_FILE, TEST_URI, TestEdit, initialize_server,
-        lsp_request_to_jsonrpc_request, lsp_response_to_jsonrpc_response,
+        COMPLEX_FILE, SIMPLE_FILE, TEST_URI, TestEdit, TestService, initialize_server,
     };
 
     #[rstest]
@@ -136,10 +134,7 @@ mod test {
 
         // Act
         let rename_edits = service
-            .ready()
-            .await
-            .unwrap()
-            .call(lsp_request_to_jsonrpc_request::<Rename>(RenameParams {
+            .request::<Rename>(RenameParams {
                 text_document_position: TextDocumentPositionParams {
                     text_document: TextDocumentIdentifier {
                         uri: TEST_URI.clone(),
@@ -150,13 +145,11 @@ mod test {
                 work_done_progress_params: WorkDoneProgressParams {
                     work_done_token: None,
                 },
-            }))
-            .await
-            .map_err(|e| format!("textDocument/rename call returned error: {e}"))
-            .unwrap();
+            })
+            .await;
 
         // Assert
-        let ws_edit = if edits.is_empty() {
+        let expected = if edits.is_empty() {
             None
         } else {
             Some(WorkspaceEdit {
@@ -170,9 +163,6 @@ mod test {
                 ..Default::default()
             })
         };
-        assert_eq!(
-            rename_edits,
-            Some(lsp_response_to_jsonrpc_response::<Rename>(ws_edit))
-        );
+        assert_eq!(expected, rename_edits);
     }
 }

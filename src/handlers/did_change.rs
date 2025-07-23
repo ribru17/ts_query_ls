@@ -68,15 +68,12 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
 mod test {
     use pretty_assertions::assert_eq;
     use rstest::rstest;
-    use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
         DidChangeTextDocumentParams, TextDocumentContentChangeEvent,
         VersionedTextDocumentIdentifier, notification::DidChangeTextDocument,
     };
 
-    use crate::test_helpers::helpers::{
-        TEST_URI, TestEdit, initialize_server, lsp_notification_to_jsonrpc_request,
-    };
+    use crate::test_helpers::helpers::{TEST_URI, TestEdit, TestService, initialize_server};
 
     #[rstest]
     #[case(
@@ -125,25 +122,17 @@ mod test {
 
         // Act
         service
-            .ready()
-            .await
-            .unwrap()
-            .call(
-                lsp_notification_to_jsonrpc_request::<DidChangeTextDocument>(
-                    DidChangeTextDocumentParams {
-                        text_document: VersionedTextDocumentIdentifier {
-                            uri: TEST_URI.clone(),
-                            version: 1,
-                        },
-                        content_changes: edits
-                            .iter()
-                            .map(Into::<TextDocumentContentChangeEvent>::into)
-                            .collect(),
-                    },
-                ),
-            )
-            .await
-            .unwrap();
+            .notify::<DidChangeTextDocument>(DidChangeTextDocumentParams {
+                text_document: VersionedTextDocumentIdentifier {
+                    uri: TEST_URI.clone(),
+                    version: 1,
+                },
+                content_changes: edits
+                    .iter()
+                    .map(Into::<TextDocumentContentChangeEvent>::into)
+                    .collect(),
+            })
+            .await;
 
         // Assert
         let doc = service.inner().document_map.get(&TEST_URI).unwrap();

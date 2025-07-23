@@ -194,17 +194,13 @@ async fn get_semantic_tokens(
 #[cfg(test)]
 mod test {
     use pretty_assertions::assert_eq;
-    use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
         PartialResultParams, SemanticToken, SemanticTokens, SemanticTokensParams,
         SemanticTokensResult, TextDocumentIdentifier, WorkDoneProgressParams,
         request::SemanticTokensFullRequest,
     };
 
-    use crate::test_helpers::helpers::{
-        QUERY_TEST_URI, initialize_server, lsp_request_to_jsonrpc_request,
-        lsp_response_to_jsonrpc_response,
-    };
+    use crate::test_helpers::helpers::{QUERY_TEST_URI, TestService, initialize_server};
 
     #[tokio::test(flavor = "current_thread")]
     async fn semantic_tokens_full() {
@@ -228,22 +224,16 @@ mod test {
 
         // Act
         let actual_tokens = service
-            .ready()
-            .await
-            .unwrap()
-            .call(lsp_request_to_jsonrpc_request::<SemanticTokensFullRequest>(
-                SemanticTokensParams {
-                    partial_result_params: PartialResultParams {
-                        partial_result_token: None,
-                    },
-                    work_done_progress_params: WorkDoneProgressParams::default(),
-                    text_document: TextDocumentIdentifier {
-                        uri: QUERY_TEST_URI.clone(),
-                    },
+            .request::<SemanticTokensFullRequest>(SemanticTokensParams {
+                partial_result_params: PartialResultParams {
+                    partial_result_token: None,
                 },
-            ))
-            .await
-            .unwrap();
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                text_document: TextDocumentIdentifier {
+                    uri: QUERY_TEST_URI.clone(),
+                },
+            })
+            .await;
 
         // Assert
         let expected_tokens = Some(SemanticTokensResult::Tokens(SemanticTokens {
@@ -324,9 +314,6 @@ mod test {
                 },
             ],
         }));
-        assert_eq!(
-            Some(lsp_response_to_jsonrpc_response::<SemanticTokensFullRequest>(expected_tokens)),
-            actual_tokens,
-        );
+        assert_eq!(expected_tokens, actual_tokens);
     }
 }

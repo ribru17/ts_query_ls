@@ -67,53 +67,80 @@ pub mod helpers {
 
         // Initialize the server
         service
-            .ready()
-            .await
-            .unwrap()
-            .call(lsp_request_to_jsonrpc_request::<Initialize>(
-                InitializeParams {
-                    capabilities: TEST_CLIENT_CAPABILITIES.clone(),
-                    workspace_folders: Some(vec![WorkspaceFolder {
-                        name: String::from("test_workspace"),
-                        uri: Url::from_file_path(concat!(
-                            env!("CARGO_MANIFEST_DIR"),
-                            "/queries/test_workspace/"
-                        ))
-                        .unwrap(),
-                    }]),
-                    initialization_options: Some(options_value),
-                    ..Default::default()
-                },
-            ))
-            .await
-            .unwrap()
-            .unwrap();
+            .request::<Initialize>(InitializeParams {
+                capabilities: TEST_CLIENT_CAPABILITIES.clone(),
+                workspace_folders: Some(vec![WorkspaceFolder {
+                    name: String::from("test_workspace"),
+                    uri: Url::from_file_path(concat!(
+                        env!("CARGO_MANIFEST_DIR"),
+                        "/queries/test_workspace/"
+                    ))
+                    .unwrap(),
+                }]),
+                initialization_options: Some(options_value),
+                ..Default::default()
+            })
+            .await;
 
         // Open the documents
         for (uri, src) in documents.iter().cloned() {
             service
-                .ready()
-                .await
-                .unwrap()
-                .call(lsp_notification_to_jsonrpc_request::<DidOpenTextDocument>(
-                    DidOpenTextDocumentParams {
-                        text_document: TextDocumentItem {
-                            version: 0,
-                            language_id: String::from("query"),
-                            text: src.to_string(),
-                            uri,
-                        },
+                .notify::<DidOpenTextDocument>(DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        version: 0,
+                        language_id: String::from("query"),
+                        text: src.to_string(),
+                        uri,
                     },
-                ))
-                .await
-                .unwrap();
+                })
+                .await;
         }
 
         service
     }
 
+    pub trait TestService {
+        async fn request<R>(&mut self, request: R::Params) -> R::Result
+        where
+            R: tower_lsp::lsp_types::request::Request;
+
+        async fn notify<R>(&mut self, request: R::Params)
+        where
+            R: tower_lsp::lsp_types::notification::Notification;
+    }
+
+    impl TestService for LspService<Backend> {
+        async fn request<R>(&mut self, request: R::Params) -> R::Result
+        where
+            R: tower_lsp::lsp_types::request::Request,
+        {
+            let response = self
+                .ready()
+                .await
+                .unwrap()
+                .call(lsp_request_to_jsonrpc_request::<R>(request))
+                .await
+                .unwrap_or_else(|e| panic!("Error when attempting to call {}: {}", R::METHOD, e))
+                .unwrap_or_else(|| panic!("No response from request {}", R::METHOD));
+
+            jsonrpc_response_to_lsp_value::<R>(response)
+        }
+
+        async fn notify<R>(&mut self, request: R::Params)
+        where
+            R: tower_lsp::lsp_types::notification::Notification,
+        {
+            self.ready()
+                .await
+                .unwrap()
+                .call(lsp_notification_to_jsonrpc_request::<R>(request))
+                .await
+                .unwrap_or_else(|e| panic!("Error when attempting to call {}: {}", R::METHOD, e));
+        }
+    }
+
     // An equivalent function is provided but it is private
-    pub fn lsp_request_to_jsonrpc_request<R>(params: R::Params) -> Request
+    fn lsp_request_to_jsonrpc_request<R>(params: R::Params) -> Request
     where
         R: tower_lsp::lsp_types::request::Request,
     {
@@ -123,7 +150,7 @@ pub mod helpers {
             .finish()
     }
 
-    pub fn lsp_notification_to_jsonrpc_request<R>(params: R::Params) -> Request
+    fn lsp_notification_to_jsonrpc_request<R>(params: R::Params) -> Request
     where
         R: tower_lsp::lsp_types::notification::Notification,
     {
@@ -132,14 +159,7 @@ pub mod helpers {
             .finish()
     }
 
-    pub fn lsp_response_to_jsonrpc_response<R>(params: R::Result) -> Response
-    where
-        R: tower_lsp::lsp_types::request::Request,
-    {
-        Response::from_ok(ID.into(), to_value(params).unwrap())
-    }
-
-    pub fn jsonrpc_response_to_lsp_value<R>(response: Response) -> R::Result
+    fn jsonrpc_response_to_lsp_value<R>(response: Response) -> R::Result
     where
         R: tower_lsp::lsp_types::request::Request,
     {

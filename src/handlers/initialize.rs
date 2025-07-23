@@ -58,7 +58,6 @@ mod test {
     use std::env;
 
     use pretty_assertions::assert_eq;
-    use tower::{Service, ServiceExt};
     use tower_lsp::{
         LspService,
         lsp_types::{
@@ -67,10 +66,7 @@ mod test {
         },
     };
 
-    use crate::{
-        Backend, Options, SERVER_CAPABILITIES,
-        test_helpers::helpers::{lsp_request_to_jsonrpc_request, lsp_response_to_jsonrpc_response},
-    };
+    use crate::{Backend, Options, SERVER_CAPABILITIES, test_helpers::helpers::TestService};
 
     #[tokio::test(flavor = "current_thread")]
     async fn server_initialize() {
@@ -110,32 +106,24 @@ mod test {
 
         // Act
         let init_result = service
-            .ready()
-            .await
-            .unwrap()
-            .call(lsp_request_to_jsonrpc_request::<Initialize>(
-                InitializeParams {
-                    capabilities: ClientCapabilities::default(),
-                    root_uri: Some(Url::parse("file:///tmp/").unwrap()),
-                    initialization_options: Some(serde_json::from_str(options).unwrap()),
-                    ..Default::default()
-                },
-            ))
-            .await
-            .unwrap();
+            .request::<Initialize>(InitializeParams {
+                capabilities: ClientCapabilities::default(),
+                root_uri: Some(Url::parse("file:///tmp/").unwrap()),
+                initialization_options: Some(serde_json::from_str(options).unwrap()),
+                ..Default::default()
+            })
+            .await;
 
         // Assert
         assert_eq!(
             init_result,
-            Some(lsp_response_to_jsonrpc_response::<Initialize>(
-                InitializeResult {
-                    capabilities: SERVER_CAPABILITIES.clone(),
-                    server_info: Some(ServerInfo {
-                        name: String::from("ts_query_ls"),
-                        version: Some(String::from("3.8.0")),
-                    }),
-                }
-            ))
+            InitializeResult {
+                capabilities: SERVER_CAPABILITIES.clone(),
+                server_info: Some(ServerInfo {
+                    name: String::from("ts_query_ls"),
+                    version: Some(String::from("3.8.0")),
+                }),
+            }
         );
         let backend = service.inner();
         let actual_options = backend.options.read().await;

@@ -96,17 +96,13 @@ pub async fn document_highlight(
 mod test {
     use pretty_assertions::assert_eq;
     use rstest::rstest;
-    use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
         DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams, PartialResultParams,
         Position, Range, TextDocumentIdentifier, TextDocumentPositionParams,
         WorkDoneProgressParams, request::DocumentHighlightRequest,
     };
 
-    use crate::test_helpers::helpers::{
-        COMPLEX_FILE, TEST_URI, initialize_server, lsp_request_to_jsonrpc_request,
-        lsp_response_to_jsonrpc_response,
-    };
+    use crate::test_helpers::helpers::{COMPLEX_FILE, TEST_URI, TestService, initialize_server};
 
     type Highlight = (DocumentHighlightKind, (u32, u32), (u32, u32));
 
@@ -192,28 +188,22 @@ expression: (boolean) @boolean",
 
         // Act
         let refs = service
-            .ready()
-            .await
-            .unwrap()
-            .call(lsp_request_to_jsonrpc_request::<DocumentHighlightRequest>(
-                DocumentHighlightParams {
-                    partial_result_params: PartialResultParams {
-                        partial_result_token: None,
-                    },
-                    work_done_progress_params: WorkDoneProgressParams::default(),
-                    text_document_position_params: TextDocumentPositionParams {
-                        text_document: TextDocumentIdentifier {
-                            uri: TEST_URI.clone(),
-                        },
-                        position,
-                    },
+            .request::<DocumentHighlightRequest>(DocumentHighlightParams {
+                partial_result_params: PartialResultParams {
+                    partial_result_token: None,
                 },
-            ))
-            .await
-            .unwrap();
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                text_document_position_params: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier {
+                        uri: TEST_URI.clone(),
+                    },
+                    position,
+                },
+            })
+            .await;
 
         // Assert
-        let actual = if highlights.is_empty() {
+        let expected = if highlights.is_empty() {
             None
         } else {
             Some(
@@ -235,9 +225,6 @@ expression: (boolean) @boolean",
                     .collect(),
             )
         };
-        assert_eq!(
-            refs,
-            Some(lsp_response_to_jsonrpc_response::<DocumentHighlightRequest>(actual))
-        );
+        assert_eq!(expected, refs);
     }
 }
