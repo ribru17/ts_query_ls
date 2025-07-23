@@ -27,13 +27,6 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     let workspace_uris = backend.workspace_uris.read().unwrap().clone();
     let imported_uris = get_imported_uris(&workspace_uris, &options, &uri, &rope, &tree);
 
-    populate_import_documents(
-        &backend.document_map,
-        &workspace_uris,
-        &options,
-        &imported_uris,
-    );
-
     // Track the document
     let version = params.text_document.version;
     backend.document_map.insert(
@@ -43,29 +36,45 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
             tree,
             language_name: language_name.clone(),
             version,
-            imported_uris,
+            imported_uris: imported_uris.clone(),
         },
     );
 
-    fn populate_language_info(backend: &Backend, language_name: Option<String>, options: &Options) {
-        let Some(language_name) = language_name else {
-            return;
-        };
-        if backend.language_map.contains_key(&language_name) {
-            return;
-        }
-        let Some(lang) = get_language(&language_name, options) else {
-            return;
-        };
-        let language_data = init_language_data(lang, language_name.clone());
+    populate_import_documents(
+        &backend.document_map,
+        &workspace_uris,
+        &options,
+        &imported_uris,
+    );
+
+    for import_uri in imported_uris
+        .into_iter()
+        .filter_map(|import| import.uri.filter(|url| url != &uri))
+    {
         backend
-            .language_map
-            .insert(language_name, language_data.into());
+            .dependents
+            .entry(import_uri)
+            .or_default()
+            .insert(uri.clone());
     }
 
     populate_language_info(backend, language_name, &options);
 
     push_diagnostics(backend, uri).await;
+}
+
+fn populate_language_info(backend: &Backend, language_name: Option<String>, options: &Options) {
+    let Some(language_name) = language_name else {
+        return;
+    };
+    if backend.language_map.contains_key(&language_name) {
+        return;
+    }
+    let Some(lang) = get_language(&language_name, options) else {
+        return;
+    };
+    let language_data = init_language_data(lang, language_name.clone()).into();
+    backend.language_map.insert(language_name, language_data);
 }
 
 pub fn init_language_data(language: Language, name: String) -> LanguageData {

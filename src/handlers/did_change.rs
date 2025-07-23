@@ -57,6 +57,29 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
         populate_import_documents(&backend.document_map, &workspace_uris, &options, &uris);
 
         if let Some(mut document) = backend.document_map.get_mut(&uri) {
+            // Remove previous import URIs.
+            for import_uri in document
+                .imported_uris
+                .iter()
+                .filter_map(|import| import.uri.clone().filter(|url| url != &uri))
+            {
+                backend
+                    .dependents
+                    .entry(import_uri)
+                    .or_default()
+                    .remove(&uri);
+            }
+            // Add new import URIs.
+            for import_uri in uris
+                .iter()
+                .filter_map(|import| import.uri.clone().filter(|url| url != &uri))
+            {
+                backend
+                    .dependents
+                    .entry(import_uri)
+                    .or_default()
+                    .insert(uri.clone());
+            }
             document.imported_uris = uris;
         };
     }

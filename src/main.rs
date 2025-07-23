@@ -159,6 +159,7 @@ struct Backend {
     client_capabilities: Arc<tokio::sync::RwLock<ClientCapabilities>>,
     document_map: DashMap<Url, DocumentData>,
     language_map: DashMap<String, Arc<LanguageData>>,
+    dependents: DashMap<Url, HashSet<Url>>,
     options: Arc<tokio::sync::RwLock<Options>>,
     workspace_uris: Arc<RwLock<Vec<PathBuf>>>,
 }
@@ -432,6 +433,7 @@ async fn main() {
             language_map: Default::default(),
             workspace_uris: Default::default(),
             client_capabilities: Default::default(),
+            dependents: Default::default(),
             options,
         }
     })

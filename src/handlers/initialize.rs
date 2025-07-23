@@ -77,6 +77,7 @@ mod test {
             document_map: Default::default(),
             language_map: Default::default(),
             workspace_uris: Default::default(),
+            dependents: Default::default(),
             options: Default::default(),
         })
         .finish();
