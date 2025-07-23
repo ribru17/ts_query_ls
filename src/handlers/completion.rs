@@ -351,7 +351,6 @@ mod test {
 
     use pretty_assertions::assert_eq;
     use rstest::rstest;
-    use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
         CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse,
         CompletionTextEdit, Documentation, InsertTextFormat, MarkupContent, MarkupKind,
@@ -362,10 +361,7 @@ mod test {
         Options, Predicate, PredicateParameter, PredicateParameterArity, PredicateParameterType,
     };
 
-    use crate::test_helpers::helpers::{
-        QUERY_TEST_URI, initialize_server, lsp_request_to_jsonrpc_request,
-        lsp_response_to_jsonrpc_response,
-    };
+    use crate::test_helpers::helpers::{QUERY_TEST_URI, TestService, initialize_server};
 
     static NODE_COMPLETIONS: LazyLock<Vec<CompletionItem>> = LazyLock::new(|| {
         vec![
@@ -847,25 +843,18 @@ the `inherits:` keyword, and there must be no spaces in-between module names.
 
         // Act
         let actual_completions = service
-            .ready()
-            .await
-            .unwrap()
-            .call(lsp_request_to_jsonrpc_request::<Completion>(
-                CompletionParams {
-                    context: None,
-                    text_document_position: TextDocumentPositionParams {
-                        position,
-                        text_document: TextDocumentIdentifier {
-                            uri: QUERY_TEST_URI.clone(),
-                        },
+            .request::<Completion>(CompletionParams {
+                context: None,
+                text_document_position: TextDocumentPositionParams {
+                    position,
+                    text_document: TextDocumentIdentifier {
+                        uri: QUERY_TEST_URI.clone(),
                     },
-                    partial_result_params: PartialResultParams::default(),
-                    work_done_progress_params: WorkDoneProgressParams::default(),
                 },
-            ))
-            .await
-            .map_err(|e| format!("textDocument/completion call returned error: {e}"))
-            .unwrap();
+                partial_result_params: PartialResultParams::default(),
+                work_done_progress_params: WorkDoneProgressParams::default(),
+            })
+            .await;
 
         // Assert
         let expected_completions = if expected_completions.is_empty() {
@@ -873,11 +862,6 @@ the `inherits:` keyword, and there must be no spaces in-between module names.
         } else {
             Some(CompletionResponse::Array(expected_completions.to_vec()))
         };
-        assert_eq!(
-            Some(lsp_response_to_jsonrpc_response::<Completion>(
-                expected_completions
-            )),
-            actual_completions,
-        );
+        assert_eq!(expected_completions, actual_completions);
     }
 }

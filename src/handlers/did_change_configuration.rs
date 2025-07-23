@@ -20,14 +20,13 @@ mod test {
     use pretty_assertions::assert_eq;
     use regex::Regex;
     use std::collections::BTreeMap;
-    use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
         DidChangeConfigurationParams, notification::DidChangeConfiguration,
     };
 
     use crate::{
         Options,
-        test_helpers::helpers::{initialize_server, lsp_notification_to_jsonrpc_request},
+        test_helpers::helpers::{TestService, initialize_server},
     };
 
     #[tokio::test(flavor = "current_thread")]
@@ -37,36 +36,28 @@ mod test {
 
         // Act
         service
-            .ready()
-            .await
-            .unwrap()
-            .call(
-                lsp_notification_to_jsonrpc_request::<DidChangeConfiguration>(
-                    DidChangeConfigurationParams {
-                        settings: serde_json::from_str(
-                            r#"
-                            {
-                              "parser_aliases": {
-                                "ecma": "javascript",
-                                "jsx": "javascript",
-                                "foolang": "barlang"
-                              },
-                              "parser_install_directories": [
-                                "/my/directory/",
-                                "/tmp/tree-sitter/parsers/"
-                              ],
-                              "language_retrieval_patterns": [
-                                "\\.ts\\-([^/]+)\\-parser\\.wasm"
-                              ]
-                            }
-                            "#,
-                        )
-                        .unwrap(),
-                    },
-                ),
-            )
-            .await
-            .unwrap();
+            .notify::<DidChangeConfiguration>(DidChangeConfigurationParams {
+                settings: serde_json::from_str(
+                    r#"
+                    {
+                      "parser_aliases": {
+                        "ecma": "javascript",
+                        "jsx": "javascript",
+                        "foolang": "barlang"
+                      },
+                      "parser_install_directories": [
+                        "/my/directory/",
+                        "/tmp/tree-sitter/parsers/"
+                      ],
+                      "language_retrieval_patterns": [
+                        "\\.ts\\-([^/]+)\\-parser\\.wasm"
+                      ]
+                    }
+                    "#,
+                )
+                .unwrap(),
+            })
+            .await;
 
         // Assert
         let options = service.inner().options.read().await;

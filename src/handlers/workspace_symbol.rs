@@ -66,16 +66,13 @@ pub async fn symbol(
 #[cfg(test)]
 mod test {
     use pretty_assertions::assert_eq;
-    use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
         Location, PartialResultParams, Position, Range, SymbolInformation, SymbolKind, Url,
         WorkDoneProgressParams, WorkspaceSymbolParams, WorkspaceSymbolResponse,
         request::WorkspaceSymbolRequest,
     };
 
-    use crate::test_helpers::helpers::{
-        initialize_server, lsp_request_to_jsonrpc_request, lsp_response_to_jsonrpc_response,
-    };
+    use crate::test_helpers::helpers::{TestService, initialize_server};
 
     #[tokio::test(flavor = "current_thread")]
     async fn document_symbol() {
@@ -90,18 +87,12 @@ mod test {
 
         // Act
         let actual_tokens = service
-            .ready()
-            .await
-            .unwrap()
-            .call(lsp_request_to_jsonrpc_request::<WorkspaceSymbolRequest>(
-                WorkspaceSymbolParams {
-                    query: String::from(""),
-                    partial_result_params: PartialResultParams::default(),
-                    work_done_progress_params: WorkDoneProgressParams::default(),
-                },
-            ))
-            .await
-            .unwrap();
+            .request::<WorkspaceSymbolRequest>(WorkspaceSymbolParams {
+                query: String::from(""),
+                partial_result_params: PartialResultParams::default(),
+                work_done_progress_params: WorkDoneProgressParams::default(),
+            })
+            .await;
 
         // Assert
         let cpp_folds_uri = Url::from_file_path(concat!(
@@ -172,11 +163,6 @@ mod test {
                 container_name: Some(String::from("highlights.scm")),
             },
         ]));
-        assert_eq!(
-            Some(lsp_response_to_jsonrpc_response::<WorkspaceSymbolRequest>(
-                expected_tokens
-            )),
-            actual_tokens,
-        );
+        assert_eq!(expected_tokens, actual_tokens);
     }
 }

@@ -54,14 +54,12 @@ pub async fn selection_range(
 mod test {
     use pretty_assertions::assert_eq;
     use rstest::rstest;
-    use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{Position, Range, SelectionRange, TextDocumentIdentifier};
 
     use tower_lsp::lsp_types::{SelectionRangeParams, request::SelectionRangeRequest};
 
     use crate::test_helpers::helpers::{
-        COMPLEX_FILE, SIMPLE_FILE, TEST_URI, initialize_server, lsp_request_to_jsonrpc_request,
-        lsp_response_to_jsonrpc_response,
+        COMPLEX_FILE, SIMPLE_FILE, TEST_URI, TestService, initialize_server,
     };
 
     #[rstest]
@@ -132,29 +130,17 @@ mod test {
 
         // Act
         let selection_ranges = service
-            .ready()
-            .await
-            .unwrap()
-            .call(lsp_request_to_jsonrpc_request::<SelectionRangeRequest>(
-                SelectionRangeParams {
-                    text_document: TextDocumentIdentifier {
-                        uri: TEST_URI.clone(),
-                    },
-                    positions,
-                    work_done_progress_params: Default::default(),
-                    partial_result_params: Default::default(),
+            .request::<SelectionRangeRequest>(SelectionRangeParams {
+                text_document: TextDocumentIdentifier {
+                    uri: TEST_URI.clone(),
                 },
-            ))
-            .await
-            .map_err(|e| format!("textDocument/rename call returned error: {e}"))
-            .unwrap();
+                positions,
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            })
+            .await;
 
         // Assert
-        assert_eq!(
-            selection_ranges,
-            Some(lsp_response_to_jsonrpc_response::<SelectionRangeRequest>(
-                expected_selection_ranges
-            ))
-        );
+        assert_eq!(expected_selection_ranges, selection_ranges);
     }
 }

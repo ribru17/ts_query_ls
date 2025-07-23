@@ -241,17 +241,13 @@ mod test {
 
     use pretty_assertions::assert_eq;
     use rstest::rstest;
-    use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
         Hover, HoverContents, HoverParams, MarkupContent, MarkupKind, Position, Range,
         TextDocumentIdentifier, TextDocumentPositionParams, WorkDoneProgressParams,
         request::HoverRequest,
     };
 
-    use crate::test_helpers::helpers::{
-        QUERY_TEST_URI, initialize_server, lsp_request_to_jsonrpc_request,
-        lsp_response_to_jsonrpc_response,
-    };
+    use crate::test_helpers::helpers::{QUERY_TEST_URI, TestService, initialize_server};
 
     const SOURCE: &str = r"(ERROR) @error (definition) @node
 
@@ -504,22 +500,16 @@ An error node", BTreeMap::from([(String::from("error"), String::from("An error n
 
         // Act
         let tokens = service
-            .ready()
-            .await
-            .unwrap()
-            .call(lsp_request_to_jsonrpc_request::<HoverRequest>(
-                HoverParams {
-                    text_document_position_params: TextDocumentPositionParams {
-                        text_document: TextDocumentIdentifier {
-                            uri: QUERY_TEST_URI.clone(),
-                        },
-                        position,
+            .request::<HoverRequest>(HoverParams {
+                text_document_position_params: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier {
+                        uri: QUERY_TEST_URI.clone(),
                     },
-                    work_done_progress_params: WorkDoneProgressParams::default(),
+                    position,
                 },
-            ))
-            .await
-            .unwrap();
+                work_done_progress_params: WorkDoneProgressParams::default(),
+            })
+            .await;
 
         // Assert
         let expected = if hover_content.is_empty() {
@@ -533,9 +523,6 @@ An error node", BTreeMap::from([(String::from("error"), String::from("An error n
                 }),
             })
         };
-        assert_eq!(
-            Some(lsp_response_to_jsonrpc_response::<HoverRequest>(expected)),
-            tokens,
-        );
+        assert_eq!(expected, tokens,);
     }
 }

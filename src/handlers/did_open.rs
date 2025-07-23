@@ -172,14 +172,11 @@ pub fn populate_import_documents(
 #[cfg(test)]
 mod test {
     use pretty_assertions::assert_eq;
-    use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
         DidOpenTextDocumentParams, TextDocumentItem, notification::DidOpenTextDocument,
     };
 
-    use crate::test_helpers::helpers::{
-        TEST_URI, initialize_server, lsp_notification_to_jsonrpc_request,
-    };
+    use crate::test_helpers::helpers::{TEST_URI, TestService, initialize_server};
 
     #[tokio::test(flavor = "current_thread")]
     async fn server_did_open_document() {
@@ -189,21 +186,15 @@ mod test {
 
         // Act
         service
-            .ready()
-            .await
-            .unwrap()
-            .call(lsp_notification_to_jsonrpc_request::<DidOpenTextDocument>(
-                DidOpenTextDocumentParams {
-                    text_document: TextDocumentItem {
-                        uri: TEST_URI.clone(),
-                        language_id: String::from("query"),
-                        version: 0,
-                        text: String::from(source),
-                    },
+            .notify::<DidOpenTextDocument>(DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri: TEST_URI.clone(),
+                    language_id: String::from("query"),
+                    version: 0,
+                    text: String::from(source),
                 },
-            ))
-            .await
-            .unwrap();
+            })
+            .await;
 
         // Assert
         let doc = service.inner().document_map.get(&TEST_URI).unwrap();

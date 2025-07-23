@@ -345,7 +345,6 @@ fn handle_predicate(
 mod test {
     use pretty_assertions::assert_eq;
     use rstest::rstest;
-    use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
         DidChangeTextDocumentParams, DocumentFormattingParams, DocumentRangeFormattingParams,
         FormattingOptions, Position, Range, TextDocumentContentChangeEvent, TextDocumentIdentifier,
@@ -354,10 +353,7 @@ mod test {
         request::{Formatting, RangeFormatting},
     };
 
-    use crate::test_helpers::helpers::{
-        TEST_URI, initialize_server, jsonrpc_response_to_lsp_value,
-        lsp_notification_to_jsonrpc_request, lsp_request_to_jsonrpc_request,
-    };
+    use crate::test_helpers::helpers::{TEST_URI, TestService, initialize_server};
 
     #[rstest]
     #[case(
@@ -387,52 +383,37 @@ mod test {
             initialize_server(&[(TEST_URI.clone(), before)], &Default::default()).await;
 
         // Act
-        let delta = service
-            .ready()
-            .await
-            .unwrap()
-            .call(lsp_request_to_jsonrpc_request::<Formatting>(
-                DocumentFormattingParams {
-                    text_document: TextDocumentIdentifier {
-                        uri: TEST_URI.clone(),
-                    },
-                    work_done_progress_params: WorkDoneProgressParams::default(),
-                    options: FormattingOptions::default(),
+        let mut edits = service
+            .request::<Formatting>(DocumentFormattingParams {
+                text_document: TextDocumentIdentifier {
+                    uri: TEST_URI.clone(),
                 },
-            ))
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                options: FormattingOptions::default(),
+            })
             .await
-            .unwrap();
-        let mut edits =
-            jsonrpc_response_to_lsp_value::<Formatting>(delta.unwrap()).unwrap_or_default();
+            .unwrap_or_default();
         edits.sort_by(|a, b| {
             let range_a = a.range;
             let range_b = b.range;
             range_b.start.cmp(&range_a.start)
         });
         service
-            .ready()
-            .await
-            .unwrap()
-            .call(
-                lsp_notification_to_jsonrpc_request::<DidChangeTextDocument>(
-                    DidChangeTextDocumentParams {
-                        text_document: VersionedTextDocumentIdentifier {
-                            uri: TEST_URI.clone(),
-                            version: 1,
-                        },
-                        content_changes: edits
-                            .iter()
-                            .map(|e| TextDocumentContentChangeEvent {
-                                range: Some(e.range),
-                                text: e.new_text.clone(),
-                                range_length: None,
-                            })
-                            .collect(),
-                    },
-                ),
-            )
-            .await
-            .unwrap();
+            .notify::<DidChangeTextDocument>(DidChangeTextDocumentParams {
+                text_document: VersionedTextDocumentIdentifier {
+                    uri: TEST_URI.clone(),
+                    version: 1,
+                },
+                content_changes: edits
+                    .iter()
+                    .map(|e| TextDocumentContentChangeEvent {
+                        range: Some(e.range),
+                        text: e.new_text.clone(),
+                        range_length: None,
+                    })
+                    .collect(),
+            })
+            .await;
 
         // Assert
         let doc = service.inner().document_map.get(&TEST_URI).unwrap();
@@ -561,53 +542,38 @@ mod test {
             initialize_server(&[(TEST_URI.clone(), before)], &Default::default()).await;
 
         // Act
-        let delta = service
-            .ready()
-            .await
-            .unwrap()
-            .call(lsp_request_to_jsonrpc_request::<RangeFormatting>(
-                DocumentRangeFormattingParams {
-                    text_document: TextDocumentIdentifier {
-                        uri: TEST_URI.clone(),
-                    },
-                    work_done_progress_params: WorkDoneProgressParams::default(),
-                    range,
-                    options: FormattingOptions::default(),
+        let mut edits = service
+            .request::<RangeFormatting>(DocumentRangeFormattingParams {
+                text_document: TextDocumentIdentifier {
+                    uri: TEST_URI.clone(),
                 },
-            ))
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                range,
+                options: FormattingOptions::default(),
+            })
             .await
-            .unwrap();
-        let mut edits =
-            jsonrpc_response_to_lsp_value::<RangeFormatting>(delta.unwrap()).unwrap_or_default();
+            .unwrap_or_default();
         edits.sort_by(|a, b| {
             let range_a = a.range;
             let range_b = b.range;
             range_b.start.cmp(&range_a.start)
         });
         service
-            .ready()
-            .await
-            .unwrap()
-            .call(
-                lsp_notification_to_jsonrpc_request::<DidChangeTextDocument>(
-                    DidChangeTextDocumentParams {
-                        text_document: VersionedTextDocumentIdentifier {
-                            uri: TEST_URI.clone(),
-                            version: 1,
-                        },
-                        content_changes: edits
-                            .iter()
-                            .map(|e| TextDocumentContentChangeEvent {
-                                range: Some(e.range),
-                                text: e.new_text.clone(),
-                                range_length: None,
-                            })
-                            .collect(),
-                    },
-                ),
-            )
-            .await
-            .unwrap();
+            .notify::<DidChangeTextDocument>(DidChangeTextDocumentParams {
+                text_document: VersionedTextDocumentIdentifier {
+                    uri: TEST_URI.clone(),
+                    version: 1,
+                },
+                content_changes: edits
+                    .iter()
+                    .map(|e| TextDocumentContentChangeEvent {
+                        range: Some(e.range),
+                        text: e.new_text.clone(),
+                        range_length: None,
+                    })
+                    .collect(),
+            })
+            .await;
 
         // Assert
         let doc = service.inner().document_map.get(&TEST_URI).unwrap();

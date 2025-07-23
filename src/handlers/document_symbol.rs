@@ -55,17 +55,13 @@ pub async fn document_symbol(
 mod test {
     use pretty_assertions::assert_eq;
     use rstest::rstest;
-    use tower::{Service, ServiceExt};
     use tower_lsp::lsp_types::{
         DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse, PartialResultParams,
         Position, Range, SymbolKind, TextDocumentIdentifier, WorkDoneProgressParams,
         request::DocumentSymbolRequest,
     };
 
-    use crate::test_helpers::helpers::{
-        SIMPLE_FILE, TEST_URI, initialize_server, lsp_request_to_jsonrpc_request,
-        lsp_response_to_jsonrpc_response,
-    };
+    use crate::test_helpers::helpers::{SIMPLE_FILE, TEST_URI, TestService, initialize_server};
 
     type DocSymbol = (String, Range, Range);
 
@@ -145,23 +141,17 @@ mod test {
 
         // Act
         let tokens = service
-            .ready()
-            .await
-            .unwrap()
-            .call(lsp_request_to_jsonrpc_request::<DocumentSymbolRequest>(
-                DocumentSymbolParams {
-                    text_document: TextDocumentIdentifier {
-                        uri: TEST_URI.clone(),
-                    },
-                    partial_result_params: PartialResultParams::default(),
-                    work_done_progress_params: WorkDoneProgressParams::default(),
+            .request::<DocumentSymbolRequest>(DocumentSymbolParams {
+                text_document: TextDocumentIdentifier {
+                    uri: TEST_URI.clone(),
                 },
-            ))
-            .await
-            .unwrap();
+                partial_result_params: PartialResultParams::default(),
+                work_done_progress_params: WorkDoneProgressParams::default(),
+            })
+            .await;
 
         // Assert
-        let actual = Some(DocumentSymbolResponse::Nested(
+        let expected = Some(DocumentSymbolResponse::Nested(
             symbols
                 .iter()
                 .map(|s| DocumentSymbol {
@@ -177,11 +167,6 @@ mod test {
                 })
                 .collect(),
         ));
-        assert_eq!(
-            tokens,
-            Some(lsp_response_to_jsonrpc_response::<DocumentSymbolRequest>(
-                actual
-            ))
-        );
+        assert_eq!(expected, tokens);
     }
 }
