@@ -9,17 +9,21 @@ use regex::Regex;
 use ropey::Rope;
 use serde_json::Value;
 use streaming_iterator::StreamingIterator;
-use tower_lsp::lsp_types::{Position, Range, TextDocumentContentChangeEvent, Url};
+use tower_lsp::{
+    LanguageServer,
+    lsp_types::{
+        DocumentDiagnosticParams, DocumentDiagnosticReport, DocumentDiagnosticReportKind,
+        DocumentDiagnosticReportResult, Position, Range, RelatedFullDocumentDiagnosticReport,
+        TextDocumentContentChangeEvent, TextDocumentIdentifier, Url,
+    },
+};
 use tracing::warn;
 use tree_sitter::{
     InputEdit, Language, Node, Parser, Point, Query, QueryCapture, QueryCursor, TextProvider, Tree,
     WasmStore,
 };
 
-use crate::{
-    Backend, DocumentData, ENGINE, ImportedUri, Options, QUERY_LANGUAGE,
-    handlers::diagnostic::get_diagnostics,
-};
+use crate::{Backend, DocumentData, ENGINE, ImportedUri, Options, QUERY_LANGUAGE};
 
 pub static CAPTURES_QUERY: LazyLock<Query> =
     LazyLock::new(|| Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap());
@@ -606,30 +610,44 @@ pub async fn push_diagnostics(backend: &Backend, uri: Url) {
         // Bothans died to bring us this information.
         && let Some(document) = backend.document_map.get(&uri).map(|doc| doc.clone())
     {
-        let language_data = document
-            .language_name
-            .as_ref()
-            .and_then(|name| backend.language_map.get(name))
-            .as_deref()
-            .cloned();
-        let ignore_missing_language = false;
-        let cache = true;
         let version = document.version;
 
-        let diagnostics = get_diagnostics(
-            &uri,
-            &backend.document_map,
-            document,
-            language_data,
-            backend.options.clone(),
-            ignore_missing_language,
-            cache,
-        )
-        .await;
+        let Ok(diagnostics) = backend
+            .diagnostic(DocumentDiagnosticParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                identifier: None,
+                previous_result_id: None,
+                partial_result_params: Default::default(),
+                work_done_progress_params: Default::default(),
+            })
+            .await
+        else {
+            warn!("Error retrieving push diagnostics for {uri}");
+            return;
+        };
 
-        backend
-            .client
-            .publish_diagnostics(uri, diagnostics, Some(version))
-            .await;
+        if let DocumentDiagnosticReportResult::Report(DocumentDiagnosticReport::Full(
+            RelatedFullDocumentDiagnosticReport {
+                related_documents,
+                full_document_diagnostic_report,
+            },
+        )) = diagnostics
+        {
+            backend
+                .client
+                .publish_diagnostics(uri, full_document_diagnostic_report.items, Some(version))
+                .await;
+
+            for (uri, report) in related_documents.unwrap_or_default() {
+                if let DocumentDiagnosticReportKind::Full(report) = report
+                    && let Some(version) = backend.document_map.get(&uri).map(|doc| doc.version)
+                {
+                    backend
+                        .client
+                        .publish_diagnostics(uri, report.items, Some(version))
+                        .await;
+                }
+            }
+        }
     }
 }
