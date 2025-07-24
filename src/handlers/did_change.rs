@@ -51,7 +51,7 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
     drop(document);
 
     if recalculate_imports {
-        let workspace_uris = backend.workspace_uris.read().unwrap().clone();
+        let workspace_uris = backend.workspace_paths.read().unwrap().clone();
         let options = backend.options.read().await;
         let uris = get_imported_uris(&workspace_uris, &options, &uri, &rope, &tree);
         populate_import_documents(&backend.document_map, &workspace_uris, &options, &uris);

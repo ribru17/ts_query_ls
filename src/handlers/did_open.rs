@@ -24,7 +24,7 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
 
     let options = backend.options.read().await;
     let language_name = get_language_name(&uri, &options);
-    let workspace_uris = backend.workspace_uris.read().unwrap().clone();
+    let workspace_uris = backend.workspace_paths.read().unwrap().clone();
     let imported_uris = get_imported_uris(&workspace_uris, &options, &uri, &rope, &tree);
 
     // Track the document

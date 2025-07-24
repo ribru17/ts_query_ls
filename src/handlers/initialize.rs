@@ -9,7 +9,7 @@ use crate::{Backend, SERVER_CAPABILITIES};
 
 pub async fn initialize(backend: &Backend, params: InitializeParams) -> Result<InitializeResult> {
     info!("ts_query_ls initialized");
-    if let Ok(mut ws_uris) = backend.workspace_uris.write() {
+    if let Ok(mut ws_uris) = backend.workspace_paths.write() {
         #[allow(deprecated)]
         if let Some(ws_folders) = params.workspace_folders {
             ws_uris.extend(
@@ -37,7 +37,7 @@ pub async fn initialize(backend: &Backend, params: InitializeParams) -> Result<I
         backend,
         params.initialization_options,
         backend
-            .workspace_uris
+            .workspace_paths
             .read()
             .map(|r| r.to_vec())
             .unwrap_or_default(),
@@ -76,7 +76,7 @@ mod test {
             client_capabilities: Default::default(),
             document_map: Default::default(),
             language_map: Default::default(),
-            workspace_uris: Default::default(),
+            workspace_paths: Default::default(),
             dependents: Default::default(),
             options: Default::default(),
         })

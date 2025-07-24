@@ -117,9 +117,13 @@ impl fmt::Display for SymbolInfo {
 
 #[derive(Clone)]
 struct ImportedUri {
+    /// The start column, in bytes.
     start_col: u32,
+    /// The end column, in bytes.
     end_col: u32,
+    /// The name of the module.
     name: String,
+    /// The URI of the associated document, if it exists.
     uri: Option<Url>,
 }
 
@@ -159,9 +163,10 @@ struct Backend {
     client_capabilities: Arc<tokio::sync::RwLock<ClientCapabilities>>,
     document_map: DashMap<Url, DocumentData>,
     language_map: DashMap<String, Arc<LanguageData>>,
+    /// A map from URI -> URIs that depend on that URI
     dependents: DashMap<Url, HashSet<Url>>,
     options: Arc<tokio::sync::RwLock<Options>>,
-    workspace_uris: Arc<RwLock<Vec<PathBuf>>>,
+    workspace_paths: Arc<RwLock<Vec<PathBuf>>>,
 }
 
 #[tower_lsp::async_trait]
@@ -431,7 +436,7 @@ async fn main() {
             client,
             document_map: Default::default(),
             language_map: Default::default(),
-            workspace_uris: Default::default(),
+            workspace_paths: Default::default(),
             client_capabilities: Default::default(),
             dependents: Default::default(),
             options,

@@ -20,7 +20,7 @@ pub async fn symbol(
     let query = params.query;
 
     let dirs = backend
-        .workspace_uris
+        .workspace_paths
         .read()
         .as_deref()
         .cloned()

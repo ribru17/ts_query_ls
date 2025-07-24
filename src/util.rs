@@ -40,6 +40,7 @@ thread_local! {
     };
 }
 
+/// Parse the text in the rope as Tree-sitter query source code.
 pub fn parse(rope: &Rope, old_tree: Option<&Tree>) -> Tree {
     QUERY_PARSER.with_borrow_mut(|parser| {
         let len_bytes = rope.len_bytes();
@@ -147,6 +148,7 @@ impl PointUtil for Point {
     }
 }
 
+/// Gets the `(capture)` node at the cursor, if any.
 pub fn get_current_capture_node(root: Node, point: Point) -> Option<Node> {
     root.named_descendant_for_point_range(point, point)
         .and_then(|node| {
@@ -300,6 +302,7 @@ pub fn get_language_name_raw(path: &Path, options: &Options) -> Option<String> {
     None
 }
 
+/// Get the language object of the given name.
 pub fn get_language(name: &str, options: &Options) -> Option<Language> {
     // Return query language object for mock tests
     if cfg!(test) && name == "query" {
@@ -456,7 +459,6 @@ pub fn capture_at_pos<'t>(
 
 pub fn get_scm_files(directories: &[PathBuf]) -> impl Iterator<Item = PathBuf> {
     directories.iter().flat_map(|directory| {
-        // TODO: Parallelize this for further performance gains?
         ignore::Walk::new(directory)
             .filter_map(|e| e.ok())
             .filter(|e| {
@@ -489,8 +491,6 @@ pub fn get_file_uris(
 
 /// Returns a list of URIs corresponding to the modules in the `; inherits: ` chain. `None` if the
 /// module could not be found.
-///
-/// Return value is start byte, end byte, URI (if found)
 pub fn get_imported_uris(
     workspace_dirs: &[PathBuf],
     options: &Options,

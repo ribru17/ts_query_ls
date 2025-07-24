@@ -81,7 +81,7 @@ pub async fn completion(
             return Ok(None);
         };
         return Ok(Some(CompletionResponse::Array(
-            get_scm_files(&backend.workspace_uris.read().unwrap())
+            get_scm_files(&backend.workspace_paths.read().unwrap())
                 .filter_map(|file| {
                     if file.file_stem().is_none_or(|stem| stem != query_type) {
                         return None;
