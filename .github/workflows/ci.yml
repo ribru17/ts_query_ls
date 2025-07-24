@@ -103,7 +103,7 @@ jobs:
         working-directory: ${{ env.NVIM_TS_DIR }}
         run: |
           bash ./scripts/ci-install.sh
-          nvim -l ./scripts/install-parsers.lua
+          nvim -l ./scripts/install-parsers.lua --max-jobs=10
 
       - name: Check corpus
         working-directory: ${{ env.NVIM_TS_DIR }}
