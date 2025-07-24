@@ -7,7 +7,7 @@ pub async fn did_change_configuration(backend: &Backend, params: DidChangeConfig
         backend,
         Some(params.settings),
         backend
-            .workspace_uris
+            .workspace_paths
             .read()
             .map(|uris| uris.to_vec())
             .unwrap_or_default(),

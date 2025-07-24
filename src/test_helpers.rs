@@ -74,7 +74,7 @@ pub mod helpers {
             client_capabilities: Default::default(),
             document_map: Default::default(),
             language_map: Default::default(),
-            workspace_uris: Default::default(),
+            workspace_paths: Default::default(),
             dependents: Default::default(),
             options: Default::default(),
         })
