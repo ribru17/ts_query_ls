@@ -15,7 +15,7 @@ pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) 
         return;
     };
     let version = params.text_document.version;
-    document.version = version;
+    document.version = Some(version);
 
     let mut edits = vec![];
     let mut recalculate_imports = false;

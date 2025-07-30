@@ -140,10 +140,16 @@ impl ImportedUri {
 
 #[derive(Clone)]
 struct DocumentData {
+    /// The document's text content.
     rope: Rope,
+    /// The document's parsed CST.
     tree: Tree,
-    version: i32,
+    /// Document version. `None` if the document has not been opened by the editor (i.e., it was
+    /// constructed because an open document imports it).
+    version: Option<i32>,
+    /// The query language name for the document, if it exists.
     language_name: Option<String>,
+    /// The modules imported by this document.
     imported_uris: Vec<ImportedUri>,
 }
 
