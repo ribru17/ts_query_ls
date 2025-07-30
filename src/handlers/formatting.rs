@@ -357,24 +357,24 @@ mod test {
 
     #[rstest]
     #[case(
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_trailing_whitespace.scm")),
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/after_trailing_whitespace.scm")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/before_trailing_whitespace.scm")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/after_trailing_whitespace.scm")),
     )]
     #[case(
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_predicates.scm")),
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/after_predicates.scm")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/before_predicates.scm")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/after_predicates.scm")),
     )]
     #[case(
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_missing.scm")),
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/after_missing.scm")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/before_missing.scm")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/after_missing.scm")),
     )]
     #[case(
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_syntax_error.scm")),
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/after_syntax_error.scm")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/before_syntax_error.scm")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/after_syntax_error.scm")),
     )]
     #[case(
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_complex.scm")),
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/after_complex.scm")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/before_complex.scm")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/after_complex.scm")),
     )]
     #[tokio::test(flavor = "current_thread")]
     async fn server_formatting(#[case] before: &str, #[case] after: &str) {
@@ -422,8 +422,8 @@ mod test {
 
     #[rstest]
     #[case(
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_syntax_error.scm")),
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/after_syntax_error.scm")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/before_syntax_error.scm")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/after_syntax_error.scm")),
         Range::new(Position::new(0, 0), Position::new(1, 0)),
     )]
     #[case(

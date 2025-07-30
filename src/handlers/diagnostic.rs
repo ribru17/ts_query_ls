@@ -1022,14 +1022,14 @@ mod test {
     static CPP_FILE_URI: LazyLock<Url> = LazyLock::new(|| {
         Url::from_file_path(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/queries/test_workspace/queries/cpp/test.scm"
+            "/tests/fixtures/test_workspace/queries/cpp/test.scm"
         ))
         .unwrap()
     });
     static OTHER_FILE_URI: LazyLock<Url> = LazyLock::new(|| {
         Url::from_file_path(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/queries/test_workspace/queries/other/test.scm"
+            "/tests/fixtures/test_workspace/queries/other/test.scm"
         ))
         .unwrap()
     });

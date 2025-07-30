@@ -5,24 +5,24 @@ mod test {
 
     #[rstest]
     #[case(
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_trailing_whitespace.scm")),
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/after_trailing_whitespace.scm")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/before_trailing_whitespace.scm")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/after_trailing_whitespace.scm")),
     )]
     #[case(
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_predicates.scm")),
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/after_predicates.scm")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/before_predicates.scm")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/after_predicates.scm")),
     )]
     #[case(
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_missing.scm")),
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/after_missing.scm")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/before_missing.scm")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/after_missing.scm")),
     )]
     #[case(
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_syntax_error.scm")),
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/after_syntax_error.scm")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/before_syntax_error.scm")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/after_syntax_error.scm")),
     )]
     #[case(
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_complex.scm")),
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/after_complex.scm")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/before_complex.scm")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/after_complex.scm")),
     )]
     fn cli_format_write(#[context] ctx: Context, #[case] before: &str, #[case] after: &str) {
         // Arrange
@@ -54,27 +54,27 @@ mod test {
 
     #[rstest]
     #[case(
-        concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_trailing_whitespace.scm"),
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/before_trailing_whitespace.scm"),
         FormatValidity::Invalid
     )]
     #[case(
-        concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/after_trailing_whitespace.scm"),
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/after_trailing_whitespace.scm"),
         FormatValidity::Valid
     )]
     #[case(
-        concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_predicates.scm"),
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/before_predicates.scm"),
         FormatValidity::Invalid
     )]
     #[case(
-        concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_missing.scm"),
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/before_missing.scm"),
         FormatValidity::Invalid
     )]
     #[case(
-        concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_syntax_error.scm"),
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/before_syntax_error.scm"),
         FormatValidity::SyntaxError // NOTE: Files containing syntax errors cannot be formatted
     )]
     #[case(
-        concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/after_complex.scm"),
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/after_complex.scm"),
         FormatValidity::Valid
     )]
     fn cli_format_validate(#[case] path_str: &str, #[case] valid: FormatValidity) {

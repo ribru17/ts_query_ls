@@ -97,12 +97,12 @@ mod test {
         // Assert
         let cpp_folds_uri = Url::from_file_path(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/queries/test_workspace/queries/cpp/folds.scm"
+            "/tests/fixtures/test_workspace/queries/cpp/folds.scm"
         ))
         .unwrap();
         let other_highlights_uri = Url::from_file_path(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/queries/test_workspace/queries/other/highlights.scm"
+            "/tests/fixtures/test_workspace/queries/other/highlights.scm"
         ))
         .unwrap();
         #[allow(deprecated)]
