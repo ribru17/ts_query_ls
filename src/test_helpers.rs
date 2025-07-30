@@ -25,24 +25,24 @@ pub mod helpers {
     pub static CPP_HIGHLIGHTS_WS_URI: LazyLock<Url> = LazyLock::new(|| {
         Url::from_file_path(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/queries/test_workspace/queries/cpp/test.scm"
+            "/tests/fixtures/test_workspace/queries/cpp/test.scm"
         ))
         .unwrap()
     });
     pub static FOO_HIGHLIGHTS_WS_URI: LazyLock<Url> = LazyLock::new(|| {
         Url::from_file_path(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/queries/test_workspace/queries/foo/test.scm"
+            "/tests/fixtures/test_workspace/queries/foo/test.scm"
         ))
         .unwrap()
     });
     pub const SIMPLE_FILE: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/queries/example_test_files/simple.scm"
+        "/tests/fixtures/example_test_files/simple.scm"
     ));
     pub const COMPLEX_FILE: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/queries/example_test_files/complex.scm"
+        "/tests/fixtures/example_test_files/complex.scm"
     ));
 
     pub static TEST_CLIENT_CAPABILITIES: LazyLock<ClientCapabilities> =
@@ -88,7 +88,7 @@ pub mod helpers {
                     name: String::from("test_workspace"),
                     uri: Url::from_file_path(concat!(
                         env!("CARGO_MANIFEST_DIR"),
-                        "/queries/test_workspace/"
+                        "/tests/fixtures/test_workspace/"
                     ))
                     .unwrap(),
                 }]),

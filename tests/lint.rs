@@ -51,23 +51,23 @@ mod test {
 
     #[rstest]
     #[case(
-        concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/after_trailing_whitespace.scm"),
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/after_trailing_whitespace.scm"),
         Some(["Invalid capture name \"@cap\" (fix available)"].as_slice())
     )]
     #[case(
-        concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_predicates.scm"),
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/before_predicates.scm"),
         Some(["Unrecognized predicate \"lua-match\""].as_slice())
     )]
     #[case(
-        concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_missing.scm"),
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/before_missing.scm"),
         Some(["This pattern has no captures, and will not be processed"].as_slice())
     )]
     #[case(
-        concat!(env!("CARGO_MANIFEST_DIR"), "/queries/formatting_test_files/before_syntax_error.scm"),
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/before_syntax_error.scm"),
         Some(["Invalid syntax"].as_slice())
     )]
     #[case(
-        concat!(env!("CARGO_MANIFEST_DIR"), "/queries/example_test_files/simple.scm"),
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/example_test_files/simple.scm"),
         None
     )]
     fn cli_lint(#[case] path_str: &str, #[case] warning_messages: Option<&[&str]>) {
