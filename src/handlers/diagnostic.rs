@@ -12,8 +12,8 @@ use tower_lsp::{
     lsp_types::{
         Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, DiagnosticTag,
         DocumentDiagnosticParams, DocumentDiagnosticReport, DocumentDiagnosticReportKind,
-        DocumentDiagnosticReportResult, FullDocumentDiagnosticReport, Location, Position, Range,
-        RelatedFullDocumentDiagnosticReport, Url,
+        DocumentDiagnosticReportResult, FullDocumentDiagnosticReport, Location, NumberOrString,
+        Position, Range, RelatedFullDocumentDiagnosticReport, Url,
     },
 };
 use tree_sitter::{
@@ -31,6 +31,80 @@ use crate::{
 };
 
 use super::code_action::CodeActions;
+
+enum DiagnosticCode<'a> {
+    // Errors
+    InvalidPatternStructure,
+    InvalidNode,
+    InvalidSubtype,
+    InvalidSupertype,
+    InvalidField,
+    InvalidSyntax,
+    MissingToken,
+    UndeclaredCapture,
+
+    // Warnings
+    NoLanguageObject,
+    NoLanguageName,
+    InvalidAbi,
+    InvalidCaptureName,
+    UnusedAuxiliaryCapture,
+    UnrecognizedFunction(&'a str),
+    UnnecessaryEscapeSequence,
+    UnnecessaryPattern,
+    ImportNameMissing,
+    ImportNotFound,
+    EmptyParameterSpec,
+    ParameterTypeMismatch,
+    InvalidNamedNode,
+    InvalidInteger,
+    InvalidEnumMember,
+    UnexpectedParameter,
+    MissingParameter,
+
+    // Hints
+    UnnecessaryQuotations,
+    UnquotedString,
+
+    // Special
+    ImportIssues,
+}
+
+impl From<DiagnosticCode<'_>> for Option<NumberOrString> {
+    fn from(value: DiagnosticCode) -> Self {
+        let string_slice = match value {
+            DiagnosticCode::NoLanguageObject => "no-language-object",
+            DiagnosticCode::NoLanguageName => "no-language-name",
+            DiagnosticCode::InvalidAbi => "invalid-abi",
+            DiagnosticCode::InvalidPatternStructure => "invalid-pattern-structure",
+            DiagnosticCode::InvalidNode => "invalid-node",
+            DiagnosticCode::InvalidSubtype => "invalid-subtype",
+            DiagnosticCode::InvalidSupertype => "invalid-supertype",
+            DiagnosticCode::InvalidField => "invalid-field",
+            DiagnosticCode::InvalidSyntax => "invalid-syntax",
+            DiagnosticCode::MissingToken => "missing-token",
+            DiagnosticCode::UndeclaredCapture => "undeclared-capture",
+            DiagnosticCode::InvalidCaptureName => "invalid-capture-name",
+            DiagnosticCode::UnusedAuxiliaryCapture => "unused-auxiliary-capture",
+            DiagnosticCode::UnrecognizedFunction(kind) => &("unrecognized-".to_owned() + kind),
+            DiagnosticCode::UnnecessaryEscapeSequence => "unnecessary-escape-sequence",
+            DiagnosticCode::UnnecessaryPattern => "unnecessary-pattern",
+            DiagnosticCode::UnnecessaryQuotations => "unnecessary-quotations",
+            DiagnosticCode::UnquotedString => "unquoted-string",
+            DiagnosticCode::ImportIssues => "import-issues",
+            DiagnosticCode::ImportNameMissing => "import-name-missing",
+            DiagnosticCode::ImportNotFound => "import-not-found",
+            DiagnosticCode::EmptyParameterSpec => "empty-parameter-spec",
+            DiagnosticCode::ParameterTypeMismatch => "parameter-type-mismatch",
+            DiagnosticCode::InvalidNamedNode => "invalid-named-node",
+            DiagnosticCode::InvalidInteger => "invalid-integer",
+            DiagnosticCode::InvalidEnumMember => "invalid-enum-member",
+            DiagnosticCode::UnexpectedParameter => "unexpected-parameter",
+            DiagnosticCode::MissingParameter => "missing-parameter",
+        };
+        Some(NumberOrString::String(String::from(string_slice)))
+    }
+}
 
 static DIAGNOSTICS_QUERY: LazyLock<Query> = LazyLock::new(|| {
     Query::new(
@@ -216,14 +290,21 @@ pub async fn get_diagnostics(
     cache: bool,
 ) -> Vec<Diagnostic> {
     let missing_language_diag = if !ignore_missing_language && language_data.is_none() {
-        let message = if let Some(language_name) = document.language_name.as_ref() {
-            format!("Language object for {language_name:?} not found")
+        let (message, code) = if let Some(language_name) = document.language_name.as_ref() {
+            (
+                format!("Language object for {language_name:?} not found"),
+                DiagnosticCode::NoLanguageObject.into(),
+            )
         } else {
-            String::from("Language name could not be determined")
+            (
+                String::from("Language name could not be determined"),
+                DiagnosticCode::NoLanguageName.into(),
+            )
         };
         Some(Diagnostic {
             message,
             severity: WARNING_SEVERITY,
+            code,
             ..Default::default()
         })
     } else {
@@ -262,6 +343,7 @@ pub async fn get_diagnostics(
             full_report.push(Diagnostic {
                 message: format!("Unsupported parser ABI {abi}, expected {range_str}"),
                 severity: WARNING_SEVERITY,
+                code: DiagnosticCode::InvalidAbi.into(),
                 ..Default::default()
             });
         }
@@ -329,6 +411,7 @@ async fn get_diagnostics_recursively(
                             .named_descendant_for_byte_range(true_offset, true_offset)
                             .map(|node| node.lsp_range(&rope))
                             .unwrap_or_default(),
+                        code: DiagnosticCode::InvalidPatternStructure.into(),
                         ..Default::default()
                     });
                 }
@@ -385,6 +468,7 @@ async fn get_diagnostics_recursively(
                             message: format!("Invalid node type: \"{capture_text}\""),
                             severity: ERROR_SEVERITY,
                             range,
+                            code: DiagnosticCode::InvalidNode.into(),
                             ..Default::default()
                         });
                     }
@@ -418,6 +502,7 @@ async fn get_diagnostics_recursively(
                                 message: format!("Node \"{subtype_text}\" is not a subtype of \"{supertype_text}\""),
                                 severity: ERROR_SEVERITY,
                                 range,
+                code: DiagnosticCode::InvalidSubtype.into(),
                                 ..Default::default()
                             });
                         } else if subtypes.is_empty() && !symbols.contains(&subtype_sym) {
@@ -425,6 +510,7 @@ async fn get_diagnostics_recursively(
                                 message: format!("Invalid node type: \"{subtype_text}\""),
                                 severity: ERROR_SEVERITY,
                                 range,
+                                code: DiagnosticCode::InvalidNode.into(),
                                 ..Default::default()
                             });
                         }
@@ -433,6 +519,7 @@ async fn get_diagnostics_recursively(
                             message: format!("Node \"{supertype_text}\" is not a supertype"),
                             severity: ERROR_SEVERITY,
                             range,
+                            code: DiagnosticCode::InvalidSupertype.into(),
                             ..Default::default()
                         });
                     }
@@ -448,6 +535,7 @@ async fn get_diagnostics_recursively(
                             message: format!("Invalid field name: \"{field}\""),
                             severity: ERROR_SEVERITY,
                             range,
+                            code: DiagnosticCode::InvalidField.into(),
                             ..Default::default()
                         });
                     }
@@ -456,12 +544,14 @@ async fn get_diagnostics_recursively(
                     message: "Invalid syntax".to_owned(),
                     severity: ERROR_SEVERITY,
                     range,
+                    code: DiagnosticCode::InvalidSyntax.into(),
                     ..Default::default()
                 }),
                 "missing" => diagnostics.push(Diagnostic {
                     message: format!("Missing \"{}\"", capture.node.kind()),
                     severity: ERROR_SEVERITY,
                     range,
+                    code: DiagnosticCode::MissingToken.into(),
                     ..Default::default()
                 }),
                 "capture.reference" => {
@@ -486,6 +576,7 @@ async fn get_diagnostics_recursively(
                             message: format!("Undeclared capture: \"{capture_text}\""),
                             severity: ERROR_SEVERITY,
                             range,
+                            code: DiagnosticCode::UndeclaredCapture.into(),
                             ..Default::default()
                         });
                     }
@@ -498,11 +589,12 @@ async fn get_diagnostics_recursively(
                         {
                             diagnostics.push(Diagnostic {
                                 message: format!(
-                                    "Unsupported capture name \"{capture_text}\" (fix available)"
+                                    "Invalid capture name \"{capture_text}\" (fix available)"
                                 ),
                                 severity: WARNING_SEVERITY,
                                 range,
                                 data: Some(CodeActions::PrefixUnderscore.into()),
+                                code: DiagnosticCode::InvalidCaptureName.into(),
                                 ..Default::default()
                             });
                         } else if suffix.starts_with('_') && warn_unused_underscore_caps {
@@ -531,6 +623,7 @@ async fn get_diagnostics_recursively(
                                     range,
                                     tags: Some(vec![DiagnosticTag::UNNECESSARY]),
                                     data: Some(CodeActions::Remove.into()),
+                                    code: DiagnosticCode::UnusedAuxiliaryCapture.into(),
                                     ..Default::default()
                                 });
                             }
@@ -560,6 +653,7 @@ async fn get_diagnostics_recursively(
                             message: format!("Unrecognized {capture_name} \"{capture_text}\""),
                             severity: WARNING_SEVERITY,
                             range,
+                            code: DiagnosticCode::UnrecognizedFunction(capture_name).into(),
                             ..Default::default()
                         });
                     }
@@ -572,6 +666,7 @@ async fn get_diagnostics_recursively(
                             severity: WARNING_SEVERITY,
                             range,
                             data: Some(CodeActions::RemoveBackslash.into()),
+                            code: DiagnosticCode::UnnecessaryEscapeSequence.into(),
                             ..Default::default()
                         });
                     }
@@ -582,12 +677,13 @@ async fn get_diagnostics_recursively(
                     if matches.next().is_none() {
                         diagnostics.push(Diagnostic {
                             message: String::from(
-                                "This pattern has no captures, and will not be processed",
+                                "This pattern has no captures, and will not be processed (fix available)",
                             ),
                             range,
                             severity: WARNING_SEVERITY,
                             tags: Some(vec![DiagnosticTag::UNNECESSARY]),
                             data: Some(CodeActions::Remove.into()),
+                code: DiagnosticCode::UnnecessaryPattern.into(),
                             ..Default::default()
                         });
                     }
@@ -613,6 +709,7 @@ async fn get_diagnostics_recursively(
                         range,
                         severity: HINT_SEVERITY,
                         data: Some(CodeActions::Trim.into()),
+                        code: DiagnosticCode::UnnecessaryQuotations.into(),
                         ..Default::default()
                     });
                 }
@@ -626,6 +723,7 @@ async fn get_diagnostics_recursively(
                         range,
                         severity: HINT_SEVERITY,
                         data: Some(CodeActions::Enquote.into()),
+                        code: DiagnosticCode::UnquotedString.into(),
                         ..Default::default()
                     });
                 }
@@ -694,6 +792,7 @@ async fn get_imported_query_diagnostics(
                         message: format!("Issues in module {name:?}"),
                         severity: Some(severity),
                         related_information: Some(inner_diags),
+                        code: DiagnosticCode::ImportIssues.into(),
                         ..Default::default()
                     });
                 }
@@ -705,6 +804,7 @@ async fn get_imported_query_diagnostics(
                 range,
                 severity: WARNING_SEVERITY,
                 message: String::from("Missing query module name"),
+                code: DiagnosticCode::ImportNameMissing.into(),
                 ..Default::default()
             });
         } else {
@@ -712,6 +812,7 @@ async fn get_imported_query_diagnostics(
                 range,
                 severity: WARNING_SEVERITY,
                 message: format!("Query module {name:?} not found"),
+                code: DiagnosticCode::ImportNotFound.into(),
                 ..Default::default()
             });
         }
@@ -760,6 +861,7 @@ fn validate_predicate<'a>(
                 message: String::from("Parameter specification must not be empty"),
                 severity: WARNING_SEVERITY,
                 range: params_node.lsp_range(rope),
+                code: DiagnosticCode::EmptyParameterSpec.into(),
                 ..Default::default()
             });
             return;
@@ -781,6 +883,7 @@ fn validate_predicate<'a>(
                 ),
                 severity,
                 range,
+                code: DiagnosticCode::ParameterTypeMismatch.into(),
                 ..Default::default()
             });
         }
@@ -809,6 +912,7 @@ fn validate_predicate<'a>(
                         message: format!("Expected named node kind, got \"{}\"", sym.label),
                         severity,
                         range,
+                        code: DiagnosticCode::InvalidNamedNode.into(),
                         ..Default::default()
                     })
                 } else {
@@ -823,6 +927,7 @@ fn validate_predicate<'a>(
                         message: format!("Expected a valid integer, got {param_text:?}"),
                         severity,
                         range,
+                        code: DiagnosticCode::InvalidInteger.into(),
                         ..Default::default()
                     })
                 }
@@ -835,6 +940,7 @@ fn validate_predicate<'a>(
                         message: format!("Expected one of {values:?}, got {param_text:?}"),
                         severity,
                         range,
+                        code: DiagnosticCode::InvalidEnumMember.into(),
                         ..Default::default()
                     })
                 }
@@ -858,6 +964,7 @@ fn validate_predicate<'a>(
                 message: format!("Unexpected parameter: \"{}\"", param.text(rope),),
                 severity: WARNING_SEVERITY,
                 range: param.lsp_range(rope),
+                code: DiagnosticCode::UnexpectedParameter.into(),
                 ..Default::default()
             });
         } else if let Some(diag) = param_type_mismatch(param, prev_param_spec) {
@@ -874,6 +981,7 @@ fn validate_predicate<'a>(
             message: format!("Missing parameter of type \"{type_}\""),
             severity: WARNING_SEVERITY,
             range: predicate_node.parent().unwrap().lsp_range(rope),
+            code: DiagnosticCode::MissingParameter.into(),
             ..Default::default()
         });
     }
@@ -903,7 +1011,7 @@ mod test {
     use crate::{
         handlers::{
             code_action::CodeActions,
-            diagnostic::{ERROR_SEVERITY, HINT_SEVERITY, WARNING_SEVERITY},
+            diagnostic::{DiagnosticCode, ERROR_SEVERITY, HINT_SEVERITY, WARNING_SEVERITY},
         },
         test_helpers::helpers::{
             CPP_HIGHLIGHTS_WS_URI, Document, FOO_HIGHLIGHTS_WS_URI, QUERY_TEST_URI, TEST_URI,
@@ -953,8 +1061,9 @@ mod test {
                 },
             },
             severity: WARNING_SEVERITY,
-            message: String::from("Unsupported capture name \"@constant\" (fix available)"),
+            message: String::from("Invalid capture name \"@constant\" (fix available)"),
             data: Some(CodeActions::PrefixUnderscore.into()),
+            code: DiagnosticCode::InvalidCaptureName.into(),
             ..Default::default()
         }, Diagnostic {
             range: Range {
@@ -968,6 +1077,7 @@ mod test {
                 },
             },
             severity: ERROR_SEVERITY,
+            code: DiagnosticCode::UndeclaredCapture.into(),
             message: String::from("Undeclared capture: \"@cons\""),
             ..Default::default()
         }],
@@ -993,7 +1103,8 @@ mod test {
                 end: Position::new(0, 14),
             },
             severity: WARNING_SEVERITY,
-            message: String::from("Unsupported capture name \"@constant\" (fix available)"),
+            code: DiagnosticCode::InvalidCaptureName.into(),
+            message: String::from("Invalid capture name \"@constant\" (fix available)"),
             data: Some(CodeActions::PrefixUnderscore.into()),
             ..Default::default()
         }],
@@ -1018,7 +1129,8 @@ mod test {
                 end: Position::new(0, 22),
             },
             severity: WARNING_SEVERITY,
-            message: String::from("Unsupported capture name \"@keyword\" (fix available)"),
+            code: DiagnosticCode::InvalidCaptureName.into(),
+            message: String::from("Invalid capture name \"@keyword\" (fix available)"),
             data: Some(CodeActions::PrefixUnderscore.into()),
             ..Default::default()
         }],
@@ -1043,7 +1155,8 @@ mod test {
                 end: Position::new(0, 16),
             },
             severity: WARNING_SEVERITY,
-            message: String::from("Unsupported capture name \"@keyword\" (fix available)"),
+            code: DiagnosticCode::InvalidCaptureName.into(),
+            message: String::from("Invalid capture name \"@keyword\" (fix available)"),
             data: Some(CodeActions::PrefixUnderscore.into()),
             ..Default::default()
         }],
@@ -1068,7 +1181,8 @@ mod test {
                 end: Position::new(0, 14),
             },
             severity: WARNING_SEVERITY,
-            message: String::from("Unsupported capture name \"@keyword\" (fix available)"),
+            code: DiagnosticCode::InvalidCaptureName.into(),
+            message: String::from("Invalid capture name \"@keyword\" (fix available)"),
             data: Some(CodeActions::PrefixUnderscore.into()),
             ..Default::default()
         }],
@@ -1102,6 +1216,7 @@ mod test {
                 },
             },
             severity: ERROR_SEVERITY,
+            code: DiagnosticCode::InvalidNode.into(),
             message: String::from("Invalid node type: \"identifierr\""),
             ..Default::default()
         }],
@@ -1175,7 +1290,7 @@ mod test {
                 end: Position { line: 1, character: 24 },
             },
             severity: WARNING_SEVERITY,
-            code: None,
+            code: DiagnosticCode::MissingParameter.into(),
             code_description: None,
             source: None,
             message: String::from("Missing parameter of type \"any\""),
@@ -1212,7 +1327,7 @@ mod test {
                 end: Position { line: 1, character: 46 },
             },
             severity: WARNING_SEVERITY,
-            code: None,
+            code: DiagnosticCode::UnexpectedParameter.into(),
             code_description: None,
             source: None,
             message: String::from("Unexpected parameter: \"@variable.builtin\""),
@@ -1281,7 +1396,7 @@ mod test {
                 end: Position { line: 1, character: 40, },
             },
             severity: HINT_SEVERITY,
-            code: None,
+            code: DiagnosticCode::UnnecessaryQuotations.into(),
             code_description: None,
             source: None,
             message: String::from("Unnecessary quotations (fix available)"),
@@ -1324,7 +1439,7 @@ mod test {
                 end: Position { line: 1, character: 29, },
             },
             severity: HINT_SEVERITY,
-            code: None,
+            code: DiagnosticCode::UnquotedString.into(),
             code_description: None,
             source: None,
             message: String::from("Unquoted string argument (fix available)"),
@@ -1337,7 +1452,7 @@ mod test {
                 end: Position { line: 1, character: 31, },
             },
             severity: HINT_SEVERITY,
-            code: None,
+            code: DiagnosticCode::UnquotedString.into(),
             code_description: None,
             source: None,
             message: String::from("Unquoted string argument (fix available)"),
@@ -1376,7 +1491,7 @@ mod test {
                 end: Position { line: 0, character: 22, },
             },
             severity: WARNING_SEVERITY,
-            code: None,
+            code: DiagnosticCode::UnusedAuxiliaryCapture.into(),
             code_description: None,
             source: None,
             message: String::from("Unused `_`-prefixed capture (fix available)"),
@@ -1416,7 +1531,7 @@ mod test {
                     end: Position { line: 1, character: 56, },
                 },
                 severity: WARNING_SEVERITY,
-                code: None,
+                code: DiagnosticCode::ParameterTypeMismatch.into(),
                 code_description: None,
                 source: None,
                 message: String::from("Parameter type mismatch: expected \"string\", got \"capture\""),
@@ -1561,7 +1676,7 @@ mod test {
                     end: Position { line: 1, character: 34, },
                 },
                 severity: WARNING_SEVERITY,
-                code: None,
+                code: DiagnosticCode::UnexpectedParameter.into(),
                 code_description: None,
                 source: None,
                 message: String::from("Unexpected parameter: \"asdf\""),
@@ -1602,7 +1717,7 @@ mod test {
                     end: Position { line: 1, character: 6, },
                 },
                 severity: WARNING_SEVERITY,
-                code: None,
+                code: DiagnosticCode::UnrecognizedFunction("directive").into(),
                 code_description: None,
                 source: None,
                 message: String::from("Unrecognized directive \"sett\""),
@@ -1634,6 +1749,7 @@ mod test {
                 },
             },
             severity: WARNING_SEVERITY,
+            code: DiagnosticCode::UnnecessaryEscapeSequence.into(),
             message: String::from("Unnecessary escape sequence (fix available)"),
             data: Some(CodeActions::RemoveBackslash.into()),
             ..Default::default()
@@ -1649,6 +1765,7 @@ mod test {
                 },
             },
             severity: WARNING_SEVERITY,
+            code: DiagnosticCode::UnnecessaryEscapeSequence.into(),
             message: String::from("Unnecessary escape sequence (fix available)"),
             data: Some(CodeActions::RemoveBackslash.into()),
             ..Default::default()
@@ -1668,6 +1785,7 @@ mod test {
             },
             message: String::from("Invalid pattern structure"),
             severity: ERROR_SEVERITY,
+            code: DiagnosticCode::InvalidPatternStructure.into(),
             ..Default::default()
         }, Diagnostic {
             range: Range {
@@ -1675,7 +1793,8 @@ mod test {
                 end: Position::new(0, 41),
             },
             severity: WARNING_SEVERITY,
-            message: String::from("This pattern has no captures, and will not be processed"),
+            code: DiagnosticCode::UnnecessaryPattern.into(),
+            message: String::from("This pattern has no captures, and will not be processed (fix available)"),
             data: Some(CodeActions::Remove.into()),
             tags: Some(vec![DiagnosticTag::UNNECESSARY]),
             ..Default::default()
@@ -1698,6 +1817,7 @@ mod test {
                 end: Position::new(0, 16),
             },
             severity: ERROR_SEVERITY,
+            code: DiagnosticCode::InvalidPatternStructure.into(),
             message: String::from("Invalid pattern structure"),
             ..Default::default()
         }, Diagnostic {
@@ -1706,6 +1826,7 @@ mod test {
                 end: Position::new(0, 58),
             },
             severity: ERROR_SEVERITY,
+            code: DiagnosticCode::InvalidField.into(),
             message: String::from("Invalid field name: \"asdf\""),
             ..Default::default()
         }],
@@ -1727,6 +1848,7 @@ mod test {
                 end: Position::new(0, 17),
             },
             severity: ERROR_SEVERITY,
+            code: DiagnosticCode::InvalidField.into(),
             message: String::from("Invalid field name: \"asdf\""),
             ..Default::default()
         }],
@@ -1747,13 +1869,14 @@ mod test {
             message: String::from("Issues in module \"cpp\""),
             range: Range::new(Position::new(0, 12), Position::new(0, 15)),
             severity: ERROR_SEVERITY,
+            code: DiagnosticCode::ImportIssues.into(),
             related_information: Some(vec![
                 DiagnosticRelatedInformation {
                     location: Location {
                         uri: CPP_FILE_URI.clone(),
                         range: Range::new(Position::new(2, 0), Position::new(2, 7))
                     },
-                    message: String::from("This pattern has no captures, and will not be processed")
+                    message: String::from("This pattern has no captures, and will not be processed (fix available)")
                 },
                 DiagnosticRelatedInformation {
                     location: Location {
@@ -1782,13 +1905,14 @@ mod test {
             message: String::from("Issues in module \"other\""),
             range: Range::new(Position::new(0, 12), Position::new(0, 17)),
             severity: WARNING_SEVERITY,
+            code: DiagnosticCode::ImportIssues.into(),
             related_information: Some(vec![
                 DiagnosticRelatedInformation {
                     location: Location {
                         uri: OTHER_FILE_URI.clone(),
                         range: Range::new(Position::new(2, 0), Position::new(2, 12))
                     },
-                    message: String::from("This pattern has no captures, and will not be processed")
+                    message: String::from("This pattern has no captures, and will not be processed (fix available)")
                 },
             ]),
             ..Default::default()
@@ -1810,16 +1934,19 @@ mod test {
             message: String::from("Query module \"css\" not found"),
             range: Range::new(Position::new(0, 12), Position::new(0, 15)),
             severity: WARNING_SEVERITY,
+            code: DiagnosticCode::ImportNotFound.into(),
             ..Default::default()
         }, Diagnostic {
             message: String::from("Missing query module name"),
             range: Range::new(Position::new(0, 16), Position::new(0, 16)),
+            code: DiagnosticCode::ImportNameMissing.into(),
             severity: WARNING_SEVERITY,
             ..Default::default()
         }, Diagnostic {
             message: String::from("Language object for \"js\" not found"),
             range: Range::new(Position::new(0, 0), Position::new(0, 0)),
             severity: WARNING_SEVERITY,
+            code: DiagnosticCode::NoLanguageObject.into(),
             ..Default::default()
         }],
         None,
@@ -1831,6 +1958,7 @@ mod test {
             message: String::from("Language name could not be determined"),
             range: Range::new(Position::new(0, 0), Position::new(0, 0)),
             severity: WARNING_SEVERITY,
+            code: DiagnosticCode::NoLanguageName.into(),
             ..Default::default()
         }],
         None,
@@ -1850,6 +1978,7 @@ mod test {
             message: String::from("Unsupported parser ABI 15, expected 13 through 14"),
             range: Range::new(Position::new(0, 0), Position::new(0, 0)),
             severity: WARNING_SEVERITY,
+            code: DiagnosticCode::InvalidAbi.into(),
             ..Default::default()
         }],
         None,
@@ -1897,6 +2026,7 @@ mod test {
             message: String::from("Unsupported parser ABI 15, expected 13"),
             range: Range::new(Position::new(0, 0), Position::new(0, 0)),
             severity: WARNING_SEVERITY,
+            code: DiagnosticCode::InvalidAbi.into(),
             ..Default::default()
         }],
         None,
@@ -1909,12 +2039,14 @@ mod test {
                 message: String::from("Invalid pattern structure"),
                 range: Range::new(Position::new(0, 0), Position::new(0, 32)),
                 severity: ERROR_SEVERITY,
+                code: DiagnosticCode::InvalidPatternStructure.into(),
                 ..Default::default()
             },
             Diagnostic {
                 message: String::from("Node \"named_node\" is not a supertype"),
                 range: Range::new(Position::new(0, 1), Position::new(0, 11)),
                 severity: ERROR_SEVERITY,
+                code: DiagnosticCode::InvalidSupertype.into(),
                 ..Default::default()
             },
         ],
@@ -1928,12 +2060,14 @@ mod test {
                 message: String::from("Invalid pattern structure"),
                 range: Range::new(Position::new(0, 0), Position::new(0, 37)),
                 severity: ERROR_SEVERITY,
+                code: DiagnosticCode::InvalidPatternStructure.into(),
                 ..Default::default()
             },
             Diagnostic {
                 message: String::from("Node \"escape_sequence\" is not a subtype of \"definition\""),
                 range: Range::new(Position::new(0, 12), Position::new(0, 27)),
                 severity: ERROR_SEVERITY,
+                code: DiagnosticCode::InvalidSubtype.into(),
                 ..Default::default()
             },
         ],
@@ -1947,6 +2081,7 @@ mod test {
                 message: String::from("Node \"ecape_sequence\" is not a subtype of \"definition\""),
                 range: Range::new(Position::new(0, 12), Position::new(0, 26)),
                 severity: ERROR_SEVERITY,
+                code: DiagnosticCode::InvalidSubtype.into(),
                 ..Default::default()
             },
         ],
@@ -1960,6 +2095,7 @@ mod test {
                 message: String::from("Node \"deefinition\" is not a supertype"),
                 range: Range::new(Position::new(0, 1), Position::new(0, 12)),
                 severity: ERROR_SEVERITY,
+                code: DiagnosticCode::InvalidSupertype.into(),
                 ..Default::default()
             },
         ],
@@ -1991,12 +2127,14 @@ mod test {
                 message: String::from("Expected named node kind, got \"self\""),
                 severity: WARNING_SEVERITY,
                 range: Range::new(Position::new(1, 11), Position::new(1, 15)),
+                code: DiagnosticCode::InvalidNamedNode.into(),
                 ..Default::default()
             },
             Diagnostic {
                 message: String::from("Expected named node kind, got \"named_nod\""),
                 severity: WARNING_SEVERITY,
                 range: Range::new(Position::new(1, 41), Position::new(1, 50)),
+                code: DiagnosticCode::InvalidNamedNode.into(),
                 ..Default::default()
             },
             Diagnostic {
@@ -2004,6 +2142,7 @@ mod test {
                 severity: WARNING_SEVERITY,
                 range: Range::new(Position::new(1, 35), Position::new(1, 37)),
                 data: Some(CodeActions::RemoveBackslash.into()),
+                code: DiagnosticCode::UnnecessaryEscapeSequence.into(),
                 ..Default::default()
             },
         ],
@@ -2035,12 +2174,14 @@ mod test {
                 message: String::from("Expected named node kind, got \"self\""),
                 severity: WARNING_SEVERITY,
                 range: Range::new(Position::new(1, 15), Position::new(1, 19)),
+                code: DiagnosticCode::InvalidNamedNode.into(),
                 ..Default::default()
             },
             Diagnostic {
                 message: String::from("Expected named node kind, got \"named_nod\""),
                 severity: WARNING_SEVERITY,
                 range: Range::new(Position::new(1, 45), Position::new(1, 54)),
+                code: DiagnosticCode::InvalidNamedNode.into(),
                 ..Default::default()
             },
             Diagnostic {
@@ -2048,6 +2189,7 @@ mod test {
                 severity: WARNING_SEVERITY,
                 range: Range::new(Position::new(1, 39), Position::new(1, 41)),
                 data: Some(CodeActions::RemoveBackslash.into()),
+                code: DiagnosticCode::UnnecessaryEscapeSequence.into(),
                 ..Default::default()
             },
         ],
@@ -2079,6 +2221,7 @@ mod test {
                 message: String::from("Expected a valid integer, got \"p\""),
                 severity: WARNING_SEVERITY,
                 range: Range::new(Position::new(1, 19), Position::new(1, 20)),
+                code: DiagnosticCode::InvalidInteger.into(),
                 ..Default::default()
             },
         ],
@@ -2128,6 +2271,7 @@ mod test {
                 message: String::from("Expected one of [\"squid\", \"ward\"], got \"sponge\""),
                 severity: WARNING_SEVERITY,
                 range: Range::new(Position::new(1, 21), Position::new(1, 27)),
+                code: DiagnosticCode::InvalidEnumMember.into(),
                 ..Default::default()
             },
         ],
@@ -2164,14 +2308,16 @@ mod test {
                     },
                 },
                 severity: WARNING_SEVERITY,
-                message: String::from("Unsupported capture name \"@variable.builtn\" (fix available)"),
+                message: String::from("Invalid capture name \"@variable.builtn\" (fix available)"),
                 data: Some(CodeActions::PrefixUnderscore.into()),
+                code: DiagnosticCode::InvalidCaptureName.into(),
                 ..Default::default()
             },
             Diagnostic {
                 range: Range::default(),
                 severity: WARNING_SEVERITY,
                 message: String::from("Language object for \"cpp\" not found"),
+                code: DiagnosticCode::NoLanguageObject.into(),
                 ..Default::default()
             },
         ],
@@ -2185,13 +2331,14 @@ mod test {
                             range: Range::new(Position::new(0, 12), Position::new(0, 15)),
                             severity: WARNING_SEVERITY,
                             message: String::from("Issues in module \"cpp\""),
+                            code: DiagnosticCode::ImportIssues.into(),
                             related_information: Some(vec![
                                 DiagnosticRelatedInformation {
                                     location: Location {
                                         range: Range::new(Position::new(0, 14), Position::new(0, 30)),
                                         uri: CPP_HIGHLIGHTS_WS_URI.clone()
                                     },
-                                    message: String::from("Unsupported capture name \"@variable.builtn\" (fix available)")
+                                    message: String::from("Invalid capture name \"@variable.builtn\" (fix available)")
                                 }
                             ]),
                             ..Default::default()
@@ -2200,6 +2347,7 @@ mod test {
                             range: Range::default(),
                             severity: WARNING_SEVERITY,
                             message: String::from("Language object for \"foo\" not found"),
+                            code: DiagnosticCode::NoLanguageObject.into(),
                             ..Default::default()
                         },
                     ]
