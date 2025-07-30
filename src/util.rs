@@ -635,12 +635,13 @@ pub async fn push_diagnostics(backend: &Backend, uri: Url) {
         {
             backend
                 .client
-                .publish_diagnostics(uri, full_document_diagnostic_report.items, Some(version))
+                .publish_diagnostics(uri, full_document_diagnostic_report.items, version)
                 .await;
 
             for (uri, report) in related_documents.unwrap_or_default() {
                 if let DocumentDiagnosticReportKind::Full(report) = report
-                    && let Some(version) = backend.document_map.get(&uri).map(|doc| doc.version)
+                    && let Some(version) =
+                        backend.document_map.get(&uri).and_then(|doc| doc.version)
                 {
                     backend
                         .client

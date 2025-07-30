@@ -28,7 +28,7 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     let imported_uris = get_imported_uris(&workspace_uris, &options, &uri, &rope, &tree);
 
     // Track the document
-    let version = params.text_document.version;
+    let version = Some(params.text_document.version);
     backend.document_map.insert(
         uri.clone(),
         DocumentData {
@@ -169,7 +169,7 @@ pub fn populate_import_documents(
                     rope,
                     tree,
                     language_name: None,
-                    version: -1,
+                    version: None,
                     imported_uris: nested_imported_uris.clone(),
                 },
             );
