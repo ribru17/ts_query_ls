@@ -457,6 +457,26 @@ pub fn capture_at_pos<'t>(
     innermost_capture
 }
 
+#[cfg(test)]
+pub fn get_scm_files(directories: &[PathBuf]) -> impl Iterator<Item = PathBuf> {
+    let mut files: Vec<_> = directories
+        .iter()
+        .flat_map(|directory| {
+            ignore::Walk::new(directory)
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.file_type().is_some_and(|ft| ft.is_file())
+                        && e.path().extension().is_some_and(|ext| ext == "scm")
+                })
+                .map(|e| e.path().to_owned())
+        })
+        .collect();
+    // When testing, sort files to prevent flakiness
+    files.sort();
+    files.into_iter()
+}
+
+#[cfg(not(test))]
 pub fn get_scm_files(directories: &[PathBuf]) -> impl Iterator<Item = PathBuf> {
     directories.iter().flat_map(|directory| {
         ignore::Walk::new(directory)
