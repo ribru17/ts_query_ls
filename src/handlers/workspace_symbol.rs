@@ -3,13 +3,20 @@ use std::fs;
 use ropey::Rope;
 use tower_lsp::{
     jsonrpc::Result,
-    lsp_types::{Location, SymbolInformation, SymbolKind, Url, WorkspaceSymbolParams},
+    lsp_types::{
+        Location, ProgressParams, ProgressParamsValue, SymbolInformation, SymbolKind, Url,
+        WorkDoneProgress, WorkDoneProgressBegin, WorkDoneProgressEnd, WorkDoneProgressReport,
+        WorkspaceSymbolParams, notification::Progress,
+    },
 };
 use tree_sitter::{QueryCursor, StreamingIterator};
 
 use crate::{
     Backend,
-    util::{CAPTURES_QUERY, NodeUtil, TextProviderRope, get_scm_files, is_subsequence, parse},
+    util::{
+        CAPTURES_QUERY, NodeUtil, TextProviderRope, get_scm_files, get_work_done_token,
+        is_subsequence, parse,
+    },
 };
 
 pub async fn symbol(
@@ -18,6 +25,8 @@ pub async fn symbol(
 ) -> Result<Option<Vec<SymbolInformation>>> {
     let mut symbols = Vec::new();
     let query = params.query;
+    let token =
+        get_work_done_token(backend, params.work_done_progress_params.work_done_token).await;
 
     let dirs = backend
         .workspace_paths
@@ -26,7 +35,30 @@ pub async fn symbol(
         .cloned()
         .unwrap_or_default();
 
-    for path in get_scm_files(&dirs) {
+    let files = get_scm_files(&dirs).collect::<Vec<_>>();
+    let file_count = files.len();
+    let file_count_div_100 = file_count as f64 * 0.01;
+    let mut num_processed_files = 0;
+    let mut progress_percent = 0;
+
+    if let Some(token) = token.clone() {
+        backend
+            .client
+            .send_notification::<Progress>(ProgressParams {
+                token,
+                value: ProgressParamsValue::WorkDone(WorkDoneProgress::Begin(
+                    WorkDoneProgressBegin {
+                        title: "Finding workspace symbols".into(),
+                        percentage: Some(0),
+                        message: Some(format!("0/{file_count} files indexed")),
+                        cancellable: Some(false),
+                    },
+                )),
+            })
+            .await
+    }
+
+    for path in files.into_iter() {
         let container_name = path
             .file_name()
             .and_then(|f| f.to_str())
@@ -58,8 +90,41 @@ pub async fn symbol(
                 }
             }
         }
+        num_processed_files += 1;
+        let percentage = (num_processed_files as f64 / file_count_div_100).floor() as u32;
+        if percentage > progress_percent + 4 {
+            progress_percent = percentage;
+            if let Some(token) = token.clone() {
+                backend
+                    .client
+                    .send_notification::<Progress>(ProgressParams {
+                        token,
+                        value: ProgressParamsValue::WorkDone(WorkDoneProgress::Report(
+                            WorkDoneProgressReport {
+                                percentage: Some(progress_percent),
+                                message: Some(format!(
+                                    "{num_processed_files}/{file_count} files indexed"
+                                )),
+                                cancellable: Some(false),
+                            },
+                        )),
+                    })
+                    .await
+            }
+        }
     }
 
+    if let Some(token) = token.clone() {
+        backend
+            .client
+            .send_notification::<Progress>(ProgressParams {
+                token,
+                value: ProgressParamsValue::WorkDone(WorkDoneProgress::End(WorkDoneProgressEnd {
+                    message: Some(format!("{file_count}/{file_count} files indexed")),
+                })),
+            })
+            .await
+    }
     Ok(Some(symbols))
 }
 
@@ -75,7 +140,7 @@ mod test {
     use crate::test_helpers::helpers::{TestService, initialize_server};
 
     #[tokio::test(flavor = "current_thread")]
-    async fn document_symbol() {
+    async fn workspace_symbol() {
         // Arrange
         let mut service = initialize_server(&[], &Default::default()).await;
         fn make_range(start_line: u32, start_col: u32, end_line: u32, end_col: u32) -> Range {

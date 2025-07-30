@@ -36,7 +36,7 @@ use tower_lsp::{
         SemanticTokensParams, SemanticTokensRangeParams, SemanticTokensRangeResult,
         SemanticTokensResult, SemanticTokensServerCapabilities, ServerCapabilities,
         SymbolInformation, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
-        WorkspaceEdit, WorkspaceSymbolParams,
+        WorkDoneProgressOptions, WorkspaceEdit, WorkspaceSymbolOptions, WorkspaceSymbolParams,
     },
 };
 use tree_sitter::{Language, Tree, wasmtime::Engine};
@@ -96,7 +96,12 @@ static SERVER_CAPABILITIES: LazyLock<ServerCapabilities> = LazyLock::new(|| Serv
     hover_provider: Some(HoverProviderCapability::Simple(true)),
     document_symbol_provider: Some(OneOf::Left(true)),
     selection_range_provider: Some(SelectionRangeProviderCapability::Simple(true)),
-    workspace_symbol_provider: Some(OneOf::Left(true)),
+    workspace_symbol_provider: Some(OneOf::Right(WorkspaceSymbolOptions {
+        work_done_progress_options: WorkDoneProgressOptions {
+            work_done_progress: Some(true),
+        },
+        resolve_provider: None,
+    })),
     ..Default::default()
 });
 static ENGINE: LazyLock<Engine> = LazyLock::new(Engine::default);
