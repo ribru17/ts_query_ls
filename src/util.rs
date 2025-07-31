@@ -13,11 +13,12 @@ use tower_lsp::{
     LanguageServer,
     lsp_types::{
         DocumentDiagnosticParams, DocumentDiagnosticReport, DocumentDiagnosticReportKind,
-        DocumentDiagnosticReportResult, Position, Range, RelatedFullDocumentDiagnosticReport,
-        TextDocumentContentChangeEvent, TextDocumentIdentifier, Url,
+        DocumentDiagnosticReportResult, NumberOrString, Position, ProgressToken, Range,
+        RelatedFullDocumentDiagnosticReport, TextDocumentContentChangeEvent,
+        TextDocumentIdentifier, Url, WorkDoneProgressCreateParams, request::WorkDoneProgressCreate,
     },
 };
-use tracing::warn;
+use tracing::{error, warn};
 use tree_sitter::{
     InputEdit, Language, Node, Parser, Point, Query, QueryCapture, QueryCursor, TextProvider, Tree,
     WasmStore,
@@ -670,5 +671,40 @@ pub async fn push_diagnostics(backend: &Backend, uri: Url) {
                 }
             }
         }
+    }
+}
+
+/// Return the given progress token, or create one and issue a new work done request (if the client
+/// supports them) if it does not exist.
+pub async fn get_work_done_token(
+    backend: &Backend,
+    work_done_token: Option<ProgressToken>,
+) -> Option<ProgressToken> {
+    if let Some(token) = work_done_token {
+        Some(token)
+    } else if backend
+        .client_capabilities
+        .try_read()
+        .expect("Client capabilities should only be set once")
+        .window
+        .as_ref()
+        .is_some_and(|w| w.work_done_progress == Some(true))
+    {
+        let token = NumberOrString::String(uuid::Uuid::new_v4().to_string());
+
+        if let Err(error) = backend
+            .client
+            .send_request::<WorkDoneProgressCreate>(WorkDoneProgressCreateParams {
+                token: token.clone(),
+            })
+            .await
+        {
+            error!("{error}");
+            None
+        } else {
+            Some(token)
+        }
+    } else {
+        None
     }
 }
