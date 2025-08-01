@@ -7,13 +7,13 @@ use tracing::warn;
 use tree_sitter::{Query, QueryCursor};
 
 use crate::util::{CAPTURES_QUERY, NodeUtil, PosUtil, TextProviderRope, get_references};
-use crate::{Backend, QUERY_LANGUAGE};
+use crate::{Backend, LspClient, QUERY_LANGUAGE};
 
 static IDENT_QUERY: LazyLock<Query> =
     LazyLock::new(|| Query::new(&QUERY_LANGUAGE, "(identifier) @name").unwrap());
 
-pub async fn document_highlight(
-    backend: &Backend,
+pub async fn document_highlight<C: LspClient>(
+    backend: &Backend<C>,
     params: DocumentHighlightParams,
 ) -> Result<Option<Vec<DocumentHighlight>>> {
     let uri = &params.text_document_position_params.text_document.uri;

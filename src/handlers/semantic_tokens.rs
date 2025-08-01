@@ -11,7 +11,7 @@ use tracing::warn;
 use tree_sitter::{Query, QueryCursor, StreamingIterator};
 
 use crate::{
-    Backend, QUERY_LANGUAGE, SymbolInfo,
+    Backend, LspClient, QUERY_LANGUAGE, SymbolInfo,
     util::{FORMAT_IGNORE_REGEX, INHERITS_REGEX, NodeUtil, PosUtil, TextProviderRope},
 };
 
@@ -26,8 +26,8 @@ static SEM_TOK_QUERY: LazyLock<Query> = LazyLock::new(|| {
     .unwrap()
 });
 
-pub async fn semantic_tokens_full(
-    backend: &Backend,
+pub async fn semantic_tokens_full<C: LspClient>(
+    backend: &Backend<C>,
     params: SemanticTokensParams,
 ) -> Result<Option<SemanticTokensResult>> {
     Ok(get_semantic_tokens(backend, params.text_document.uri, None)
@@ -35,8 +35,8 @@ pub async fn semantic_tokens_full(
         .map(Into::into))
 }
 
-pub async fn semantic_tokens_range(
-    backend: &Backend,
+pub async fn semantic_tokens_range<C: LspClient>(
+    backend: &Backend<C>,
     params: SemanticTokensRangeParams,
 ) -> Result<Option<SemanticTokensRangeResult>> {
     Ok(
@@ -46,8 +46,8 @@ pub async fn semantic_tokens_range(
     )
 }
 
-async fn get_semantic_tokens(
-    backend: &Backend,
+async fn get_semantic_tokens<C: LspClient>(
+    backend: &Backend<C>,
     uri: Url,
     range: Option<Range>,
 ) -> Option<SemanticTokens> {

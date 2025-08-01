@@ -12,7 +12,7 @@ use tower_lsp::{
 use tree_sitter::{QueryCursor, Tree};
 
 use crate::{
-    Backend,
+    Backend, LspClient,
     util::{
         CAPTURES_QUERY, NodeUtil, PosUtil, RangeUtil, TextProviderRope, get_current_capture_node,
         get_references,
@@ -190,8 +190,8 @@ pub fn diag_to_code_action(
     }
 }
 
-pub async fn code_action(
-    backend: &Backend,
+pub async fn code_action<C: LspClient>(
+    backend: &Backend<C>,
     params: CodeActionParams,
 ) -> Result<Option<CodeActionResponse>> {
     let uri = &params.text_document.uri;

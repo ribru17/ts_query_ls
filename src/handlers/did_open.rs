@@ -12,11 +12,11 @@ use tree_sitter::Language;
 use ts_query_ls::Options;
 
 use crate::{
-    Backend, DocumentData, ImportedUri, LanguageData, SymbolInfo,
+    Backend, DocumentData, ImportedUri, LanguageData, LspClient, SymbolInfo,
     util::{get_imported_uris, get_language, get_language_name, parse, push_diagnostics},
 };
 
-pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
+pub async fn did_open<C: LspClient>(backend: &Backend<C>, params: DidOpenTextDocumentParams) {
     let uri = params.text_document.uri;
     info!("ts_query_ls did_open: {uri}");
     let rope = Rope::from_str(&params.text_document.text);
@@ -63,7 +63,11 @@ pub async fn did_open(backend: &Backend, params: DidOpenTextDocumentParams) {
     push_diagnostics(backend, uri).await;
 }
 
-fn populate_language_info(backend: &Backend, language_name: Option<String>, options: &Options) {
+fn populate_language_info<C: LspClient>(
+    backend: &Backend<C>,
+    language_name: Option<String>,
+    options: &Options,
+) {
     let Some(language_name) = language_name else {
         return;
     };
@@ -182,10 +186,12 @@ pub fn populate_import_documents(
 mod test {
     use pretty_assertions::assert_eq;
     use tower_lsp::lsp_types::{
-        DidOpenTextDocumentParams, TextDocumentItem, notification::DidOpenTextDocument,
+        Diagnostic, DiagnosticSeverity, DidOpenTextDocumentParams, NumberOrString,
+        PublishDiagnosticsParams, TextDocumentItem, Url,
+        notification::{DidOpenTextDocument, PublishDiagnostics},
     };
 
-    use crate::test_helpers::helpers::{TEST_URI, TestService, initialize_server};
+    use crate::test_helpers::helpers::{MockRequest, TEST_URI, TestService, initialize_server};
 
     #[tokio::test(flavor = "current_thread")]
     async fn server_did_open_document() {
@@ -213,6 +219,21 @@ mod test {
         assert_eq!(
             tree.root_node().utf8_text(source.as_bytes()).unwrap(),
             doc_rope.to_string()
+        );
+        assert_eq!(
+            vec![MockRequest::from_notification::<PublishDiagnostics>(
+                PublishDiagnosticsParams {
+                    version: Some(0),
+                    uri: Url::parse("file:///tmp/queries/js/test.scm").unwrap(),
+                    diagnostics: vec![Diagnostic {
+                        message: String::from("Language object for \"js\" not found"),
+                        severity: Some(DiagnosticSeverity::WARNING),
+                        code: Some(NumberOrString::String("no-language-object".into())),
+                        ..Default::default()
+                    }]
+                }
+            )],
+            service.inner().client.get_notifications()
         );
     }
 }

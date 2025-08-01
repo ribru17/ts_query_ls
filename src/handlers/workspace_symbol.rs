@@ -12,15 +12,15 @@ use tower_lsp::{
 use tree_sitter::{QueryCursor, StreamingIterator};
 
 use crate::{
-    Backend,
+    Backend, LspClient,
     util::{
         CAPTURES_QUERY, NodeUtil, TextProviderRope, get_scm_files, get_work_done_token,
         is_subsequence, parse,
     },
 };
 
-pub async fn symbol(
-    backend: &Backend,
+pub async fn symbol<C: LspClient>(
+    backend: &Backend<C>,
     params: WorkspaceSymbolParams,
 ) -> Result<Option<Vec<SymbolInformation>>> {
     let mut symbols = Vec::new();
@@ -132,12 +132,15 @@ pub async fn symbol(
 mod test {
     use pretty_assertions::assert_eq;
     use tower_lsp::lsp_types::{
-        Location, PartialResultParams, Position, Range, SymbolInformation, SymbolKind, Url,
-        WorkDoneProgressParams, WorkspaceSymbolParams, WorkspaceSymbolResponse,
-        request::WorkspaceSymbolRequest,
+        Location, NumberOrString, PartialResultParams, Position, ProgressParams,
+        ProgressParamsValue, Range, SymbolInformation, SymbolKind, Url, WorkDoneProgress,
+        WorkDoneProgressCreateParams, WorkDoneProgressEnd, WorkDoneProgressParams,
+        WorkDoneProgressReport, WorkspaceSymbolParams, WorkspaceSymbolResponse,
+        notification::Progress,
+        request::{WorkDoneProgressCreate, WorkspaceSymbolRequest},
     };
 
-    use crate::test_helpers::helpers::{TestService, initialize_server};
+    use crate::test_helpers::helpers::{MockRequest, TestService, initialize_server};
 
     #[tokio::test(flavor = "current_thread")]
     async fn workspace_symbol() {
@@ -229,5 +232,31 @@ mod test {
             },
         ]));
         assert_eq!(expected_tokens, actual_tokens);
+        assert_eq!(
+            service.inner().client.get_requests()[0],
+            MockRequest::from_request::<WorkDoneProgressCreate>(WorkDoneProgressCreateParams {
+                token: NumberOrString::String(String::from("00000000-1111-2222-3333-444444444444"))
+            })
+        );
+        assert!(service.inner().client.get_notifications().contains(
+            &MockRequest::from_notification::<Progress>(ProgressParams {
+                token: NumberOrString::String(String::from("00000000-1111-2222-3333-444444444444")),
+                value: ProgressParamsValue::WorkDone(WorkDoneProgress::Report(
+                    WorkDoneProgressReport {
+                        message: Some(String::from("3/4 files indexed")),
+                        cancellable: Some(false),
+                        percentage: Some(75)
+                    }
+                ))
+            })
+        ));
+        assert!(service.inner().client.get_notifications().contains(
+            &MockRequest::from_notification::<Progress>(ProgressParams {
+                token: NumberOrString::String(String::from("00000000-1111-2222-3333-444444444444")),
+                value: ProgressParamsValue::WorkDone(WorkDoneProgress::End(WorkDoneProgressEnd {
+                    message: Some(String::from("4/4 files indexed"))
+                }))
+            })
+        ));
     }
 }

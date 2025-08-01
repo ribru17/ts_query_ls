@@ -26,7 +26,7 @@ use ts_query_ls::{
 };
 
 use crate::{
-    Backend, DocumentData, ImportedUri, LanguageData, QUERY_LANGUAGE, SymbolInfo,
+    Backend, DocumentData, ImportedUri, LanguageData, LspClient, QUERY_LANGUAGE, SymbolInfo,
     util::{CAPTURES_QUERY, NodeUtil as _, TextProviderRope, uri_to_basename},
 };
 
@@ -147,8 +147,8 @@ pub static IDENTIFIER_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9_-][a-zA-Z0-9_.-]*$").unwrap());
 pub static INTEGER_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^-?\d+$").unwrap());
 
-pub async fn diagnostic(
-    backend: &Backend,
+pub async fn diagnostic<C: LspClient>(
+    backend: &Backend<C>,
     params: DocumentDiagnosticParams,
 ) -> Result<DocumentDiagnosticReportResult> {
     let uri = &params.text_document.uri;
@@ -184,8 +184,8 @@ pub async fn diagnostic(
 static QUERY_SCAN_CACHE: LazyLock<DashMap<(String, String), Option<usize>>> =
     LazyLock::new(DashMap::new);
 
-async fn create_diagnostic_report(
-    backend: &Backend,
+async fn create_diagnostic_report<C: LspClient>(
+    backend: &Backend<C>,
     document: DocumentData,
     uri: &Url,
 ) -> FullDocumentDiagnosticReport {
@@ -215,10 +215,10 @@ async fn create_diagnostic_report(
     }
 }
 
-async fn add_related_diagnostics(
+async fn add_related_diagnostics<C: LspClient>(
     related_documents: &mut HashMap<Url, DocumentDiagnosticReportKind>,
     seen: &mut HashSet<Url>,
-    backend: &Backend,
+    backend: &Backend<C>,
     uri: &Url,
 ) {
     let deps = backend

@@ -6,15 +6,15 @@ use tracing::{info, warn};
 use tree_sitter::QueryCursor;
 
 use crate::{
-    Backend,
+    Backend, LspClient,
     util::{
         CAPTURES_QUERY, NodeUtil, PosUtil, TextProviderRope, get_current_capture_node,
         get_imported_module_under_cursor, get_references,
     },
 };
 
-pub async fn goto_definition(
-    backend: &Backend,
+pub async fn goto_definition<C: LspClient>(
+    backend: &Backend<C>,
     params: GotoDefinitionParams,
 ) -> Result<Option<GotoDefinitionResponse>> {
     info!("ts_query_ls goto_definition: {params:?}");

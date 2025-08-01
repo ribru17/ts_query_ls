@@ -5,9 +5,12 @@ use tower_lsp::lsp_types::{InitializeParams, InitializeResult, ServerInfo, Url};
 use tracing::info;
 
 use crate::util::set_configuration_options;
-use crate::{Backend, SERVER_CAPABILITIES};
+use crate::{Backend, LspClient, SERVER_CAPABILITIES};
 
-pub async fn initialize(backend: &Backend, params: InitializeParams) -> Result<InitializeResult> {
+pub async fn initialize<C: LspClient>(
+    backend: &Backend<C>,
+    params: InitializeParams,
+) -> Result<InitializeResult> {
     info!("ts_query_ls initialized");
     if let Ok(mut ws_uris) = backend.workspace_paths.write() {
         #[allow(deprecated)]
@@ -66,13 +69,16 @@ mod test {
         },
     };
 
-    use crate::{Backend, Options, SERVER_CAPABILITIES, test_helpers::helpers::TestService};
+    use crate::{
+        Backend, Options, SERVER_CAPABILITIES,
+        test_helpers::helpers::{MockClient, TestService},
+    };
 
     #[tokio::test(flavor = "current_thread")]
     async fn server_initialize() {
         // Arrange
-        let (mut service, _socket) = LspService::build(|client| Backend {
-            client,
+        let (mut service, _socket) = LspService::build(|_client| Backend {
+            client: MockClient::default(),
             client_capabilities: Default::default(),
             document_map: Default::default(),
             language_map: Default::default(),

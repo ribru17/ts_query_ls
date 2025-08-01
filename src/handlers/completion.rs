@@ -14,10 +14,10 @@ use crate::util::{
     CAPTURES_QUERY, NodeUtil, PosUtil, TextProviderRope, get_current_capture_node,
     get_language_name_raw, get_scm_files, node_is_or_has_ancestor, uri_to_basename,
 };
-use crate::{Backend, SymbolInfo};
+use crate::{Backend, LspClient, SymbolInfo};
 
-pub async fn completion(
-    backend: &Backend,
+pub async fn completion<C: LspClient>(
+    backend: &Backend<C>,
     params: CompletionParams,
 ) -> Result<Option<CompletionResponse>> {
     let uri = &params.text_document_position.text_document.uri;

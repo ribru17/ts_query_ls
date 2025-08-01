@@ -13,12 +13,12 @@ use tree_sitter::{
     Node, Query, QueryCursor, QueryMatch, QueryPredicateArg, StreamingIterator as _, TreeCursor,
 };
 
-use crate::Backend;
 use crate::QUERY_LANGUAGE;
 use crate::util::{ByteUtil, NodeUtil as _, TextProviderRope};
+use crate::{Backend, LspClient};
 
-pub async fn formatting(
-    backend: &Backend,
+pub async fn formatting<C: LspClient>(
+    backend: &Backend<C>,
     params: DocumentFormattingParams,
 ) -> Result<Option<Vec<TextEdit>>> {
     let uri = &params.text_document.uri;
@@ -34,8 +34,8 @@ pub async fn formatting(
     }))
 }
 
-pub async fn range_formatting(
-    backend: &Backend,
+pub async fn range_formatting<C: LspClient>(
+    backend: &Backend<C>,
     params: DocumentRangeFormattingParams,
 ) -> Result<Option<Vec<TextEdit>>> {
     let uri = &params.text_document.uri;
