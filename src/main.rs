@@ -169,8 +169,44 @@ struct LanguageData {
     language: Language,
 }
 
-struct Backend {
-    client: Client,
+trait LspClient: Send + Sync + 'static {
+    fn send_request<R>(
+        &self,
+        params: R::Params,
+    ) -> impl std::future::Future<Output = tower_lsp::jsonrpc::Result<R::Result>> + Send
+    where
+        R: tower_lsp::lsp_types::request::Request,
+        <R as tower_lsp::lsp_types::request::Request>::Params: Send;
+
+    fn send_notification<N>(
+        &self,
+        params: N::Params,
+    ) -> impl std::future::Future<Output = ()> + std::marker::Send
+    where
+        N: tower_lsp::lsp_types::notification::Notification,
+        <N as tower_lsp::lsp_types::notification::Notification>::Params: Send;
+}
+
+impl LspClient for Client {
+    async fn send_request<R>(&self, params: R::Params) -> tower_lsp::jsonrpc::Result<R::Result>
+    where
+        R: tower_lsp::lsp_types::request::Request,
+        <R as tower_lsp::lsp_types::request::Request>::Params: Send,
+    {
+        self.send_request::<R>(params).await
+    }
+
+    async fn send_notification<N>(&self, params: N::Params)
+    where
+        N: tower_lsp::lsp_types::notification::Notification,
+        <N as tower_lsp::lsp_types::notification::Notification>::Params: Send,
+    {
+        self.send_notification::<N>(params).await
+    }
+}
+
+struct Backend<C: LspClient> {
+    client: C,
     client_capabilities: Arc<tokio::sync::RwLock<ClientCapabilities>>,
     document_map: DashMap<Url, DocumentData>,
     language_map: DashMap<String, Arc<LanguageData>>,
@@ -181,7 +217,7 @@ struct Backend {
 }
 
 #[tower_lsp::async_trait]
-impl LanguageServer for Backend {
+impl<C: LspClient> LanguageServer for Backend<C> {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
         initialize::initialize(self, params).await
     }

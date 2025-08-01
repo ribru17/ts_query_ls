@@ -13,9 +13,10 @@ use tower_lsp::{
     LanguageServer,
     lsp_types::{
         DocumentDiagnosticParams, DocumentDiagnosticReport, DocumentDiagnosticReportKind,
-        DocumentDiagnosticReportResult, NumberOrString, Position, ProgressToken, Range,
-        RelatedFullDocumentDiagnosticReport, TextDocumentContentChangeEvent,
-        TextDocumentIdentifier, Url, WorkDoneProgressCreateParams, request::WorkDoneProgressCreate,
+        DocumentDiagnosticReportResult, NumberOrString, Position, ProgressToken,
+        PublishDiagnosticsParams, Range, RelatedFullDocumentDiagnosticReport,
+        TextDocumentContentChangeEvent, TextDocumentIdentifier, Url, WorkDoneProgressCreateParams,
+        notification::PublishDiagnostics, request::WorkDoneProgressCreate,
     },
 };
 use tracing::{error, warn};
@@ -24,7 +25,7 @@ use tree_sitter::{
     WasmStore,
 };
 
-use crate::{Backend, DocumentData, ENGINE, ImportedUri, Options, QUERY_LANGUAGE};
+use crate::{Backend, DocumentData, ENGINE, ImportedUri, LspClient, Options, QUERY_LANGUAGE};
 
 pub static CAPTURES_QUERY: LazyLock<Query> =
     LazyLock::new(|| Query::new(&QUERY_LANGUAGE, "(capture) @cap").unwrap());
@@ -396,8 +397,8 @@ fn get_first_valid_file_config(workspace_uris: Vec<PathBuf>) -> Option<Options> 
     None
 }
 
-pub async fn set_configuration_options(
-    backend: &Backend,
+pub async fn set_configuration_options<C: LspClient>(
+    backend: &Backend<C>,
     init_options: Option<Value>,
     workspace_uris: Vec<PathBuf>,
 ) {
@@ -615,7 +616,7 @@ pub fn get_imported_module_under_cursor<'d>(
 }
 
 /// Push diagnostics to the client (only if it does not support pull diagnostics).
-pub async fn push_diagnostics(backend: &Backend, uri: Url) {
+pub async fn push_diagnostics<C: LspClient>(backend: &Backend<C>, uri: Url) {
     if backend
         .client_capabilities
         .read()
@@ -656,7 +657,11 @@ pub async fn push_diagnostics(backend: &Backend, uri: Url) {
         {
             backend
                 .client
-                .publish_diagnostics(uri, full_document_diagnostic_report.items, version)
+                .send_notification::<PublishDiagnostics>(PublishDiagnosticsParams::new(
+                    uri,
+                    full_document_diagnostic_report.items,
+                    version,
+                ))
                 .await;
 
             for (uri, report) in related_documents.unwrap_or_default() {
@@ -666,7 +671,11 @@ pub async fn push_diagnostics(backend: &Backend, uri: Url) {
                 {
                     backend
                         .client
-                        .publish_diagnostics(uri, report.items, Some(version))
+                        .send_notification::<PublishDiagnostics>(PublishDiagnosticsParams::new(
+                            uri,
+                            report.items,
+                            Some(version),
+                        ))
                         .await;
                 }
             }
@@ -674,10 +683,20 @@ pub async fn push_diagnostics(backend: &Backend, uri: Url) {
     }
 }
 
+#[cfg(not(test))]
+fn make_uuid() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
+
+#[cfg(test)]
+fn make_uuid() -> String {
+    "00000000-1111-2222-3333-444444444444".to_string()
+}
+
 /// Return the given progress token, or create one and issue a new work done request (if the client
 /// supports them) if it does not exist.
-pub async fn get_work_done_token(
-    backend: &Backend,
+pub async fn get_work_done_token<C: LspClient>(
+    backend: &Backend<C>,
     work_done_token: Option<ProgressToken>,
 ) -> Option<ProgressToken> {
     if let Some(token) = work_done_token {
@@ -690,7 +709,7 @@ pub async fn get_work_done_token(
         .as_ref()
         .is_some_and(|w| w.work_done_progress == Some(true))
     {
-        let token = NumberOrString::String(uuid::Uuid::new_v4().to_string());
+        let token = NumberOrString::String(make_uuid());
 
         if let Err(error) = backend
             .client

@@ -1,8 +1,11 @@
 use tower_lsp::lsp_types::DidChangeConfigurationParams;
 
-use crate::{Backend, util::set_configuration_options};
+use crate::{Backend, LspClient, util::set_configuration_options};
 
-pub async fn did_change_configuration(backend: &Backend, params: DidChangeConfigurationParams) {
+pub async fn did_change_configuration<C: LspClient>(
+    backend: &Backend<C>,
+    params: DidChangeConfigurationParams,
+) {
     set_configuration_options(
         backend,
         Some(params.settings),

@@ -9,7 +9,7 @@ use tree_sitter::Query;
 use ts_query_ls::{ParameterConstraint, PredicateParameterType};
 
 use crate::{
-    Backend, QUERY_LANGUAGE, SymbolInfo,
+    Backend, LspClient, QUERY_LANGUAGE, SymbolInfo,
     util::{
         FORMAT_IGNORE_REGEX, INHERITS_REGEX, NodeUtil, PosUtil, capture_at_pos,
         get_imported_module_under_cursor, uri_to_basename,
@@ -50,7 +50,10 @@ static DOCS: LazyLock<HashMap<&'static str, &'static str>> = include_docs_map!(
     "format-ignore",
 );
 
-pub async fn hover(backend: &Backend, params: HoverParams) -> Result<Option<Hover>> {
+pub async fn hover<C: LspClient>(
+    backend: &Backend<C>,
+    params: HoverParams,
+) -> Result<Option<Hover>> {
     let uri = &params.text_document_position_params.text_document.uri;
     let position = params.text_document_position_params.position;
     let options = backend.options.read().await;

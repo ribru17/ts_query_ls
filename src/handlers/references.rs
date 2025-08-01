@@ -3,14 +3,15 @@ use tower_lsp::lsp_types::{Location, ReferenceParams};
 use tracing::warn;
 use tree_sitter::QueryCursor;
 
+use crate::LspClient;
 use crate::util::{CAPTURES_QUERY, NodeUtil, PosUtil};
 use crate::{
     Backend,
     util::{TextProviderRope, get_current_capture_node, get_references},
 };
 
-pub async fn references(
-    backend: &Backend,
+pub async fn references<C: LspClient>(
+    backend: &Backend<C>,
     params: ReferenceParams,
 ) -> Result<Option<Vec<Location>>> {
     let uri = &params.text_document_position.text_document.uri;

@@ -1,22 +1,22 @@
 #[cfg(test)]
 pub mod helpers {
-    use serde_json::to_value;
+    use serde_json::{Value, to_value};
 
-    use std::sync::LazyLock;
+    use std::sync::{LazyLock, Mutex};
     use tower::{Service, ServiceExt};
 
     use tower_lsp::{
         LspService,
         jsonrpc::{Request, Response},
         lsp_types::{
-            ClientCapabilities, DiagnosticClientCapabilities, DidOpenTextDocumentParams,
-            InitializeParams, Position, Range, TextDocumentClientCapabilities,
-            TextDocumentContentChangeEvent, TextDocumentItem, TextEdit, Url, WorkspaceFolder,
-            notification::DidOpenTextDocument, request::Initialize,
+            ClientCapabilities, DidOpenTextDocumentParams, InitializeParams, Position, Range,
+            TextDocumentContentChangeEvent, TextDocumentItem, TextEdit, Url,
+            WindowClientCapabilities, WorkspaceFolder, notification::DidOpenTextDocument,
+            request::Initialize,
         },
     };
 
-    use crate::{Backend, Options};
+    use crate::{Backend, LspClient, Options};
 
     pub static TEST_URI: LazyLock<Url> =
         LazyLock::new(|| Url::parse("file:///tmp/queries/js/test.scm").unwrap());
@@ -47,11 +47,8 @@ pub mod helpers {
 
     pub static TEST_CLIENT_CAPABILITIES: LazyLock<ClientCapabilities> =
         LazyLock::new(|| ClientCapabilities {
-            text_document: Some(TextDocumentClientCapabilities {
-                diagnostic: Some(DiagnosticClientCapabilities {
-                    dynamic_registration: Some(false),
-                    related_document_support: Some(true),
-                }),
+            window: Some(WindowClientCapabilities {
+                work_done_progress: Some(true),
                 ..Default::default()
             }),
             ..Default::default()
@@ -63,14 +60,88 @@ pub mod helpers {
     /// A tuple holding the document's URI and source text.
     pub type Document<'a> = (Url, &'a str);
 
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct MockRequest {
+        method: String,
+        params: Value,
+    }
+
+    impl MockRequest {
+        pub fn from_request<R>(params: R::Params) -> MockRequest
+        where
+            R: tower_lsp::lsp_types::request::Request,
+        {
+            MockRequest {
+                method: R::METHOD.to_string(),
+                params: serde_json::to_value(params).expect("Invalid parameters"),
+            }
+        }
+
+        pub fn from_notification<R>(params: R::Params) -> MockRequest
+        where
+            R: tower_lsp::lsp_types::notification::Notification,
+        {
+            MockRequest {
+                method: R::METHOD.to_string(),
+                params: serde_json::to_value(params).expect("Invalid parameters"),
+            }
+        }
+    }
+
+    #[derive(Default)]
+    pub struct MockClient {
+        notifications: Mutex<Vec<MockRequest>>,
+        requests: Mutex<Vec<MockRequest>>,
+    }
+
+    impl MockClient {
+        pub fn get_requests(&self) -> Vec<MockRequest> {
+            self.requests.try_lock().unwrap().clone()
+        }
+
+        pub fn get_notifications(&self) -> Vec<MockRequest> {
+            self.notifications.try_lock().unwrap().clone()
+        }
+    }
+
+    impl LspClient for MockClient {
+        async fn send_notification<N>(&self, params: N::Params)
+        where
+            N: tower_lsp::lsp_types::notification::Notification,
+        {
+            self.notifications.try_lock().unwrap().push(MockRequest {
+                method: N::METHOD.into(),
+                params: serde_json::to_value(params).unwrap(),
+            });
+        }
+
+        async fn send_request<R>(&self, params: R::Params) -> tower_lsp::jsonrpc::Result<R::Result>
+        where
+            R: tower_lsp::lsp_types::request::Request,
+        {
+            self.requests.try_lock().unwrap().push(MockRequest {
+                method: R::METHOD.into(),
+                params: serde_json::to_value(params).unwrap(),
+            });
+            // TODO: Sometimes a proper response must be returned, in which case this will give a serde
+            // parse error. This should be handled.
+            let response = ();
+            serde_json::from_value(response.into()).map_err(|e| tower_lsp::jsonrpc::Error {
+                code: tower_lsp::jsonrpc::ErrorCode::ParseError,
+                message: e.to_string().into(),
+                data: None,
+            })
+        }
+    }
+
     /// Initialize a test server, populating it with fake documents denoted by (uri, text, symbols, fields) tuples.
     pub async fn initialize_server(
         documents: &[Document<'_>],
         options: &Options,
-    ) -> LspService<Backend> {
+    ) -> LspService<Backend<MockClient>> {
         let options_value = serde_json::to_value(options).unwrap();
-        let (mut service, _socket) = LspService::build(|client| Backend {
-            client,
+        let (mut service, _socket) = LspService::build(|_client| Backend {
+            client: MockClient::default(),
             client_capabilities: Default::default(),
             document_map: Default::default(),
             language_map: Default::default(),
@@ -124,7 +195,7 @@ pub mod helpers {
             R: tower_lsp::lsp_types::notification::Notification;
     }
 
-    impl TestService for LspService<Backend> {
+    impl TestService for LspService<Backend<MockClient>> {
         async fn request<R>(&mut self, request: R::Params) -> R::Result
         where
             R: tower_lsp::lsp_types::request::Request,
@@ -154,7 +225,7 @@ pub mod helpers {
         }
     }
 
-    // An equivalent function is provided but it is private
+    // Equivalent functions exist in tower-lsp but they are private
     fn lsp_request_to_jsonrpc_request<R>(params: R::Params) -> Request
     where
         R: tower_lsp::lsp_types::request::Request,

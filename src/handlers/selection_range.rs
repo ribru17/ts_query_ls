@@ -5,12 +5,12 @@ use tower_lsp::{
 use tracing::warn;
 
 use crate::{
-    Backend,
+    Backend, LspClient,
     util::{NodeUtil, PosUtil},
 };
 
-pub async fn selection_range(
-    backend: &Backend,
+pub async fn selection_range<C: LspClient>(
+    backend: &Backend<C>,
     params: SelectionRangeParams,
 ) -> Result<Option<Vec<SelectionRange>>> {
     let uri = params.text_document.uri;

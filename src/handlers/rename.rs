@@ -9,7 +9,7 @@ use tracing::warn;
 use tree_sitter::QueryCursor;
 
 use crate::{
-    Backend,
+    Backend, LspClient,
     util::{
         CAPTURES_QUERY, NodeUtil, PosUtil, TextProviderRope, get_current_capture_node,
         get_references,
@@ -18,7 +18,10 @@ use crate::{
 
 use super::diagnostic::IDENTIFIER_REGEX;
 
-pub async fn rename(backend: &Backend, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
+pub async fn rename<C: LspClient>(
+    backend: &Backend<C>,
+    params: RenameParams,
+) -> Result<Option<WorkspaceEdit>> {
     let uri = &params.text_document_position.text_document.uri;
     let Some(doc) = backend.document_map.get(uri) else {
         warn!("No document found for URI: {uri} when handling rename");

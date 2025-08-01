@@ -1,9 +1,9 @@
 use tower_lsp::lsp_types::DidCloseTextDocumentParams;
 use tracing::{info, warn};
 
-use crate::Backend;
+use crate::{Backend, LspClient};
 
-pub async fn did_close(backend: &Backend, params: DidCloseTextDocumentParams) {
+pub async fn did_close<C: LspClient>(backend: &Backend<C>, params: DidCloseTextDocumentParams) {
     let uri = &params.text_document.uri;
     info!("ts_query_ls did_close: {uri}");
     if backend.document_map.remove(uri).is_none() {

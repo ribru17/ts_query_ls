@@ -2,13 +2,13 @@ use tower_lsp::lsp_types::{DidChangeTextDocumentParams, Position, Range};
 use tracing::warn;
 
 use crate::{
-    Backend,
+    Backend, LspClient,
     util::{ByteUtil, TextDocChangeUtil, edit_rope, get_imported_uris, parse, push_diagnostics},
 };
 
 use super::did_open::populate_import_documents;
 
-pub async fn did_change(backend: &Backend, params: DidChangeTextDocumentParams) {
+pub async fn did_change<C: LspClient>(backend: &Backend<C>, params: DidChangeTextDocumentParams) {
     let uri = params.text_document.uri;
     let Some(mut document) = backend.document_map.get_mut(&uri) else {
         warn!("No document found for URI: {uri} when handling did_change");
@@ -166,5 +166,6 @@ mod test {
             tree.root_node().utf8_text(expected.as_bytes()).unwrap(),
             expected
         );
+        assert_eq!(2, service.inner().client.get_notifications().len());
     }
 }

@@ -6,12 +6,12 @@ use tracing::warn;
 use tree_sitter::{QueryCursor, StreamingIterator};
 
 use crate::{
-    Backend,
+    Backend, LspClient,
     util::{CAPTURES_QUERY, NodeUtil, TextProviderRope},
 };
 
-pub async fn document_symbol(
-    backend: &Backend,
+pub async fn document_symbol<C: LspClient>(
+    backend: &Backend<C>,
     params: DocumentSymbolParams,
 ) -> Result<Option<DocumentSymbolResponse>> {
     let uri = &params.text_document.uri;
