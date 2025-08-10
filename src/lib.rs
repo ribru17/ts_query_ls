@@ -22,7 +22,6 @@ struct PredicateAux {
     /// A short description of the predicate (in Markdown format).
     description: String,
     /// The list of valid parameter types.
-    #[cfg_attr(feature = "schema", schemars(length(min = 1)))]
     parameters: Vec<PredicateParameter>,
     /// Whether this predicate supports a `not-` prefixed variant. Defaults to `true`.
     #[serde(default = "default_true")]

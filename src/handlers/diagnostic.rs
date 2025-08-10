@@ -54,7 +54,6 @@ enum DiagnosticCode<'a> {
     UnnecessaryPattern,
     ImportNameMissing,
     ImportNotFound,
-    EmptyParameterSpec,
     ParameterTypeMismatch,
     InvalidNamedNode,
     InvalidInteger,
@@ -94,7 +93,6 @@ impl From<DiagnosticCode<'_>> for Option<NumberOrString> {
             DiagnosticCode::ImportIssues => "import-issues",
             DiagnosticCode::ImportNameMissing => "import-name-missing",
             DiagnosticCode::ImportNotFound => "import-not-found",
-            DiagnosticCode::EmptyParameterSpec => "empty-parameter-spec",
             DiagnosticCode::ParameterTypeMismatch => "parameter-type-mismatch",
             DiagnosticCode::InvalidNamedNode => "invalid-named-node",
             DiagnosticCode::InvalidInteger => "invalid-integer",
@@ -852,21 +850,9 @@ fn validate_predicate<'a>(
     predicate_params: &[PredicateParameter],
     predicate_node: Node<'a>,
 ) {
-    let params_node = predicate_node.parent().unwrap().named_child(2).unwrap();
+    let params_node = predicate_node.parent().unwrap().named_child(2);
     let mut param_spec_iter = predicate_params.iter().peekable();
-    let mut prev_param_spec = match param_spec_iter.peek() {
-        Some(p) => *p,
-        None => {
-            diagnostics.push(Diagnostic {
-                message: String::from("Parameter specification must not be empty"),
-                severity: WARNING_SEVERITY,
-                range: params_node.lsp_range(rope),
-                code: DiagnosticCode::EmptyParameterSpec.into(),
-                ..Default::default()
-            });
-            return;
-        }
-    };
+    let mut prev_param_spec = param_spec_iter.peek().copied();
 
     let param_type_mismatch = |param: Node, param_spec: &PredicateParameter| {
         let range = param.lsp_range(rope);
@@ -948,27 +934,28 @@ fn validate_predicate<'a>(
         }
     };
 
-    for param in params_node.children(tree_cursor) {
-        if param.is_missing() {
-            // At least one parameter must be passed; this will be caught by the MISSING syntax
-            // error diagnostic.
-            break;
-        }
-        if let Some(param_spec) = param_spec_iter.next() {
-            if let Some(diag) = param_type_mismatch(param, param_spec) {
-                diagnostics.push(diag);
+    if let Some(params_node) = params_node {
+        for param in params_node.children(tree_cursor) {
+            if let Some(param_spec) = param_spec_iter.next() {
+                if let Some(diag) = param_type_mismatch(param, param_spec) {
+                    diagnostics.push(diag);
+                }
+                prev_param_spec = Some(param_spec);
+            } else if let Some(prev_param_spec) =
+                prev_param_spec.filter(|p| p.arity == PredicateParameterArity::Variadic)
+            {
+                if let Some(diag) = param_type_mismatch(param, prev_param_spec) {
+                    diagnostics.push(diag);
+                }
+            } else {
+                diagnostics.push(Diagnostic {
+                    message: format!("Unexpected parameter: \"{}\"", param.text(rope)),
+                    severity: WARNING_SEVERITY,
+                    range: param.lsp_range(rope),
+                    code: DiagnosticCode::UnexpectedParameter.into(),
+                    ..Default::default()
+                });
             }
-            prev_param_spec = param_spec;
-        } else if prev_param_spec.arity != PredicateParameterArity::Variadic {
-            diagnostics.push(Diagnostic {
-                message: format!("Unexpected parameter: \"{}\"", param.text(rope),),
-                severity: WARNING_SEVERITY,
-                range: param.lsp_range(rope),
-                code: DiagnosticCode::UnexpectedParameter.into(),
-                ..Default::default()
-            });
-        } else if let Some(diag) = param_type_mismatch(param, prev_param_spec) {
-            diagnostics.push(diag);
         }
     }
     if let Some(PredicateParameter {
@@ -2354,6 +2341,80 @@ mod test {
                 })
             )
         ])),
+    )]
+    #[case(
+        &[(
+            QUERY_TEST_URI.clone(),
+            r#"((_) @cap (#offset!))"#,
+        )],
+        Options {
+            valid_directives: BTreeMap::from([(String::from("offset"), Predicate {
+                description: String::from("Offsets a node's range"),
+                parameters: vec![],
+            })]),
+            ..Default::default()
+        },
+        &[],
+        None,
+    )]
+    #[case(
+        &[(
+            QUERY_TEST_URI.clone(),
+            r#"((_) @cap (#offset!))"#,
+        )],
+        Options {
+            valid_directives: BTreeMap::from([(String::from("offset"), Predicate {
+                description: String::from("Offsets a node's range"),
+                parameters: vec![
+                    PredicateParameter {
+                        type_: PredicateParameterType::String,
+                        constraint: ParameterConstraint::Enum(vec![String::from("squid"), String::from("ward")]),
+                        ..Default::default()
+                    },
+                ],
+            })]),
+            ..Default::default()
+        },
+        &[
+            Diagnostic {
+                range: Range::new(Position::new(0, 10), Position::new(0, 20)),
+                severity: WARNING_SEVERITY,
+                message: String::from("Missing parameter of type \"string\""),
+                code: DiagnosticCode::MissingParameter.into(),
+                ..Default::default()
+            },
+        ],
+        None,
+    )]
+    #[case(
+        &[(
+            QUERY_TEST_URI.clone(),
+            r#"((_) @cap (#offset! foo bar))"#,
+        )],
+        Options {
+            valid_directives: BTreeMap::from([(String::from("offset"), Predicate {
+                description: String::from("Offsets a node's range"),
+                parameters: vec![],
+            })]),
+            ..Default::default()
+        },
+        &[
+            Diagnostic {
+                range: Range::new(Position::new(0, 20), Position::new(0, 23)),
+                severity: WARNING_SEVERITY,
+                message: String::from("Unexpected parameter: \"foo\""),
+                code: DiagnosticCode::UnexpectedParameter.into(),
+                ..Default::default()
+            },
+            Diagnostic {
+                range: Range::new(Position::new(0, 24), Position::new(0, 27)),
+                severity: WARNING_SEVERITY,
+                message: String::from("Unexpected parameter: \"bar\""),
+                code: DiagnosticCode::UnexpectedParameter.into(),
+                ..Default::default()
+            },
+        ],
+        None,
     )]
     #[tokio::test(flavor = "current_thread")]
     async fn server_diagnostics(
