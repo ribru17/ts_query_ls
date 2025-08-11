@@ -211,7 +211,6 @@ pub struct Predicate {
     /// A short description of the predicate (in Markdown format).
     pub description: String,
     /// The list of valid parameter types.
-    #[cfg_attr(feature = "schema", schemars(length(min = 1)))]
     pub parameters: Vec<PredicateParameter>,
 }
 
