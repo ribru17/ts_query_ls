@@ -162,8 +162,7 @@
           "type": "array",
           "items": {
             "$ref": "#/definitions/PredicateParameter"
-          },
-          "minItems": 1
+          }
         }
       }
     },
