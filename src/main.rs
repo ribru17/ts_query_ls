@@ -105,7 +105,7 @@ static SERVER_CAPABILITIES: LazyLock<ServerCapabilities> = LazyLock::new(|| Serv
     ..Default::default()
 });
 static ENGINE: LazyLock<Engine> = LazyLock::new(Engine::default);
-static QUERY_LANGUAGE: LazyLock<Language> = LazyLock::new(|| tree_sitter_query::LANGUAGE.into());
+static QUERY_LANGUAGE: LazyLock<Language> = LazyLock::new(|| tree_sitter_tsquery::LANGUAGE.into());
 
 #[derive(PartialEq, Eq, Hash, Clone, PartialOrd, Ord, Debug)]
 struct SymbolInfo {
