@@ -56,6 +56,12 @@ A list of strings representing directories to search for parsers, of the form
 
 Supports environment variable expansion of the form `${VAR}`.
 
+**NOTE:** Directories are **NOT** searched recursively. Only immediate children
+will be scanned. If you have the sort of file structure where each parser object
+is stored in its own directory, consider creating one main directory which
+contains symlinks to all of your parsers, and pass that as your parser install
+directory.
+
 #### `parser_aliases`
 
 A map of parser aliases. E.g., to point `queries/ecma/*.scm` files to the
