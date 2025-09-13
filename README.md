@@ -186,6 +186,20 @@ If both properties are `true`, then there will be a predicate of the form
 
 Same as `valid_predicates`, but for directives (e.g. `#foo!`).
 
+#### `supported_abi_versions`
+
+An inclusive range of ABI versions supported by your tool. The end of the range
+must be greater than or equal to the start.
+
+```json
+{
+  "supported_abi_versions": {
+    "start": 13,
+    "end": 15
+  }
+}
+```
+
 ### Example setup (for Neovim):
 
 ```lua
@@ -226,19 +240,14 @@ vim.api.nvim_create_autocmd('FileType', {
 })
 ```
 
-#### `supported_abi_versions`
+### Run in VSCode
 
-An inclusive range of ABI versions supported by your tool. The end of the range
-must be greater than or equal to the start.
-
-```json
-{
-  "supported_abi_versions": {
-    "start": 13,
-    "end": 15
-  }
-}
-```
+This repo provides a very minimal extension for usage within VSCode. First,
+ensure you have a `scheme` extension installed for VSCode to recognize `.scm`
+files as the `scheme` file type. Next, enter the `client/vscode` directory and
+install dependencies with `npm i`. From that directory, start VSCode (`code .`).
+Then you can press `F5`, or go into the debug menu and click `Run Extension`,
+and this will activate the extension, building and starting the language server.
 
 ## Features
 
