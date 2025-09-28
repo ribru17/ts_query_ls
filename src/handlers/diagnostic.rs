@@ -544,13 +544,12 @@ async fn get_diagnostics_recursively(
                     let mut seen = HashSet::new();
                     for child in capture.node.named_children(&mut tree_cursor) {
                         let kind = child.kind();
-                        if child.kind() == "capture" {
-                            break;
-                        }
-                        if kind == "comment" {
-                            continue;
-                        }
-                        let named = kind.starts_with("named");
+                        let named = match kind {
+                            "named_node" => true,
+                            "anonymous_node" => false,
+                            "capture" => break,
+                            _ => continue,
+                        };
                         if named && child.named_child(1).is_some_and(|c| c.kind() != "capture") {
                             continue;
                         }
@@ -600,12 +599,13 @@ async fn get_diagnostics_recursively(
                         provider,
                     );
                     let mut valid = false;
-                    'outer: while let Some(m) = matches.next() {
-                        for cap in m.captures {
-                            if cap.node.text(rope) == capture_text {
-                                valid = true;
-                                break 'outer;
-                            }
+                    while let Some(m) = matches.next() {
+                        if m.captures
+                            .iter()
+                            .any(|cap| cap.node.text(rope) == capture_text)
+                        {
+                            valid = true;
+                            break;
                         }
                     }
                     if !valid {
@@ -643,12 +643,13 @@ async fn get_diagnostics_recursively(
                                 provider,
                             );
                             let mut valid = false;
-                            'outer: while let Some(m) = matches.next() {
-                                for cap in m.captures {
-                                    if cap.node.text(rope) == capture_text {
-                                        valid = true;
-                                        break 'outer;
-                                    }
+                            while let Some(m) = matches.next() {
+                                if m.captures
+                                    .iter()
+                                    .any(|cap| cap.node.text(rope) == capture_text)
+                                {
+                                    valid = true;
+                                    break;
                                 }
                             }
                             if !valid {
@@ -2461,6 +2462,8 @@ mod test {
             r#"[ (identifier) (identifier) "MISSING" "MISSING" "MISSING" @foo _ _
               ; comment
               ; comment
+              name: (_)
+              name: (_)
             ] @foo @foo"#,
         )],
         Options {
