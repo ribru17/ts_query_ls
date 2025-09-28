@@ -64,6 +64,7 @@ enum DiagnosticCode<'a> {
     // Hints
     UnnecessaryQuotations,
     UnquotedString,
+    RedundantAlternant,
 
     // Special
     ImportIssues,
@@ -99,6 +100,7 @@ impl From<DiagnosticCode<'_>> for Option<NumberOrString> {
             DiagnosticCode::InvalidEnumMember => "invalid-enum-member",
             DiagnosticCode::UnexpectedParameter => "unexpected-parameter",
             DiagnosticCode::MissingParameter => "missing-parameter",
+            DiagnosticCode::RedundantAlternant => "redundant-alternant",
         };
         Some(NumberOrString::String(String::from(string_slice)))
     }
@@ -500,7 +502,7 @@ async fn get_diagnostics_recursively(
                                 message: format!("Node \"{subtype_text}\" is not a subtype of \"{supertype_text}\""),
                                 severity: ERROR_SEVERITY,
                                 range,
-                code: DiagnosticCode::InvalidSubtype.into(),
+                                code: DiagnosticCode::InvalidSubtype.into(),
                                 ..Default::default()
                             });
                         } else if subtypes.is_empty() && !symbols.contains(&subtype_sym) {
@@ -536,6 +538,43 @@ async fn get_diagnostics_recursively(
                             code: DiagnosticCode::InvalidField.into(),
                             ..Default::default()
                         });
+                    }
+                }
+                "alternation" => {
+                    let mut seen = HashSet::new();
+                    for child in capture.node.named_children(&mut tree_cursor) {
+                        let kind = child.kind();
+                        if child.kind() == "capture" {
+                            break;
+                        }
+                        if kind == "comment" {
+                            continue;
+                        }
+                        let named = kind.starts_with("named");
+                        if named && child.named_child(1).is_some_and(|c| c.kind() != "capture") {
+                            continue;
+                        }
+                        let content_node = child.named_child(0).unwrap_or(child);
+                        let id = (content_node.text(rope), named);
+                        if !seen.contains(&id) {
+                            seen.insert(id);
+                        } else {
+                            diagnostics.push(Diagnostic {
+                                message: format!(
+                                    "{} already captured by this alternation (fix available)",
+                                    if named {
+                                        ["(", id.0.as_str(), ")"].concat()
+                                    } else {
+                                        id.0
+                                    },
+                                ),
+                                severity: HINT_SEVERITY,
+                                range: child.lsp_range(rope),
+                                data: Some(CodeActions::Remove.into()),
+                                code: DiagnosticCode::RedundantAlternant.into(),
+                                ..Default::default()
+                            });
+                        }
                     }
                 }
                 "error" => diagnostics.push(Diagnostic {
@@ -681,7 +720,7 @@ async fn get_diagnostics_recursively(
                             severity: WARNING_SEVERITY,
                             tags: Some(vec![DiagnosticTag::UNNECESSARY]),
                             data: Some(CodeActions::Remove.into()),
-                code: DiagnosticCode::UnnecessaryPattern.into(),
+                            code: DiagnosticCode::UnnecessaryPattern.into(),
                             ..Default::default()
                         });
                     }
@@ -2411,6 +2450,57 @@ mod test {
                 severity: WARNING_SEVERITY,
                 message: String::from("Unexpected parameter: \"bar\""),
                 code: DiagnosticCode::UnexpectedParameter.into(),
+                ..Default::default()
+            },
+        ],
+        None,
+    )]
+    #[case(
+        &[(
+            QUERY_TEST_URI.clone(),
+            r#"[ (identifier) (identifier) "MISSING" "MISSING" "MISSING" @foo _ _
+              ; comment
+              ; comment
+            ] @foo @foo"#,
+        )],
+        Options {
+            valid_directives: BTreeMap::from([(String::from("offset"), Predicate {
+                description: String::from("Offsets a node's range"),
+                parameters: vec![],
+            })]),
+            ..Default::default()
+        },
+        &[
+            Diagnostic {
+                range: Range::new(Position::new(0, 15), Position::new(0, 27)),
+                severity: HINT_SEVERITY,
+                message: String::from("(identifier) already captured by this alternation (fix available)"),
+                code: DiagnosticCode::RedundantAlternant.into(),
+                data: Some(CodeActions::Remove.into()),
+                ..Default::default()
+            },
+            Diagnostic {
+                range: Range::new(Position::new(0, 38), Position::new(0, 47)),
+                severity: HINT_SEVERITY,
+                message: String::from("\"MISSING\" already captured by this alternation (fix available)"),
+                code: DiagnosticCode::RedundantAlternant.into(),
+                data: Some(CodeActions::Remove.into()),
+                ..Default::default()
+            },
+            Diagnostic {
+                range: Range::new(Position::new(0, 48), Position::new(0, 62)),
+                severity: HINT_SEVERITY,
+                message: String::from("\"MISSING\" already captured by this alternation (fix available)"),
+                code: DiagnosticCode::RedundantAlternant.into(),
+                data: Some(CodeActions::Remove.into()),
+                ..Default::default()
+            },
+            Diagnostic {
+                range: Range::new(Position::new(0, 65), Position::new(0, 66)),
+                severity: HINT_SEVERITY,
+                message: String::from("_ already captured by this alternation (fix available)"),
+                code: DiagnosticCode::RedundantAlternant.into(),
+                data: Some(CodeActions::Remove.into()),
                 ..Default::default()
             },
         ],
