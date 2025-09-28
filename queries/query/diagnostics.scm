@@ -4,6 +4,8 @@
 
 (escape_sequence) @escape
 
+(list) @alternation
+
 (anonymous_node
   (string
     (string_content) @node.anon))
