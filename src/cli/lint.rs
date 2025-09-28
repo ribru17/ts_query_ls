@@ -13,7 +13,8 @@ use ts_query_ls::Options;
 use crate::{
     DocumentData, LanguageData,
     handlers::{
-        code_action::diag_to_code_action, diagnostic::get_diagnostics,
+        code_action::diag_to_code_action,
+        diagnostic::{DiagnosticCode, get_diagnostics},
         did_open::populate_import_documents,
     },
     util::{edit_rope, get_imported_uris, get_language_name, get_scm_files, parse},
@@ -103,7 +104,7 @@ pub(super) async fn lint_file(
                 );
             }
         } else {
-            let is_module_diagnostic = diagnostic.related_information.is_some();
+            let is_module_diagnostic = diagnostic.code == DiagnosticCode::ImportIssues.into();
             let Some(action) = diag_to_code_action(&doc.tree, &doc.rope, diagnostic, uri) else {
                 if !is_module_diagnostic {
                     unfixed_issues += 1;

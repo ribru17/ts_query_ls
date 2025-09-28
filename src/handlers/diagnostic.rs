@@ -32,7 +32,7 @@ use crate::{
 
 use super::code_action::CodeActions;
 
-enum DiagnosticCode<'a> {
+pub enum DiagnosticCode {
     // Errors
     InvalidPatternStructure,
     InvalidNode,
@@ -49,7 +49,8 @@ enum DiagnosticCode<'a> {
     InvalidAbi,
     InvalidCaptureName,
     UnusedAuxiliaryCapture,
-    UnrecognizedFunction(&'a str),
+    UnrecognizedPredicate,
+    UnrecognizedDirective,
     UnnecessaryEscapeSequence,
     UnnecessaryPattern,
     ImportNameMissing,
@@ -70,7 +71,7 @@ enum DiagnosticCode<'a> {
     ImportIssues,
 }
 
-impl From<DiagnosticCode<'_>> for Option<NumberOrString> {
+impl From<DiagnosticCode> for Option<NumberOrString> {
     fn from(value: DiagnosticCode) -> Self {
         let string_slice = match value {
             DiagnosticCode::NoLanguageObject => "no-language-object",
@@ -86,7 +87,8 @@ impl From<DiagnosticCode<'_>> for Option<NumberOrString> {
             DiagnosticCode::UndeclaredCapture => "undeclared-capture",
             DiagnosticCode::InvalidCaptureName => "invalid-capture-name",
             DiagnosticCode::UnusedAuxiliaryCapture => "unused-auxiliary-capture",
-            DiagnosticCode::UnrecognizedFunction(kind) => &("unrecognized-".to_owned() + kind),
+            DiagnosticCode::UnrecognizedPredicate => "unrecognized-predicate",
+            DiagnosticCode::UnrecognizedDirective => "unrecognized-directive",
             DiagnosticCode::UnnecessaryEscapeSequence => "unnecessary-escape-sequence",
             DiagnosticCode::UnnecessaryPattern => "unnecessary-pattern",
             DiagnosticCode::UnnecessaryQuotations => "unnecessary-quotations",
@@ -669,10 +671,10 @@ async fn get_diagnostics_recursively(
                     }
                 }
                 "predicate" | "directive" => {
-                    let validator = if capture_name == "predicate" {
-                        valid_predicates
+                    let (validator, code) = if capture_name == "predicate" {
+                        (valid_predicates, DiagnosticCode::UnrecognizedPredicate)
                     } else {
-                        valid_directives
+                        (valid_directives, DiagnosticCode::UnrecognizedDirective)
                     };
                     if validator.is_empty() {
                         continue;
@@ -691,7 +693,7 @@ async fn get_diagnostics_recursively(
                             message: format!("Unrecognized {capture_name} \"{capture_text}\""),
                             severity: WARNING_SEVERITY,
                             range,
-                            code: DiagnosticCode::UnrecognizedFunction(capture_name).into(),
+                            code: code.into(),
                             ..Default::default()
                         });
                     }
@@ -1744,7 +1746,7 @@ mod test {
                     end: Position { line: 1, character: 6, },
                 },
                 severity: WARNING_SEVERITY,
-                code: DiagnosticCode::UnrecognizedFunction("directive").into(),
+                code: DiagnosticCode::UnrecognizedDirective.into(),
                 code_description: None,
                 source: None,
                 message: String::from("Unrecognized directive \"sett\""),
