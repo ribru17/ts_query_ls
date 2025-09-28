@@ -103,8 +103,11 @@ pub(super) async fn lint_file(
                 );
             }
         } else {
+            let is_module_diagnostic = diagnostic.related_information.is_some();
             let Some(action) = diag_to_code_action(&doc.tree, &doc.rope, diagnostic, uri) else {
-                unfixed_issues += 1;
+                if !is_module_diagnostic {
+                    unfixed_issues += 1;
+                }
                 continue;
             };
             let CodeActionOrCommand::CodeAction(CodeAction {
