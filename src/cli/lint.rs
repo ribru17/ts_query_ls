@@ -20,24 +20,38 @@ use crate::{
     util::{edit_rope, get_imported_uris, get_language_name, get_scm_files, parse},
 };
 
-#[allow(clippy::too_many_arguments)] // TODO: Refactor this
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct LintOptions {
+    pub fix: bool,
+    pub ignore_missing_language: bool,
+}
+
+impl LintOptions {
+    #[must_use]
+    pub const fn new(fix: bool, ignore_missing_language: bool) -> Self {
+        Self {
+            fix,
+            ignore_missing_language,
+        }
+    }
+}
+
 pub(super) async fn lint_file(
-    path: &Path,
+    absolute_path: &Path,
     workspace: &Path,
-    uri: &Url,
     source: &str,
-    options: Arc<tokio::sync::RwLock<Options>>,
-    fix: bool,
-    ignore_missing_language: bool,
+    server_options: Arc<tokio::sync::RwLock<Options>>,
+    lint_options: LintOptions,
     language_data: Option<Arc<LanguageData>>,
     exit_code: &AtomicI32,
 ) -> Option<String> {
     let rope = Rope::from(source);
     let tree = parse(&rope, None);
-    let options_val = options.clone().read().await.clone();
-    let language_name = get_language_name(uri, &options_val);
+    let uri = Url::from_file_path(absolute_path).expect("Path should be absolute");
+    let options_val = server_options.clone().read().await.clone();
+    let language_name = get_language_name(&uri, &options_val);
     let workspace_uris = &[workspace.to_owned()];
-    let imported_uris = get_imported_uris(workspace_uris, &options_val, uri, &rope, &tree);
+    let imported_uris = get_imported_uris(workspace_uris, &options_val, &uri, &rope, &tree);
     let document_map = DashMap::new();
     populate_import_documents(&document_map, workspace_uris, &options_val, &imported_uris);
     let doc = DocumentData {
@@ -51,12 +65,12 @@ pub(super) async fn lint_file(
     // The query construction already validates node names, fields, supertypes,
     // etc.
     let diagnostics = get_diagnostics(
-        uri,
+        &uri,
         &document_map,
         doc.clone(),
         language_data,
-        options,
-        ignore_missing_language,
+        server_options,
+        lint_options.ignore_missing_language,
         cache,
     )
     .await;
@@ -64,14 +78,13 @@ pub(super) async fn lint_file(
         return None;
     }
 
-    let path_str = path.to_str().expect("Path should be valid UTF-8");
     let mut edits = Vec::new();
-    if !fix {
+    if !lint_options.fix {
         exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
     }
     let mut unfixed_issues = 0;
     for diagnostic in diagnostics {
-        if !fix {
+        if !lint_options.fix {
             let kind = match diagnostic.severity {
                 Some(DiagnosticSeverity::ERROR) => "Error",
                 Some(DiagnosticSeverity::WARNING) => "Warning",
@@ -82,7 +95,7 @@ pub(super) async fn lint_file(
             eprintln!(
                 "{} in \"{}\" on line {}, col {}:\n  {}",
                 kind,
-                path_str,
+                absolute_path.display(),
                 diagnostic.range.start.line + 1,
                 diagnostic.range.start.character + 1,
                 diagnostic.message
@@ -105,7 +118,7 @@ pub(super) async fn lint_file(
             }
         } else {
             let is_module_diagnostic = diagnostic.code == DiagnosticCode::ImportIssues.into();
-            let Some(action) = diag_to_code_action(&doc.tree, &doc.rope, diagnostic, uri) else {
+            let Some(action) = diag_to_code_action(&doc.tree, &doc.rope, diagnostic, &uri) else {
                 if !is_module_diagnostic {
                     unfixed_issues += 1;
                 }
@@ -117,7 +130,7 @@ pub(super) async fn lint_file(
             else {
                 continue;
             };
-            let Some(mut changes) = edit.changes.and_then(|mut changes| changes.remove(uri)) else {
+            let Some(mut changes) = edit.changes.and_then(|mut changes| changes.remove(&uri)) else {
                 continue;
             };
             edits.append(&mut changes);
@@ -125,9 +138,12 @@ pub(super) async fn lint_file(
     }
     if unfixed_issues > 0 {
         let plurality = if unfixed_issues > 1 { "s" } else { "" };
-        println!("{path_str}: {unfixed_issues} issue{plurality} could not be fixed automatically");
+        println!(
+            "{}: {unfixed_issues} issue{plurality} could not be fixed automatically",
+            absolute_path.display()
+        );
     }
-    if !fix || edits.is_empty() {
+    if !lint_options.fix || edits.is_empty() {
         return None;
     }
     edits.sort_unstable_by(|a, b| b.range.start.cmp(&a.range.start));
@@ -169,14 +185,20 @@ pub async fn lint_directories(
     let scm_files = get_scm_files(directories);
     let tasks = scm_files.into_iter().filter_map(|path| {
         let absolute_path = path.canonicalize().expect("Path should be valid");
-        let uri = Url::from_file_path(&absolute_path).expect("Path should be absolute");
         let exit_code = exit_code.clone();
         let options = options.clone();
         if let Ok(source) = fs::read_to_string(&path) {
             let workspace = workspace.clone();
+            let lint_opts = LintOptions::new(fix, true);
             Some(tokio::spawn(async move {
                 if let Some(new_source) = lint_file(
-                    &path, &workspace, &uri, &source, options, fix, true, None, &exit_code,
+                    absolute_path.as_path(),
+                    &workspace,
+                    &source,
+                    options,
+                    lint_opts,
+                    None,
+                    &exit_code,
                 )
                 .await
                     && fs::write(&path, new_source).is_err()
