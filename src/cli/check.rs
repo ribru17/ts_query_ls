@@ -11,6 +11,7 @@ use ts_query_ls::Options;
 
 use crate::{
     LanguageData,
+    cli::lint::LintOptions,
     handlers::did_open::init_language_data,
     util::{self, get_scm_files},
 };
@@ -64,15 +65,14 @@ pub async fn check_directories(
         };
         let workspace = workspace.clone();
         let ignore_missing_language = false;
+        let lint_opts = LintOptions::new(fix, ignore_missing_language);
         Some(tokio::spawn(async move {
             if let Some(new_source) = lint_file(
-                &path,
+                absolute_path.as_path(),
                 &workspace,
-                &uri,
                 &source,
                 options_arc.clone(),
-                fix,
-                ignore_missing_language,
+                lint_opts,
                 language_data,
                 &exit_code,
             )
