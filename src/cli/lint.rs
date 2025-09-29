@@ -78,7 +78,11 @@ pub(super) async fn lint_file(
         return None;
     }
 
-    let mut edits = Vec::new();
+    let mut edits = Vec::with_capacity(if lint_options.fix {
+        diagnostics.len()
+    } else {
+        0
+    });
     if !lint_options.fix {
         exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
     }
