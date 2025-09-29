@@ -20,7 +20,7 @@ pub async fn selection_range<C: LspClient>(
     };
     let tree = &doc.tree;
     let rope = &doc.rope;
-    let mut results = Vec::new();
+    let mut results = Vec::with_capacity(params.positions.len());
     for position in params.positions {
         let ts_point = position.to_ts_point(rope);
         let mut node = tree.root_node();

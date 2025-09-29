@@ -162,6 +162,9 @@ async fn get_semantic_tokens<C: LspClient>(
 
                     let mut start_col = start_col + offset;
                     let mut delta_line = delta_line;
+                    match mods.size_hint() {
+                        (_, Some(bound)) | (bound, None) => tokens.reserve(bound),
+                    }
                     for module in mods {
                         // We assert that modules are valid ASCII characters, so we can index them
                         // by byte count.

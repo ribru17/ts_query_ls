@@ -539,6 +539,13 @@ pub fn get_imported_uris(
         return uris;
     };
 
+    uris.reserve(
+        modules
+            .as_str()
+            .chars()
+            .fold(0, |accum, c| if c == ',' { accum + 1 } else { accum })
+            + 1,
+    );
     let mut byte_offset = (start_comment.start_byte() + modules.start()) as u32;
     for module in modules.as_str().split(',') {
         let (start, end) = (byte_offset, byte_offset + module.len() as u32);
