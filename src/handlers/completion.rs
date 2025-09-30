@@ -230,15 +230,15 @@ pub async fn completion<C: LspClient>(
             return Ok(Some(CompletionResponse::Array(completion_items)));
         }
         if !top_level {
-            for symbol in symbols.iter() {
+            for symbol in symbols {
                 if (in_anon && !symbol.named) || (!in_anon && symbol.named) {
                     completion_items.push(CompletionItem {
                         label: symbol.label.clone(),
                         kind: if symbol.named {
-                            if !supertypes.contains_key(symbol) {
-                                Some(CompletionItemKind::CLASS)
-                            } else {
+                            if supertypes.contains_key(symbol) {
                                 Some(CompletionItemKind::INTERFACE)
+                            } else {
+                                Some(CompletionItemKind::CLASS)
                             }
                         } else {
                             Some(CompletionItemKind::CONSTANT)
@@ -273,7 +273,7 @@ pub async fn completion<C: LspClient>(
     let mut text_edit = get_current_capture_node(root, point).map_or_else(
         || {
             Some(CompletionTextEdit::Edit(TextEdit {
-                new_text: Default::default(),
+                new_text: String::default(),
                 range: Range {
                     start: position,
                     end: params.text_document_position.position,
@@ -282,15 +282,14 @@ pub async fn completion<C: LspClient>(
         },
         |cap_node| {
             Some(CompletionTextEdit::Edit(TextEdit {
-                new_text: Default::default(),
+                new_text: String::default(),
                 range: cap_node.lsp_range(rope),
             }))
         },
     );
     if in_predicate {
-        let pattern_node = match root.child_with_descendant(current_node) {
-            None => return Ok(Some(CompletionResponse::Array(completion_items))),
-            Some(value) => value,
+        let Some(pattern_node) = root.child_with_descendant(current_node) else {
+            return Ok(Some(CompletionResponse::Array(completion_items)));
         };
         let provider = TextProviderRope(rope);
         let mut iter = cursor.matches(query, pattern_node, &provider);
@@ -300,8 +299,8 @@ pub async fn completion<C: LspClient>(
             for capture in match_.captures {
                 let node_text = capture.node.text(rope);
                 if let Some(CompletionTextEdit::Edit(edit)) = text_edit.as_mut() {
-                    edit.new_text = node_text.clone();
-                };
+                    edit.new_text.clone_from(&node_text);
+                }
                 let parent_params = capture
                     .node
                     .parent()
@@ -324,8 +323,8 @@ pub async fn completion<C: LspClient>(
         completion_items.extend(valid_captures.iter().map(|cap| {
             let label = "@".to_string() + cap.0;
             if let Some(CompletionTextEdit::Edit(edit)) = text_edit.as_mut() {
-                edit.new_text = label.clone();
-            };
+                edit.new_text.clone_from(&label);
+            }
             CompletionItem {
                 label,
                 documentation: Some(Documentation::MarkupContent(MarkupContent {
@@ -548,7 +547,7 @@ mod test {
         r#"((identifier) @constant
 (#match? @cons "^[A-Z][A-Z\\d_]*$"))"#,
         Position { line: 1, character: 14 },
-        &Default::default(),
+        &Options::default(),
         &[CompletionItem {
             label: String::from("@constant"),
             kind: Some(CompletionItemKind::VARIABLE),
@@ -566,7 +565,7 @@ mod test {
         r#"((ident) @constant
 (#match? @constant "^[A-Z][A-Z\\d_]*$"))"#,
         Position { line: 0, character: 6 },
-        &Default::default(),
+        &Options::default(),
         &{
             let mut compls = NODE_COMPLETIONS.clone();
             compls.extend(FIELD_COMPLETIONS.clone().iter_mut().map(|fc| {
@@ -582,19 +581,19 @@ mod test {
 )
 ",
         Position { line: 1, character: 4 },
-        &Default::default(),
+        &Options::default(),
         &[]
     )]
     #[case(
         r"(definition/)",
         Position { line: 0, character: 12 },
-        &Default::default(),
+        &Options::default(),
         &SUBTYPE_COMPLETIONS
     )]
     #[case(
         r"(definition/a)",
         Position { line: 0, character: 13 },
-        &Default::default(),
+        &Options::default(),
         &SUBTYPE_COMPLETIONS
     )]
     #[case(

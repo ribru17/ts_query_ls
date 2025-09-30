@@ -1,4 +1,3 @@
-use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{Location, ReferenceParams};
 use tracing::warn;
 use tree_sitter::QueryCursor;
@@ -10,30 +9,27 @@ use crate::{
     util::{TextProviderRope, get_current_capture_node, get_references},
 };
 
-pub async fn references<C: LspClient>(
+pub fn references<C: LspClient>(
     backend: &Backend<C>,
-    params: ReferenceParams,
-) -> Result<Option<Vec<Location>>> {
+    params: &ReferenceParams,
+) -> Option<Vec<Location>> {
     let uri = &params.text_document_position.text_document.uri;
 
     let Some(doc) = backend.document_map.get(uri) else {
         warn!("No document found for URI: {uri} when handling references");
-        return Ok(None);
+        return None;
     };
     let rope = &doc.rope;
     let tree = &doc.tree;
     let cur_pos = params.text_document_position.position.to_ts_point(rope);
-    let current_node = match get_current_capture_node(tree.root_node(), cur_pos) {
-        None => return Ok(None),
-        Some(value) => value,
-    };
+    let current_node = get_current_capture_node(tree.root_node(), cur_pos)?;
 
     let include_def = params.context.include_declaration;
     let query = &CAPTURES_QUERY;
     let mut cursor = QueryCursor::new();
     let provider = TextProviderRope(rope);
 
-    Ok(Some(
+    Some(
         get_references(
             &tree.root_node(),
             &current_node,
@@ -53,7 +49,7 @@ pub async fn references<C: LspClient>(
             }
         })
         .collect(),
-    ))
+    )
 }
 
 #[cfg(test)]
@@ -66,7 +62,10 @@ mod test {
         request::References,
     };
 
-    use crate::test_helpers::helpers::{COMPLEX_FILE, TEST_URI, TestService, initialize_server};
+    use crate::{
+        Options,
+        test_helpers::helpers::{COMPLEX_FILE, TEST_URI, TestService, initialize_server},
+    };
 
     type Coordinate = ((u32, u32), (u32, u32));
 
@@ -118,7 +117,7 @@ function: (identifier) @function)",
     ) {
         // Arrange
         let mut service =
-            initialize_server(&[(TEST_URI.clone(), input)], &Default::default()).await;
+            initialize_server(&[(TEST_URI.clone(), input)], &Options::default()).await;
 
         // Act
         let refs = service

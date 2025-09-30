@@ -1,7 +1,4 @@
-use tower_lsp::{
-    jsonrpc::Result,
-    lsp_types::{SelectionRange, SelectionRangeParams},
-};
+use tower_lsp::lsp_types::{SelectionRange, SelectionRangeParams};
 use tracing::warn;
 
 use crate::{
@@ -9,19 +6,19 @@ use crate::{
     util::{NodeUtil, PosUtil},
 };
 
-pub async fn selection_range<C: LspClient>(
+pub fn selection_range<C: LspClient>(
     backend: &Backend<C>,
-    params: SelectionRangeParams,
-) -> Result<Option<Vec<SelectionRange>>> {
-    let uri = params.text_document.uri;
-    let Some(doc) = backend.document_map.get(&uri) else {
+    params: &SelectionRangeParams,
+) -> Option<Vec<SelectionRange>> {
+    let uri = &params.text_document.uri;
+    let Some(doc) = backend.document_map.get(uri) else {
         warn!("No document found for URI: {uri}");
-        return Ok(None);
+        return None;
     };
     let tree = &doc.tree;
     let rope = &doc.rope;
     let mut results = Vec::with_capacity(params.positions.len());
-    for position in params.positions {
+    for position in &params.positions {
         let ts_point = position.to_ts_point(rope);
         let mut node = tree.root_node();
         let descendant = node
@@ -47,19 +44,25 @@ pub async fn selection_range<C: LspClient>(
         }
         results.push(selection_range);
     }
-    Ok(Some(results))
+    Some(results)
 }
 
 #[cfg(test)]
 mod test {
     use pretty_assertions::assert_eq;
     use rstest::rstest;
-    use tower_lsp::lsp_types::{Position, Range, SelectionRange, TextDocumentIdentifier};
+    use tower_lsp::lsp_types::{
+        PartialResultParams, Position, Range, SelectionRange, TextDocumentIdentifier,
+        WorkDoneProgressParams,
+    };
 
     use tower_lsp::lsp_types::{SelectionRangeParams, request::SelectionRangeRequest};
 
-    use crate::test_helpers::helpers::{
-        COMPLEX_FILE, SIMPLE_FILE, TEST_URI, TestService, initialize_server,
+    use crate::{
+        Options,
+        test_helpers::helpers::{
+            COMPLEX_FILE, SIMPLE_FILE, TEST_URI, TestService, initialize_server,
+        },
     };
 
     #[rstest]
@@ -105,7 +108,7 @@ mod test {
     ) {
         // Arrange
         let mut service =
-            initialize_server(&[(TEST_URI.clone(), document_text)], &Default::default()).await;
+            initialize_server(&[(TEST_URI.clone(), document_text)], &Options::default()).await;
         let expected_selection_ranges = if let Some(ranges_list) = expected_ranges {
             let mut results = Vec::new();
             for ranges in ranges_list {
@@ -135,8 +138,8 @@ mod test {
                     uri: TEST_URI.clone(),
                 },
                 positions,
-                work_done_progress_params: Default::default(),
-                partial_result_params: Default::default(),
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                partial_result_params: PartialResultParams::default(),
             })
             .await;
 

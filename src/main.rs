@@ -41,7 +41,11 @@ use tower_lsp::{
 };
 use tree_sitter::{Language, Tree, wasmtime::Engine};
 
-use handlers::*;
+use handlers::{
+    code_action, completion, diagnostic, did_change, did_change_configuration, did_close, did_open,
+    did_save, document_highlight, document_symbol, formatting, goto_definition, hover, initialize,
+    references, rename, selection_range, semantic_tokens, shutdown, workspace_symbol,
+};
 use logging::LspLogLayer;
 
 mod cli;
@@ -201,7 +205,7 @@ impl LspClient for Client {
         N: tower_lsp::lsp_types::notification::Notification,
         <N as tower_lsp::lsp_types::notification::Notification>::Params: Send,
     {
-        self.send_notification::<N>(params).await
+        self.send_notification::<N>(params).await;
     }
 }
 
@@ -223,49 +227,49 @@ impl<C: LspClient> LanguageServer for Backend<C> {
     }
 
     async fn did_change_configuration(&self, params: DidChangeConfigurationParams) {
-        did_change_configuration::did_change_configuration(self, params).await
+        did_change_configuration::did_change_configuration(self, params).await;
     }
 
     async fn shutdown(&self) -> Result<()> {
-        shutdown::shutdown(self).await
+        Ok(shutdown::shutdown(self))
     }
 
     async fn goto_definition(
         &self,
         params: GotoDefinitionParams,
     ) -> Result<Option<GotoDefinitionResponse>> {
-        goto_definition::goto_definition(self, params).await
+        Ok(goto_definition::goto_definition(self, &params))
     }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
-        did_open::did_open(self, params).await
+        did_open::did_open(self, params).await;
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
-        did_close::did_close(self, params).await
+        did_close::did_close(self, &params);
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
-        did_save::did_save(self, params).await
+        did_save::did_save(self, params);
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
-        did_change::did_change(self, params).await
+        did_change::did_change(self, params).await;
     }
 
     async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
-        references::references(self, params).await
+        Ok(references::references(self, &params))
     }
 
     async fn document_highlight(
         &self,
         params: DocumentHighlightParams,
     ) -> Result<Option<Vec<DocumentHighlight>>> {
-        document_highlight::document_highlight(self, params).await
+        Ok(document_highlight::document_highlight(self, &params))
     }
 
     async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
-        rename::rename(self, params).await
+        rename::rename(self, &params)
     }
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
@@ -273,28 +277,28 @@ impl<C: LspClient> LanguageServer for Backend<C> {
     }
 
     async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
-        formatting::formatting(self, params).await
+        Ok(formatting::formatting(self, &params))
     }
 
     async fn range_formatting(
         &self,
         params: DocumentRangeFormattingParams,
     ) -> Result<Option<Vec<TextEdit>>> {
-        formatting::range_formatting(self, params).await
+        Ok(formatting::range_formatting(self, &params))
     }
 
     async fn semantic_tokens_full(
         &self,
         params: SemanticTokensParams,
     ) -> Result<Option<SemanticTokensResult>> {
-        semantic_tokens::semantic_tokens_full(self, params).await
+        Ok(semantic_tokens::semantic_tokens_full(self, &params))
     }
 
     async fn semantic_tokens_range(
         &self,
         params: SemanticTokensRangeParams,
     ) -> Result<Option<SemanticTokensRangeResult>> {
-        semantic_tokens::semantic_tokens_range(self, params).await
+        Ok(semantic_tokens::semantic_tokens_range(self, &params))
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
@@ -305,7 +309,7 @@ impl<C: LspClient> LanguageServer for Backend<C> {
         &self,
         params: DocumentSymbolParams,
     ) -> Result<Option<DocumentSymbolResponse>> {
-        document_symbol::document_symbol(self, params).await
+        Ok(document_symbol::document_symbol(self, &params))
     }
 
     async fn symbol(
@@ -323,14 +327,14 @@ impl<C: LspClient> LanguageServer for Backend<C> {
     }
 
     async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
-        code_action::code_action(self, params).await
+        Ok(code_action::code_action(self, params))
     }
 
     async fn selection_range(
         &self,
         params: SelectionRangeParams,
     ) -> Result<Option<Vec<SelectionRange>>> {
-        selection_range::selection_range(self, params).await
+        Ok(selection_range::selection_range(self, &params))
     }
 }
 
@@ -419,15 +423,14 @@ enum Commands {
 /// Return the given config string, or read it from a config file if not given. This function can
 /// exit the program.
 fn get_config_str(config: Option<String>) -> String {
-    match config {
-        Some(config_str) => config_str,
-        None => {
-            let config_file_path = Path::new(".tsqueryrc.json");
-            fs::read_to_string(config_file_path).unwrap_or_else(|_| {
-                eprintln!("No config parameter given, and no .tsqueryrc.json found");
-                std::process::exit(1);
-            })
-        }
+    if let Some(config_str) = config {
+        config_str
+    } else {
+        let config_file_path = Path::new(".tsqueryrc.json");
+        fs::read_to_string(config_file_path).unwrap_or_else(|_| {
+            eprintln!("No config parameter given, and no .tsqueryrc.json found");
+            std::process::exit(1);
+        })
     }
 }
 
@@ -481,11 +484,11 @@ async fn main() {
 
         Backend {
             client,
-            document_map: Default::default(),
-            language_map: Default::default(),
-            workspace_paths: Default::default(),
-            client_capabilities: Default::default(),
-            dependents: Default::default(),
+            document_map: DashMap::default(),
+            language_map: DashMap::default(),
+            workspace_paths: Arc::default(),
+            client_capabilities: Arc::default(),
+            dependents: DashMap::default(),
             options,
         }
     })

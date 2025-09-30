@@ -18,9 +18,9 @@ use crate::{
 
 use super::diagnostic::IDENTIFIER_REGEX;
 
-pub async fn rename<C: LspClient>(
+pub fn rename<C: LspClient>(
     backend: &Backend<C>,
-    params: RenameParams,
+    params: &RenameParams,
 ) -> Result<Option<WorkspaceEdit>> {
     let uri = &params.text_document_position.text_document.uri;
     let Some(doc) = backend.document_map.get(uri) else {
@@ -29,12 +29,11 @@ pub async fn rename<C: LspClient>(
     };
     let rope = &doc.rope;
     let tree = &doc.tree;
-    let current_node = match get_current_capture_node(
+    let Some(current_node) = get_current_capture_node(
         tree.root_node(),
         params.text_document_position.position.to_ts_point(rope),
-    ) {
-        None => return Ok(None),
-        Some(value) => value,
+    ) else {
+        return Ok(None);
     };
     let query = &CAPTURES_QUERY;
     let mut cursor = QueryCursor::new();
@@ -91,8 +90,11 @@ mod test {
         WorkDoneProgressParams, WorkspaceEdit, request::Rename,
     };
 
-    use crate::test_helpers::helpers::{
-        COMPLEX_FILE, SIMPLE_FILE, TEST_URI, TestEdit, TestService, initialize_server,
+    use crate::{
+        Options,
+        test_helpers::helpers::{
+            COMPLEX_FILE, SIMPLE_FILE, TEST_URI, TestEdit, TestService, initialize_server,
+        },
     };
 
     #[rstest]
@@ -133,7 +135,7 @@ mod test {
     ) {
         // Arrange
         let mut service =
-            initialize_server(&[(TEST_URI.clone(), original)], &Default::default()).await;
+            initialize_server(&[(TEST_URI.clone(), original)], &Options::default()).await;
 
         // Act
         let rename_edits = service

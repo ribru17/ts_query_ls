@@ -1,7 +1,6 @@
 use std::sync::LazyLock;
 
 use streaming_iterator::StreamingIterator;
-use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams};
 use tracing::warn;
 use tree_sitter::{Query, QueryCursor};
@@ -12,15 +11,15 @@ use crate::{Backend, LspClient, QUERY_LANGUAGE};
 static IDENT_QUERY: LazyLock<Query> =
     LazyLock::new(|| Query::new(&QUERY_LANGUAGE, "(identifier) @name").unwrap());
 
-pub async fn document_highlight<C: LspClient>(
+pub fn document_highlight<C: LspClient>(
     backend: &Backend<C>,
-    params: DocumentHighlightParams,
-) -> Result<Option<Vec<DocumentHighlight>>> {
+    params: &DocumentHighlightParams,
+) -> Option<Vec<DocumentHighlight>> {
     let uri = &params.text_document_position_params.text_document.uri;
 
     let Some(doc) = backend.document_map.get(uri) else {
         warn!("No document found for URI: {uri} when retrieving document highlights");
-        return Ok(None);
+        return None;
     };
     let rope = &doc.rope;
     let tree = &doc.tree;
@@ -47,7 +46,7 @@ pub async fn document_highlight<C: LspClient>(
     let provider = TextProviderRope(rope);
 
     if current_node.kind() == "capture" {
-        Ok(Some(
+        Some(
             get_references(
                 &tree.root_node(),
                 &current_node,
@@ -65,9 +64,9 @@ pub async fn document_highlight<C: LspClient>(
                 range: node.lsp_range(rope),
             })
             .collect(),
-        ))
+        )
     } else if current_node.kind() == "identifier" {
-        Ok(Some(
+        Some(
             cursor
                 .matches(ident_query, tree.root_node(), &provider)
                 .map_deref(|match_| {
@@ -86,9 +85,9 @@ pub async fn document_highlight<C: LspClient>(
                     range: node.lsp_range(rope),
                 })
                 .collect(),
-        ))
+        )
     } else {
-        Ok(None)
+        None
     }
 }
 
@@ -102,7 +101,10 @@ mod test {
         WorkDoneProgressParams, request::DocumentHighlightRequest,
     };
 
-    use crate::test_helpers::helpers::{COMPLEX_FILE, TEST_URI, TestService, initialize_server};
+    use crate::{
+        Options,
+        test_helpers::helpers::{COMPLEX_FILE, TEST_URI, TestService, initialize_server},
+    };
 
     type Highlight = (DocumentHighlightKind, (u32, u32), (u32, u32));
 
@@ -184,7 +186,7 @@ expression: (boolean) @boolean",
     ) {
         // Arrange
         let mut service =
-            initialize_server(&[(TEST_URI.clone(), input)], &Default::default()).await;
+            initialize_server(&[(TEST_URI.clone(), input)], &Options::default()).await;
 
         // Act
         let refs = service

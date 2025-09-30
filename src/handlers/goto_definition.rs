@@ -1,7 +1,4 @@
-use tower_lsp::{
-    jsonrpc::Result,
-    lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, Location},
-};
+use tower_lsp::lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, Location, Range};
 use tracing::{info, warn};
 use tree_sitter::QueryCursor;
 
@@ -13,34 +10,31 @@ use crate::{
     },
 };
 
-pub async fn goto_definition<C: LspClient>(
+pub fn goto_definition<C: LspClient>(
     backend: &Backend<C>,
-    params: GotoDefinitionParams,
-) -> Result<Option<GotoDefinitionResponse>> {
+    params: &GotoDefinitionParams,
+) -> Option<GotoDefinitionResponse> {
     info!("ts_query_ls goto_definition: {params:?}");
     let uri = &params.text_document_position_params.text_document.uri;
     let Some(doc) = backend.document_map.get(uri) else {
         warn!("No document found for URI: {uri} when handling goto_definition");
-        return Ok(None);
+        return None;
     };
     let rope = &doc.rope;
     let tree = &doc.tree;
     let cur_pos = params.text_document_position_params.position;
 
-    if let Some(module) = get_imported_module_under_cursor(&doc, &cur_pos) {
-        return Ok(module.uri.clone().map(|uri| {
+    if let Some(module) = get_imported_module_under_cursor(&doc, cur_pos) {
+        return module.uri.clone().map(|uri| {
             Location {
                 uri,
-                range: Default::default(),
+                range: Range::default(),
             }
             .into()
-        }));
+        });
     }
 
-    let Some(current_node) = get_current_capture_node(tree.root_node(), cur_pos.to_ts_point(rope))
-    else {
-        return Ok(None);
-    };
+    let current_node = get_current_capture_node(tree.root_node(), cur_pos.to_ts_point(rope))?;
 
     let query = &CAPTURES_QUERY;
     let mut cursor = QueryCursor::new();
@@ -61,7 +55,7 @@ pub async fn goto_definition<C: LspClient>(
     })
     .collect::<Vec<Location>>();
 
-    Ok(Some(GotoDefinitionResponse::Array(defs)))
+    Some(GotoDefinitionResponse::Array(defs))
 }
 
 #[cfg(test)]
@@ -74,8 +68,11 @@ mod test {
         request::GotoDefinition,
     };
 
-    use crate::test_helpers::helpers::{
-        COMPLEX_FILE, SIMPLE_FILE, TEST_URI, TestService, initialize_server,
+    use crate::{
+        Options,
+        test_helpers::helpers::{
+            COMPLEX_FILE, SIMPLE_FILE, TEST_URI, TestService, initialize_server,
+        },
     };
 
     type Coordinate = ((u32, u32), (u32, u32));
@@ -104,7 +101,7 @@ mod test {
     ) {
         // Arrange
         let mut service =
-            initialize_server(&[(TEST_URI.clone(), input)], &Default::default()).await;
+            initialize_server(&[(TEST_URI.clone(), input)], &Options::default()).await;
 
         // Act
         let refs = service
