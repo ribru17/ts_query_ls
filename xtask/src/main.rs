@@ -29,7 +29,7 @@ fn main() {
                 .unwrap()
                 .join("schemas/config.json");
             let Ok(mut json_file) = File::create(&schema_out_dir) else {
-                panic!("Cannot create file: {:?}", schema_out_dir);
+                panic!("Cannot create file: {}", schema_out_dir.display());
             };
             to_writer_pretty(&mut json_file, &schema).unwrap();
         }

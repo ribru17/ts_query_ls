@@ -7,10 +7,9 @@ use std::{
 use dashmap::DashMap;
 use futures::future::join_all;
 use tower_lsp::lsp_types::Url;
-use ts_query_ls::Options;
 
 use crate::{
-    LanguageData,
+    LanguageData, Options,
     cli::lint::LintOptions,
     handlers::did_open::init_language_data,
     util::{self, get_scm_files},
@@ -59,7 +58,7 @@ pub async fn check_directories(
             })
         });
         let Ok(source) = fs::read_to_string(&path) else {
-            eprintln!("Failed to read {absolute_path:?}");
+            eprintln!("Failed to read {}", absolute_path.display());
             exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
             return None;
         };
@@ -79,9 +78,9 @@ pub async fn check_directories(
             .await
                 && fs::write(&path, new_source).is_err()
             {
-                eprintln!("Failed to write {absolute_path:?}");
+                eprintln!("Failed to write {}", absolute_path.display());
                 exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
-            };
+            }
         }))
     });
     join_all(tasks).await;

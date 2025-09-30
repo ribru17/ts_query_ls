@@ -1,8 +1,9 @@
 #[cfg(test)]
 pub mod helpers {
+    use dashmap::DashMap;
     use serde_json::{Value, to_value};
 
-    use std::sync::{LazyLock, Mutex};
+    use std::sync::{Arc, LazyLock, Mutex};
     use tower::{Service, ServiceExt};
 
     use tower_lsp::{
@@ -142,12 +143,12 @@ pub mod helpers {
         let options_value = serde_json::to_value(options).unwrap();
         let (mut service, _socket) = LspService::build(|_client| Backend {
             client: MockClient::default(),
-            client_capabilities: Default::default(),
-            document_map: Default::default(),
-            language_map: Default::default(),
-            workspace_paths: Default::default(),
-            dependents: Default::default(),
-            options: Default::default(),
+            client_capabilities: Arc::default(),
+            document_map: DashMap::default(),
+            language_map: DashMap::default(),
+            workspace_paths: Arc::default(),
+            dependents: DashMap::default(),
+            options: Arc::default(),
         })
         .finish();
 
@@ -209,7 +210,7 @@ pub mod helpers {
                 .unwrap_or_else(|e| panic!("Error when attempting to call {}: {}", R::METHOD, e))
                 .unwrap_or_else(|| panic!("No response from request {}", R::METHOD));
 
-            jsonrpc_response_to_lsp_value::<R>(response)
+            jsonrpc_response_to_lsp_value::<R>(&response)
         }
 
         async fn notify<R>(&mut self, request: R::Params)
@@ -245,7 +246,7 @@ pub mod helpers {
             .finish()
     }
 
-    fn jsonrpc_response_to_lsp_value<R>(response: Response) -> R::Result
+    fn jsonrpc_response_to_lsp_value<R>(response: &Response) -> R::Result
     where
         R: tower_lsp::lsp_types::request::Request,
     {
@@ -303,19 +304,21 @@ mod test {
         ops::Deref,
     };
     use tower_lsp::lsp_types::Url;
-    use ts_query_ls::Options;
 
     use pretty_assertions::assert_eq;
     use rstest::rstest;
 
-    use crate::test_helpers::helpers::{
-        COMPLEX_FILE, SIMPLE_FILE, TEST_CLIENT_CAPABILITIES, TEST_URI, initialize_server,
+    use crate::{
+        Options,
+        test_helpers::helpers::{
+            COMPLEX_FILE, SIMPLE_FILE, TEST_CLIENT_CAPABILITIES, TEST_URI, initialize_server,
+        },
     };
 
     use super::helpers::Document;
 
     #[rstest]
-    #[case(&[], &Default::default())]
+    #[case(&[], &Options::default())]
     #[case(&[(
             TEST_URI.clone(),
             SIMPLE_FILE,
