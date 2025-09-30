@@ -4,7 +4,6 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 use ropey::Rope;
-use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
     DocumentFormattingParams, DocumentRangeFormattingParams, Range, TextEdit,
 };
@@ -17,41 +16,41 @@ use crate::QUERY_LANGUAGE;
 use crate::util::{ByteUtil, NodeUtil as _, TextProviderRope};
 use crate::{Backend, LspClient};
 
-pub async fn formatting<C: LspClient>(
+pub fn formatting<C: LspClient>(
     backend: &Backend<C>,
-    params: DocumentFormattingParams,
-) -> Result<Option<Vec<TextEdit>>> {
+    params: &DocumentFormattingParams,
+) -> Option<Vec<TextEdit>> {
     let uri = &params.text_document.uri;
     let Some(doc) = backend.document_map.get(uri) else {
         warn!("No document found for URI: {uri} when handling formatting");
-        return Ok(None);
+        return None;
     };
     let rope = &doc.rope;
     let root = &doc.tree.root_node();
 
-    Ok(format_document(rope, root).map(|formatted_doc| {
+    format_document(rope, root).map(|formatted_doc| {
         diffs(rope.to_string().as_str(), &formatted_doc, rope.clone()).collect()
-    }))
+    })
 }
 
-pub async fn range_formatting<C: LspClient>(
+pub fn range_formatting<C: LspClient>(
     backend: &Backend<C>,
-    params: DocumentRangeFormattingParams,
-) -> Result<Option<Vec<TextEdit>>> {
+    params: &DocumentRangeFormattingParams,
+) -> Option<Vec<TextEdit>> {
     let uri = &params.text_document.uri;
     let Some(doc) = backend.document_map.get(uri) else {
         warn!("No document found for URI: {uri} when handling formatting");
-        return Ok(None);
+        return None;
     };
     let rope = &doc.rope;
     let root = &doc.tree.root_node();
     let range = params.range;
 
-    Ok(format_document(rope, root).map(|formatted_doc| {
+    format_document(rope, root).map(|formatted_doc| {
         diffs(rope.to_string().as_str(), &formatted_doc, rope.clone())
             .filter(|d| d.range.end >= range.start && d.range.start <= range.end)
             .collect()
-    }))
+    })
 }
 
 static LINE_START: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([^\S\r\n]*)").unwrap());
@@ -353,7 +352,10 @@ mod test {
         request::{Formatting, RangeFormatting},
     };
 
-    use crate::test_helpers::helpers::{TEST_URI, TestService, initialize_server};
+    use crate::{
+        Options,
+        test_helpers::helpers::{TEST_URI, TestService, initialize_server},
+    };
 
     #[rstest]
     #[case(
@@ -380,7 +382,7 @@ mod test {
     async fn server_formatting(#[case] before: &str, #[case] after: &str) {
         // Arrange
         let mut service =
-            initialize_server(&[(TEST_URI.clone(), before)], &Default::default()).await;
+            initialize_server(&[(TEST_URI.clone(), before)], &Options::default()).await;
 
         // Act
         let mut edits = service
@@ -539,7 +541,7 @@ mod test {
     ) {
         // Arrange
         let mut service =
-            initialize_server(&[(TEST_URI.clone(), before)], &Default::default()).await;
+            initialize_server(&[(TEST_URI.clone(), before)], &Options::default()).await;
 
         // Act
         let mut edits = service

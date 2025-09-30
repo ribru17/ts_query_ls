@@ -58,8 +58,9 @@ pub async fn initialize<C: LspClient>(
 
 #[cfg(test)]
 mod test {
-    use std::env;
+    use std::{env, sync::Arc};
 
+    use dashmap::DashMap;
     use pretty_assertions::assert_eq;
     use tower_lsp::{
         LspService,
@@ -79,12 +80,12 @@ mod test {
         // Arrange
         let (mut service, _socket) = LspService::build(|_client| Backend {
             client: MockClient::default(),
-            client_capabilities: Default::default(),
-            document_map: Default::default(),
-            language_map: Default::default(),
-            workspace_paths: Default::default(),
-            dependents: Default::default(),
-            options: Default::default(),
+            client_capabilities: Arc::default(),
+            document_map: DashMap::default(),
+            language_map: DashMap::default(),
+            workspace_paths: Arc::default(),
+            dependents: DashMap::default(),
+            options: Arc::default(),
         })
         .finish();
         unsafe { env::set_var("HOME", "/home/jdoe") };

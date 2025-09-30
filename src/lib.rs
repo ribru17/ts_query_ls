@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, HashMap},
     env,
-    fmt::Display,
+    fmt::{Display, Write as _},
     sync::LazyLock,
 };
 
@@ -70,15 +70,7 @@ where
     Ok(valid_predicates
         .into_iter()
         .flat_map(|(name, pred)| {
-            let it = if !pred.not {
-                vec![(
-                    name,
-                    Predicate {
-                        description: pred.description,
-                        parameters: pred.parameters,
-                    },
-                )]
-            } else {
+            let it = if pred.not {
                 let pref_name = format!("not-{name}");
                 let pref_pred = Predicate {
                     parameters: pred.parameters.clone(),
@@ -97,6 +89,14 @@ where
                     ),
                     (pref_name, pref_pred),
                 ]
+            } else {
+                vec![(
+                    name,
+                    Predicate {
+                        description: pred.description,
+                        parameters: pred.parameters,
+                    },
+                )]
             };
             it.into_iter()
         })
@@ -152,13 +152,13 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             language_retrieval_patterns: default_regexes(),
-            valid_predicates: Default::default(),
-            valid_directives: Default::default(),
-            valid_captures: Default::default(),
-            diagnostic_options: Default::default(),
-            parser_aliases: Default::default(),
-            parser_install_directories: Default::default(),
-            supported_abi_versions: Default::default(),
+            valid_predicates: BTreeMap::default(),
+            valid_directives: BTreeMap::default(),
+            valid_captures: HashMap::default(),
+            diagnostic_options: DiagnosticOptions::default(),
+            parser_aliases: BTreeMap::default(),
+            parser_install_directories: Vec::default(),
+            supported_abi_versions: Option::default(),
         }
     }
 }
@@ -185,7 +185,7 @@ pub struct DiagnosticOptions {
 impl Default for DiagnosticOptions {
     fn default() -> Self {
         Self {
-            string_argument_style: Default::default(),
+            string_argument_style: StringArgumentStyle::default(),
             warn_unused_underscore_captures: true,
         }
     }
@@ -334,7 +334,7 @@ fn expand_env_vars(input: &str) -> String {
                 result.push_str(&val);
             } else {
                 // Leave untouched if not found
-                result.push_str(&format!("${{{var_name}}}"));
+                let _ = write!(&mut result, "${{{var_name}}}");
             }
         } else {
             result.push(c);
@@ -374,6 +374,7 @@ where
 pub struct SerializableRegex(Regex);
 
 impl SerializableRegex {
+    #[must_use]
     pub fn captures<'h>(&self, haystack: &'h str) -> Option<regex::Captures<'h>> {
         self.0.captures_at(haystack, 0)
     }

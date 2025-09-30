@@ -8,10 +8,9 @@ use dashmap::DashMap;
 use futures::future::join_all;
 use ropey::Rope;
 use tower_lsp::lsp_types::{CodeAction, CodeActionOrCommand, DiagnosticSeverity, Url};
-use ts_query_ls::Options;
 
 use crate::{
-    DocumentData, LanguageData,
+    DocumentData, LanguageData, Options,
     handlers::{
         code_action::diag_to_code_action,
         diagnostic::{DiagnosticCode, get_diagnostics},
@@ -58,7 +57,7 @@ pub(super) async fn lint_file(
         tree,
         rope,
         language_name,
-        version: Default::default(),
+        version: Option::default(),
         imported_uris,
     };
     let cache = false;
@@ -88,7 +87,25 @@ pub(super) async fn lint_file(
     }
     let mut unfixed_issues = 0;
     for diagnostic in diagnostics {
-        if !lint_options.fix {
+        if lint_options.fix {
+            let is_module_diagnostic = diagnostic.code == DiagnosticCode::ImportIssues.into();
+            let Some(action) = diag_to_code_action(&doc.tree, &doc.rope, diagnostic, &uri) else {
+                if !is_module_diagnostic {
+                    unfixed_issues += 1;
+                }
+                continue;
+            };
+            let CodeActionOrCommand::CodeAction(CodeAction {
+                edit: Some(edit), ..
+            }) = action
+            else {
+                continue;
+            };
+            let Some(mut changes) = edit.changes.and_then(|mut changes| changes.remove(&uri)) else {
+                continue;
+            };
+            edits.append(&mut changes);
+        } else {
             let kind = match diagnostic.severity {
                 Some(DiagnosticSeverity::ERROR) => "Error",
                 Some(DiagnosticSeverity::WARNING) => "Warning",
@@ -120,24 +137,6 @@ pub(super) async fn lint_file(
                     related_info.message
                 );
             }
-        } else {
-            let is_module_diagnostic = diagnostic.code == DiagnosticCode::ImportIssues.into();
-            let Some(action) = diag_to_code_action(&doc.tree, &doc.rope, diagnostic, &uri) else {
-                if !is_module_diagnostic {
-                    unfixed_issues += 1;
-                }
-                continue;
-            };
-            let CodeActionOrCommand::CodeAction(CodeAction {
-                edit: Some(edit), ..
-            }) = action
-            else {
-                continue;
-            };
-            let Some(mut changes) = edit.changes.and_then(|mut changes| changes.remove(&uri)) else {
-                continue;
-            };
-            edits.append(&mut changes);
         }
     }
     if unfixed_issues > 0 {
@@ -207,12 +206,12 @@ pub async fn lint_directories(
                 .await
                     && fs::write(&path, new_source).is_err()
                 {
-                    eprintln!("Failed to write {absolute_path:?}");
+                    eprintln!("Failed to write {}", absolute_path.display());
                     exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
-                };
+                }
             }))
         } else {
-            eprintln!("Failed to read {absolute_path:?}");
+            eprintln!("Failed to read {}", absolute_path.display());
             exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
             None
         }

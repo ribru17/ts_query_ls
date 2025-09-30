@@ -9,10 +9,9 @@ use dashmap::DashMap;
 use futures::future::join_all;
 use tower_lsp::lsp_types::Url;
 use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator as _};
-use ts_query_ls::Options;
 
 use crate::{
-    LanguageData, QUERY_LANGUAGE,
+    LanguageData, Options, QUERY_LANGUAGE,
     handlers::did_open::init_language_data,
     util::{self, get_scm_files},
 };
@@ -45,14 +44,14 @@ pub async fn profile_directories(directories: &[PathBuf], config: String, per_fi
         });
         let Some(lang_data) = language_data else {
             eprintln!(
-                "Could not retrieve language for {:?}",
-                path.canonicalize().unwrap()
+                "Could not retrieve language for {}",
+                path.canonicalize().unwrap().display()
             );
             return None;
         };
         let lang = lang_data.language.clone();
         let Ok(source) = fs::read_to_string(&path) else {
-            eprintln!("Failed to read {:?}", path.canonicalize().unwrap());
+            eprintln!("Failed to read {}", path.canonicalize().unwrap().display());
             return None;
         };
         Some(tokio::spawn(async move {

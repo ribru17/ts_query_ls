@@ -1,11 +1,8 @@
 use std::sync::LazyLock;
 
-use tower_lsp::{
-    jsonrpc::Result,
-    lsp_types::{
-        Range, SemanticToken, SemanticTokens, SemanticTokensParams, SemanticTokensRangeParams,
-        SemanticTokensRangeResult, SemanticTokensResult, Url,
-    },
+use tower_lsp::lsp_types::{
+    Range, SemanticToken, SemanticTokens, SemanticTokensParams, SemanticTokensRangeParams,
+    SemanticTokensRangeResult, SemanticTokensResult, Url,
 };
 use tracing::warn;
 use tree_sitter::{Query, QueryCursor, StreamingIterator};
@@ -18,40 +15,34 @@ use crate::{
 static SEM_TOK_QUERY: LazyLock<Query> = LazyLock::new(|| {
     Query::new(
         &QUERY_LANGUAGE,
-        r#"(named_node (identifier) @ident)
+        r"(named_node (identifier) @ident)
 (missing_node (identifier) @ident)
 (comment) @comment
-"#,
+",
     )
     .unwrap()
 });
 
-pub async fn semantic_tokens_full<C: LspClient>(
+pub fn semantic_tokens_full<C: LspClient>(
     backend: &Backend<C>,
-    params: SemanticTokensParams,
-) -> Result<Option<SemanticTokensResult>> {
-    Ok(get_semantic_tokens(backend, params.text_document.uri, None)
-        .await
-        .map(Into::into))
+    params: &SemanticTokensParams,
+) -> Option<SemanticTokensResult> {
+    get_semantic_tokens(backend, &params.text_document.uri, None).map(Into::into)
 }
 
-pub async fn semantic_tokens_range<C: LspClient>(
+pub fn semantic_tokens_range<C: LspClient>(
     backend: &Backend<C>,
-    params: SemanticTokensRangeParams,
-) -> Result<Option<SemanticTokensRangeResult>> {
-    Ok(
-        get_semantic_tokens(backend, params.text_document.uri, Some(params.range))
-            .await
-            .map(Into::into),
-    )
+    params: &SemanticTokensRangeParams,
+) -> Option<SemanticTokensRangeResult> {
+    get_semantic_tokens(backend, &params.text_document.uri, Some(params.range)).map(Into::into)
 }
 
-async fn get_semantic_tokens<C: LspClient>(
+fn get_semantic_tokens<C: LspClient>(
     backend: &Backend<C>,
-    uri: Url,
+    uri: &Url,
     range: Option<Range>,
 ) -> Option<SemanticTokens> {
-    let Some(doc) = backend.document_map.get(&uri) else {
+    let Some(doc) = backend.document_map.get(uri) else {
         warn!("No document found for URI: {uri} when retrieving semantic tokens");
         return None;
     };
@@ -74,7 +65,7 @@ async fn get_semantic_tokens<C: LspClient>(
     let mut prev_col = 0;
 
     while let Some(match_) = matches.next() {
-        for cap in match_.captures.iter() {
+        for cap in match_.captures {
             let capture_name = SEM_TOK_QUERY.capture_names()[cap.index as usize];
             let node = &cap.node;
             let node_text = node.text(rope);
@@ -137,7 +128,7 @@ async fn get_semantic_tokens<C: LspClient>(
                         prev_line = start_row;
                         prev_col = start_col + offset;
                         continue;
-                    };
+                    }
                     if start_row != 0 {
                         continue;
                     }
@@ -200,7 +191,10 @@ mod test {
         request::SemanticTokensFullRequest,
     };
 
-    use crate::test_helpers::helpers::{QUERY_TEST_URI, TestService, initialize_server};
+    use crate::{
+        Options,
+        test_helpers::helpers::{QUERY_TEST_URI, TestService, initialize_server},
+    };
 
     #[tokio::test(flavor = "current_thread")]
     async fn semantic_tokens_full() {
@@ -220,7 +214,7 @@ mod test {
 (foo)
         ";
         let mut service =
-            initialize_server(&[(QUERY_TEST_URI.clone(), source)], &Default::default()).await;
+            initialize_server(&[(QUERY_TEST_URI.clone(), source)], &Options::default()).await;
 
         // Act
         let actual_tokens = service

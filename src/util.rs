@@ -13,10 +13,10 @@ use tower_lsp::{
     LanguageServer,
     lsp_types::{
         DocumentDiagnosticParams, DocumentDiagnosticReport, DocumentDiagnosticReportKind,
-        DocumentDiagnosticReportResult, NumberOrString, Position, ProgressToken,
-        PublishDiagnosticsParams, Range, RelatedFullDocumentDiagnosticReport,
+        DocumentDiagnosticReportResult, NumberOrString, PartialResultParams, Position,
+        ProgressToken, PublishDiagnosticsParams, Range, RelatedFullDocumentDiagnosticReport,
         TextDocumentContentChangeEvent, TextDocumentIdentifier, Url, WorkDoneProgressCreateParams,
-        notification::PublishDiagnostics, request::WorkDoneProgressCreate,
+        WorkDoneProgressParams, notification::PublishDiagnostics, request::WorkDoneProgressCreate,
     },
 };
 use tracing::{error, warn};
@@ -410,7 +410,7 @@ pub async fn set_configuration_options<C: LspClient>(
             *options = parsed_options;
         } else {
             warn!("Unable to parse configuration settings!");
-        };
+        }
     }
 
     if let Some(mut file_options) = get_first_valid_file_config(workspace_uris) {
@@ -452,7 +452,7 @@ pub fn capture_at_pos<'t>(
             if capture.node.start_position() > point || capture.node.end_position() <= point {
                 continue;
             }
-            innermost_capture = Some(*capture)
+            innermost_capture = Some(*capture);
         }
     }
 
@@ -583,10 +583,10 @@ pub fn is_subsequence(sub: &str, main: &str) -> bool {
     true
 }
 
-pub fn get_imported_module_under_cursor<'d>(
-    document: &'d DocumentData,
-    position: &Position,
-) -> Option<&'d ImportedUri> {
+pub fn get_imported_module_under_cursor(
+    document: &DocumentData,
+    position: Position,
+) -> Option<&ImportedUri> {
     if position.line != 0 {
         return None;
     }
@@ -639,8 +639,8 @@ pub async fn push_diagnostics<C: LspClient>(backend: &Backend<C>, uri: Url) {
                 text_document: TextDocumentIdentifier { uri: uri.clone() },
                 identifier: None,
                 previous_result_id: None,
-                partial_result_params: Default::default(),
-                work_done_progress_params: Default::default(),
+                partial_result_params: PartialResultParams::default(),
+                work_done_progress_params: WorkDoneProgressParams::default(),
             })
             .await
         else {

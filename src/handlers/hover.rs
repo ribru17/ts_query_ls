@@ -80,7 +80,7 @@ pub async fn hover<C: LspClient>(
 
     Ok(match capture_name {
         doc_name if DOCS.contains_key(capture_name) => {
-            let value = DOCS.get(doc_name).unwrap().to_string();
+            let value = (*DOCS.get(doc_name).unwrap()).to_string();
             Some(Hover {
                 range,
                 contents: HoverContents::Markup(MarkupContent {
@@ -273,7 +273,7 @@ pub async fn hover<C: LspClient>(
         }
         "comment" => {
             if position.line == 0 && INHERITS_REGEX.is_match(&capture_text) {
-                if let Some(module) = get_imported_module_under_cursor(&doc, &position) {
+                if let Some(module) = get_imported_module_under_cursor(&doc, position) {
                     let range = Some(Range::new(
                         Position::new(0, module.start_col),
                         Position::new(0, module.end_col),
@@ -295,12 +295,12 @@ pub async fn hover<C: LspClient>(
                             value: hover_content,
                         }),
                     }));
-                };
+                }
                 return Ok(Some(Hover {
                     range,
                     contents: HoverContents::Markup(MarkupContent {
                         kind: MarkupKind::Markdown,
-                        value: DOCS.get("inherits").unwrap().to_string(),
+                        value: (*DOCS.get("inherits").unwrap()).to_string(),
                     }),
                 }));
             }
@@ -309,7 +309,7 @@ pub async fn hover<C: LspClient>(
                     range,
                     contents: HoverContents::Markup(MarkupContent {
                         kind: MarkupKind::Markdown,
-                        value: DOCS.get("format-ignore").unwrap().to_string(),
+                        value: (*DOCS.get("format-ignore").unwrap()).to_string(),
                     }),
                 })
             } else {
@@ -368,28 +368,28 @@ _ @any
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/docs/error.md"
-    )), Default::default())]
+    )), BTreeMap::default())]
     #[case(SOURCE, Position { line: 4, character: 4 }, Range::new(
         Position { line: 4, character: 1 },
         Position { line: 4, character: 8 } ),
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/docs/missing.md"
-    )), Default::default())]
+    )), BTreeMap::default())]
     #[case(SOURCE, Position { line: 6, character: 1 }, Range::new(
         Position { line: 6, character: 1 },
         Position { line: 6, character: 2 } ),
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/docs/wildcard.md"
-    )), Default::default())]
+    )), BTreeMap::default())]
     #[case(SOURCE, Position { line: 7, character: 0 }, Range::new(
         Position { line: 7, character: 0 },
         Position { line: 7, character: 1 } ),
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/docs/wildcard.md"
-    )), Default::default())]
+    )), BTreeMap::default())]
     #[case(SOURCE, Position { line: 0, character: 17 }, Range::new(
         Position { line: 0, character: 16 },
         Position { line: 0, character: 26 } ),
@@ -403,7 +403,7 @@ _ @any
 (missing_node)
 (named_node)
 (predicate)
-```", Default::default())]
+```", BTreeMap::default())]
     #[case(SOURCE, Position { line: 2, character: 4 }, Range::new(
         Position { line: 2, character: 1 },
         Position { line: 2, character: 11 } ),
@@ -417,7 +417,7 @@ _ @any
 (missing_node)
 (named_node)
 (predicate)
-```", Default::default())]
+```", BTreeMap::default())]
     #[case(SOURCE, Position { line: 4, character: 10 }, Range::new(
         Position { line: 4, character: 9 },
         Position { line: 4, character: 19 } ),
@@ -431,7 +431,7 @@ _ @any
 (missing_node)
 (named_node)
 (predicate)
-```", Default::default())]
+```", BTreeMap::default())]
     #[case(SOURCE, Position { line: 0, character: 10 }, Range::new(
         Position { line: 0, character: 8 },
         Position { line: 0, character: 14 } ),

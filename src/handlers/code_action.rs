@@ -2,12 +2,9 @@ use std::{collections::HashMap, vec};
 
 use ropey::Rope;
 use serde::{Deserialize, Serialize};
-use tower_lsp::{
-    jsonrpc::Result,
-    lsp_types::{
-        CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, CodeActionResponse,
-        Diagnostic, Position, Range, TextEdit, Url, WorkspaceEdit,
-    },
+use tower_lsp::lsp_types::{
+    CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, CodeActionResponse,
+    Diagnostic, Position, Range, TextEdit, Url, WorkspaceEdit,
 };
 use tree_sitter::{QueryCursor, Tree};
 
@@ -72,7 +69,7 @@ pub fn diag_to_code_action(
                 changes: Some(HashMap::from([(
                     uri.clone(),
                     vec![TextEdit {
-                        new_text: String::from(""),
+                        new_text: String::new(),
                         range: Range::new(
                             diagnostic.range.start,
                             Position::new(
@@ -133,7 +130,7 @@ pub fn diag_to_code_action(
                 changes: Some(HashMap::from([(
                     uri.clone(),
                     vec![TextEdit {
-                        new_text: String::from(""),
+                        new_text: String::new(),
                         range: diagnostic.range,
                     }],
                 )])),
@@ -190,15 +187,13 @@ pub fn diag_to_code_action(
     }
 }
 
-pub async fn code_action<C: LspClient>(
+pub fn code_action<C: LspClient>(
     backend: &Backend<C>,
     params: CodeActionParams,
-) -> Result<Option<CodeActionResponse>> {
+) -> Option<CodeActionResponse> {
     let uri = &params.text_document.uri;
     let diagnostics = params.context.diagnostics;
-    let Some(doc) = backend.document_map.get(uri) else {
-        return Ok(None);
-    };
+    let doc = backend.document_map.get(uri)?;
 
     let actions: Vec<CodeActionOrCommand> = diagnostics
         .into_iter()
@@ -206,11 +201,12 @@ pub async fn code_action<C: LspClient>(
         .collect();
 
     if actions.is_empty() {
-        Ok(None)
+        None
     } else {
-        Ok(Some(actions))
+        Some(actions)
     }
 }
+
 #[cfg(test)]
 mod test {
     use std::collections::HashMap;
@@ -225,13 +221,15 @@ mod test {
         CodeActionOrCommand, CodeActionParams, PartialResultParams, WorkDoneProgressParams,
         request::CodeActionRequest,
     };
-    use ts_query_ls::Options;
 
-    use crate::handlers::code_action::CodeActions;
-    use crate::test_helpers::helpers::{TEST_URI, TestService, initialize_server};
+    use crate::{
+        Options,
+        handlers::code_action::CodeActions,
+        test_helpers::helpers::{TEST_URI, TestService, initialize_server},
+    };
 
     #[rstest]
-    #[case(r#""\p" @_somecap"#, Default::default(), Position::new(0, 2), CodeActionContext {
+    #[case(r#""\p" @_somecap"#, Options::default(), Position::new(0, 2), CodeActionContext {
         diagnostics: vec![Diagnostic {
             message: String::from("bad escape"),
             range: Range::new(Position::new(0, 1), Position::new(0, 3)),
@@ -254,7 +252,7 @@ mod test {
                 TEST_URI.clone(),
                     vec![TextEdit {
                         range: Range::new(Position::new(0, 1), Position::new(0, 2)),
-                        new_text: String::from("")
+                        new_text: String::new()
                     }]
             )])),
             ..Default::default()
@@ -262,7 +260,7 @@ mod test {
         ..Default::default()
     })])]
     #[case(r#"((comment) @jsdoc_comment
-  (#lua-match? @jsdoc_comment ".*"))"#, Default::default(), Position::new(0, 15), CodeActionContext {
+  (#lua-match? @jsdoc_comment ".*"))"#, Options::default(), Position::new(0, 15), CodeActionContext {
         diagnostics: vec![Diagnostic {
             message: String::from("bad cap"),
             range: Range::new(Position::new(0, 11), Position::new(0, 24)),
@@ -296,7 +294,7 @@ mod test {
         ..Default::default()
     })])]
     #[case(r#"((comment) @jsdoc_comment
-  (#lua-match? @jsdoc_comment "asdf"))"#, Default::default(), Position::new(1, 32), CodeActionContext {
+  (#lua-match? @jsdoc_comment "asdf"))"#, Options::default(), Position::new(1, 32), CodeActionContext {
         diagnostics: vec![Diagnostic {
             message: String::from("Unnecessary string quotation"),
             range: Range::new(Position::new(1, 30), Position::new(1, 36)),
@@ -352,6 +350,6 @@ mod test {
 
         // Assert
         let expected_code_actions = Some(expected_code_actions.to_vec());
-        assert_eq!(expected_code_actions, code_actions)
+        assert_eq!(expected_code_actions, code_actions);
     }
 }

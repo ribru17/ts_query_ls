@@ -1,6 +1,5 @@
-use tower_lsp::{
-    jsonrpc::Result,
-    lsp_types::{DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse, SymbolKind},
+use tower_lsp::lsp_types::{
+    DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse, SymbolKind,
 };
 use tracing::warn;
 use tree_sitter::{QueryCursor, StreamingIterator};
@@ -10,16 +9,16 @@ use crate::{
     util::{CAPTURES_QUERY, NodeUtil, TextProviderRope},
 };
 
-pub async fn document_symbol<C: LspClient>(
+pub fn document_symbol<C: LspClient>(
     backend: &Backend<C>,
-    params: DocumentSymbolParams,
-) -> Result<Option<DocumentSymbolResponse>> {
+    params: &DocumentSymbolParams,
+) -> Option<DocumentSymbolResponse> {
     let uri = &params.text_document.uri;
     let mut document_symbols = vec![];
 
     let Some(doc) = backend.document_map.get(uri) else {
         warn!("No document found for URI: {uri} when searching for document symbols.");
-        return Ok(None);
+        return None;
     };
     let rope = &doc.rope;
     let tree = &doc.tree;
@@ -48,7 +47,7 @@ pub async fn document_symbol<C: LspClient>(
         }
     }
 
-    Ok(Some(DocumentSymbolResponse::Nested(document_symbols)))
+    Some(DocumentSymbolResponse::Nested(document_symbols))
 }
 
 #[cfg(test)]
@@ -61,7 +60,10 @@ mod test {
         request::DocumentSymbolRequest,
     };
 
-    use crate::test_helpers::helpers::{SIMPLE_FILE, TEST_URI, TestService, initialize_server};
+    use crate::{
+        Options,
+        test_helpers::helpers::{SIMPLE_FILE, TEST_URI, TestService, initialize_server},
+    };
 
     type DocSymbol = (String, Range, Range);
 
@@ -137,7 +139,7 @@ mod test {
     async fn document_symbol(#[case] source: &str, #[case] symbols: Vec<DocSymbol>) {
         // Arrange
         let mut service =
-            initialize_server(&[(TEST_URI.clone(), source)], &Default::default()).await;
+            initialize_server(&[(TEST_URI.clone(), source)], &Options::default()).await;
 
         // Act
         let tokens = service
