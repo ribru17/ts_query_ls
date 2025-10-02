@@ -58,9 +58,9 @@ pub async fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
                     for line in patch.lines() {
                         if line.starts_with("@@") {
                             eprintln!("{}", paint(blue, line));
-                        } else if line.starts_with("-") {
+                        } else if line.starts_with('-') {
                             eprintln!("{}", paint(red, line));
-                        } else if line.starts_with("+") {
+                        } else if line.starts_with('+') {
                             eprintln!("{}", paint(green, line));
                         } else {
                             eprintln!("{line}");

@@ -55,10 +55,10 @@ pub async fn symbol<C: LspClient>(
                     },
                 )),
             })
-            .await
+            .await;
     }
 
-    for path in files.into_iter() {
+    for path in files {
         let container_name = path
             .file_name()
             .and_then(|f| f.to_str())
@@ -109,7 +109,7 @@ pub async fn symbol<C: LspClient>(
                             },
                         )),
                     })
-                    .await
+                    .await;
             }
         }
     }
@@ -123,7 +123,7 @@ pub async fn symbol<C: LspClient>(
                     message: Some(format!("{file_count}/{file_count} files indexed")),
                 })),
             })
-            .await
+            .await;
     }
     Ok(Some(symbols))
 }
@@ -140,12 +140,15 @@ mod test {
         request::{WorkDoneProgressCreate, WorkspaceSymbolRequest},
     };
 
-    use crate::test_helpers::helpers::{MockRequest, TestService, initialize_server};
+    use crate::{
+        Options,
+        test_helpers::helpers::{MockRequest, TestService, initialize_server},
+    };
 
     #[tokio::test(flavor = "current_thread")]
     async fn workspace_symbol() {
         // Arrange
-        let mut service = initialize_server(&[], &Default::default()).await;
+        let mut service = initialize_server(&[], &Options::default()).await;
         fn make_range(start_line: u32, start_col: u32, end_line: u32, end_col: u32) -> Range {
             Range::new(
                 Position::new(start_line, start_col),
@@ -156,7 +159,7 @@ mod test {
         // Act
         let actual_tokens = service
             .request::<WorkspaceSymbolRequest>(WorkspaceSymbolParams {
-                query: String::from(""),
+                query: String::new(),
                 partial_result_params: PartialResultParams::default(),
                 work_done_progress_params: WorkDoneProgressParams::default(),
             })

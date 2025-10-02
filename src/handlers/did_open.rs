@@ -9,10 +9,9 @@ use ropey::Rope;
 use tower_lsp::lsp_types::{DidOpenTextDocumentParams, Url};
 use tracing::info;
 use tree_sitter::Language;
-use ts_query_ls::Options;
 
 use crate::{
-    Backend, DocumentData, ImportedUri, LanguageData, LspClient, SymbolInfo,
+    Backend, DocumentData, ImportedUri, LanguageData, LspClient, Options, SymbolInfo,
     util::{get_imported_uris, get_language, get_language_name, parse, push_diagnostics},
 };
 
@@ -141,10 +140,10 @@ pub fn init_language_data(language: Language, name: String) -> LanguageData {
     }
     LanguageData {
         name,
+        symbols_set,
+        symbols_vec,
         fields_set,
         fields_vec,
-        symbols_vec,
-        symbols_set,
         supertype_map,
         language,
     }
@@ -177,7 +176,7 @@ pub fn populate_import_documents(
                     imported_uris: nested_imported_uris.clone(),
                 },
             );
-            populate_import_documents(document_map, workspace_dirs, options, &nested_imported_uris)
+            populate_import_documents(document_map, workspace_dirs, options, &nested_imported_uris);
         }
     }
 }
@@ -191,12 +190,15 @@ mod test {
         notification::{DidOpenTextDocument, PublishDiagnostics},
     };
 
-    use crate::test_helpers::helpers::{MockRequest, TEST_URI, TestService, initialize_server};
+    use crate::{
+        Options,
+        test_helpers::helpers::{MockRequest, TEST_URI, TestService, initialize_server},
+    };
 
     #[tokio::test(flavor = "current_thread")]
     async fn server_did_open_document() {
         // Arrange
-        let mut service = initialize_server(&[], &Default::default()).await;
+        let mut service = initialize_server(&[], &Options::default()).await;
         let source = r#""[" @cap"#;
 
         // Act

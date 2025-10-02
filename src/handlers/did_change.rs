@@ -81,7 +81,7 @@ pub async fn did_change<C: LspClient>(backend: &Backend<C>, params: DidChangeTex
                     .insert(uri.clone());
             }
             document.imported_uris = uris;
-        };
+        }
     }
 
     push_diagnostics(backend, uri).await;
@@ -96,7 +96,10 @@ mod test {
         VersionedTextDocumentIdentifier, notification::DidChangeTextDocument,
     };
 
-    use crate::test_helpers::helpers::{TEST_URI, TestEdit, TestService, initialize_server};
+    use crate::{
+        Options,
+        test_helpers::helpers::{TEST_URI, TestEdit, TestService, initialize_server},
+    };
 
     #[rstest]
     #[case(
@@ -141,7 +144,7 @@ mod test {
     ) {
         // Arrange
         let mut service =
-            initialize_server(&[(TEST_URI.clone(), original)], &Default::default()).await;
+            initialize_server(&[(TEST_URI.clone(), original)], &Options::default()).await;
 
         // Act
         service

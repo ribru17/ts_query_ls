@@ -8,10 +8,9 @@ use dashmap::DashMap;
 use futures::future::join_all;
 use ropey::Rope;
 use tower_lsp::lsp_types::{CodeAction, CodeActionOrCommand, DiagnosticSeverity, Url};
-use ts_query_ls::Options;
 
 use crate::{
-    DocumentData, LanguageData,
+    DocumentData, LanguageData, Options,
     handlers::{
         code_action::diag_to_code_action,
         diagnostic::{DiagnosticCode, get_diagnostics},
@@ -20,31 +19,45 @@ use crate::{
     util::{edit_rope, get_imported_uris, get_language_name, get_scm_files, parse},
 };
 
-#[allow(clippy::too_many_arguments)] // TODO: Refactor this
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct LintOptions {
+    pub fix: bool,
+    pub ignore_missing_language: bool,
+}
+
+impl LintOptions {
+    #[must_use]
+    pub const fn new(fix: bool, ignore_missing_language: bool) -> Self {
+        Self {
+            fix,
+            ignore_missing_language,
+        }
+    }
+}
+
 pub(super) async fn lint_file(
-    path: &Path,
     workspace: &Path,
     uri: &Url,
     source: &str,
-    options: Arc<tokio::sync::RwLock<Options>>,
-    fix: bool,
-    ignore_missing_language: bool,
+    server_options: Arc<tokio::sync::RwLock<Options>>,
+    lint_options: LintOptions,
     language_data: Option<Arc<LanguageData>>,
     exit_code: &AtomicI32,
 ) -> Option<String> {
     let rope = Rope::from(source);
     let tree = parse(&rope, None);
-    let options_val = options.clone().read().await.clone();
+    let options_val = server_options.clone().read().await.clone();
     let language_name = get_language_name(uri, &options_val);
     let workspace_uris = &[workspace.to_owned()];
     let imported_uris = get_imported_uris(workspace_uris, &options_val, uri, &rope, &tree);
     let document_map = DashMap::new();
+    let path: PathBuf = uri.to_file_path().expect("Invalid file URI");
     populate_import_documents(&document_map, workspace_uris, &options_val, &imported_uris);
     let doc = DocumentData {
         tree,
         rope,
         language_name,
-        version: Default::default(),
+        version: Option::default(),
         imported_uris,
     };
     let cache = false;
@@ -55,8 +68,8 @@ pub(super) async fn lint_file(
         &document_map,
         doc.clone(),
         language_data,
-        options,
-        ignore_missing_language,
+        server_options,
+        lint_options.ignore_missing_language,
         cache,
     )
     .await;
@@ -64,14 +77,35 @@ pub(super) async fn lint_file(
         return None;
     }
 
-    let path_str = path.to_str().expect("Path should be valid UTF-8");
-    let mut edits = Vec::new();
-    if !fix {
+    let mut edits = Vec::with_capacity(if lint_options.fix {
+        diagnostics.len()
+    } else {
+        0
+    });
+    if !lint_options.fix {
         exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
     }
     let mut unfixed_issues = 0;
     for diagnostic in diagnostics {
-        if !fix {
+        if lint_options.fix {
+            let is_module_diagnostic = diagnostic.code == DiagnosticCode::ImportIssues.into();
+            let Some(action) = diag_to_code_action(&doc.tree, &doc.rope, diagnostic, uri) else {
+                if !is_module_diagnostic {
+                    unfixed_issues += 1;
+                }
+                continue;
+            };
+            let CodeActionOrCommand::CodeAction(CodeAction {
+                edit: Some(edit), ..
+            }) = action
+            else {
+                continue;
+            };
+            let Some(mut changes) = edit.changes.and_then(|mut changes| changes.remove(uri)) else {
+                continue;
+            };
+            edits.append(&mut changes);
+        } else {
             let kind = match diagnostic.severity {
                 Some(DiagnosticSeverity::ERROR) => "Error",
                 Some(DiagnosticSeverity::WARNING) => "Warning",
@@ -82,7 +116,7 @@ pub(super) async fn lint_file(
             eprintln!(
                 "{} in \"{}\" on line {}, col {}:\n  {}",
                 kind,
-                path_str,
+                path.display(),
                 diagnostic.range.start.line + 1,
                 diagnostic.range.start.character + 1,
                 diagnostic.message
@@ -103,31 +137,16 @@ pub(super) async fn lint_file(
                     related_info.message
                 );
             }
-        } else {
-            let is_module_diagnostic = diagnostic.code == DiagnosticCode::ImportIssues.into();
-            let Some(action) = diag_to_code_action(&doc.tree, &doc.rope, diagnostic, uri) else {
-                if !is_module_diagnostic {
-                    unfixed_issues += 1;
-                }
-                continue;
-            };
-            let CodeActionOrCommand::CodeAction(CodeAction {
-                edit: Some(edit), ..
-            }) = action
-            else {
-                continue;
-            };
-            let Some(mut changes) = edit.changes.and_then(|mut changes| changes.remove(uri)) else {
-                continue;
-            };
-            edits.append(&mut changes);
         }
     }
     if unfixed_issues > 0 {
         let plurality = if unfixed_issues > 1 { "s" } else { "" };
-        println!("{path_str}: {unfixed_issues} issue{plurality} could not be fixed automatically");
+        println!(
+            "{}: {unfixed_issues} issue{plurality} could not be fixed automatically",
+            path.display()
+        );
     }
-    if !fix || edits.is_empty() {
+    if !lint_options.fix || edits.is_empty() {
         return None;
     }
     edits.sort_unstable_by(|a, b| b.range.start.cmp(&a.range.start));
@@ -174,19 +193,20 @@ pub async fn lint_directories(
         let options = options.clone();
         if let Ok(source) = fs::read_to_string(&path) {
             let workspace = workspace.clone();
+            let lint_opts = LintOptions::new(fix, true);
             Some(tokio::spawn(async move {
                 if let Some(new_source) = lint_file(
-                    &path, &workspace, &uri, &source, options, fix, true, None, &exit_code,
+                    &workspace, &uri, &source, options, lint_opts, None, &exit_code,
                 )
                 .await
                     && fs::write(&path, new_source).is_err()
                 {
-                    eprintln!("Failed to write {absolute_path:?}");
+                    eprintln!("Failed to write {}", absolute_path.display());
                     exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
-                };
+                }
             }))
         } else {
-            eprintln!("Failed to read {absolute_path:?}");
+            eprintln!("Failed to read {}", absolute_path.display());
             exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
             None
         }
