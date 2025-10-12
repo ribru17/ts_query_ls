@@ -27,7 +27,10 @@ use ts_query_ls::{
 
 use crate::{
     Backend, DocumentData, ImportedUri, LanguageData, LspClient, QUERY_LANGUAGE, SymbolInfo,
-    util::{CAPTURES_QUERY, NodeUtil as _, TextProviderRope, uri_to_basename},
+    util::{
+        CAPTURES_QUERY, NodeUtil as _, TextProviderRope, remove_unnecessary_escapes,
+        uri_to_basename,
+    },
 };
 
 use super::code_action::CodeActions;
@@ -462,12 +465,12 @@ async fn get_diagnostics_recursively(
                         remove_unnecessary_escapes(&capture_text)
                     };
                     let sym = SymbolInfo {
-                        label: capture_text.clone(),
+                        label: capture_text,
                         named,
                     };
                     if !symbols.contains(&sym) {
                         diagnostics.push(Diagnostic {
-                            message: format!("Invalid node type: \"{capture_text}\""),
+                            message: format!("Invalid node type: \"{}\"", sym.label),
                             severity: ERROR_SEVERITY,
                             range,
                             code: DiagnosticCode::InvalidNode.into(),
@@ -858,30 +861,6 @@ async fn get_imported_query_diagnostics(
         }
     }
     items
-}
-
-fn remove_unnecessary_escapes(input: &str) -> String {
-    let mut result = String::new();
-    let mut chars = input.chars().peekable();
-
-    while let Some(c) = chars.next() {
-        if c == '\\' {
-            match chars.next() {
-                Some(char @ ('\"' | '\\' | 'n' | 'r' | 't' | '0')) => {
-                    result.push('\\');
-                    result.push(char);
-                }
-                Some(char) => {
-                    result.push(char);
-                }
-                None => {}
-            }
-        } else {
-            result.push(c);
-        }
-    }
-
-    result
 }
 
 fn validate_predicate<'a>(

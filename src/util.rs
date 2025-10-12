@@ -727,3 +727,28 @@ pub async fn get_work_done_token<C: LspClient>(
         None
     }
 }
+
+/// Remove unnecessary backslashes from the given string content.
+pub fn remove_unnecessary_escapes(input: &str) -> String {
+    let mut result = String::new();
+    let mut chars = input.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some(char @ ('\"' | '\\' | 'n' | 'r' | 't' | '0')) => {
+                    result.push('\\');
+                    result.push(char);
+                }
+                Some(char) => {
+                    result.push(char);
+                }
+                None => {}
+            }
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
+}
