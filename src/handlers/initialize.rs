@@ -22,9 +22,11 @@ pub async fn initialize<C: LspClient>(
             );
         } else if let Some(root_uri) = params
             .root_uri
-            .or(params
-                .root_path
-                .and_then(|p| Url::from_str(p.as_str()).ok()))
+            .or_else(|| {
+                params
+                    .root_path
+                    .and_then(|p| Url::from_str(p.as_str()).ok())
+            })
             .and_then(|uri| uri.to_file_path().ok())
         {
             ws_uris.push(root_uri);

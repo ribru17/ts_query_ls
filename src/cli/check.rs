@@ -40,7 +40,7 @@ pub async fn check_directories(
         directories
     };
     let workspace = workspace
-        .unwrap_or(env::current_dir().expect("Failed to get current directory"))
+        .unwrap_or_else(|| env::current_dir().expect("Failed to get current directory"))
         .canonicalize()
         .expect("Workspace path should be valid");
     let workspace = Arc::new(workspace);

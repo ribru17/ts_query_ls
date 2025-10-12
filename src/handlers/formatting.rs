@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::ops::Deref as _;
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -328,7 +327,7 @@ fn handle_predicate(
                 };
                 for arg in &args[1..] {
                     if let QueryPredicateArg::String(kind) = arg
-                        && node_type == kind.deref()
+                        && node_type == &**kind
                     {
                         return false;
                     }

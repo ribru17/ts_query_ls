@@ -68,21 +68,21 @@ pub mod helpers {
     }
 
     impl MockRequest {
-        pub fn from_request<R>(params: R::Params) -> MockRequest
+        pub fn from_request<R>(params: R::Params) -> Self
         where
             R: tower_lsp::lsp_types::request::Request,
         {
-            MockRequest {
+            Self {
                 method: R::METHOD.to_string(),
                 params: serde_json::to_value(params).expect("Invalid parameters"),
             }
         }
 
-        pub fn from_notification<R>(params: R::Params) -> MockRequest
+        pub fn from_notification<R>(params: R::Params) -> Self
         where
             R: tower_lsp::lsp_types::notification::Notification,
         {
-            MockRequest {
+            Self {
                 method: R::METHOD.to_string(),
                 params: serde_json::to_value(params).expect("Invalid parameters"),
             }
@@ -348,7 +348,7 @@ mod test {
             &serde_json::from_value::<Options>(serde_json::to_value(options).unwrap()).unwrap();
 
         let actual_options = backend.options.read().await;
-        assert_eq!(actual_options.deref(), options);
+        assert_eq!(&*actual_options, options);
         assert_eq!(backend.document_map.len(), documents.len());
         for (uri, source) in documents {
             let doc = backend.document_map.get(uri).unwrap();
@@ -362,8 +362,8 @@ mod test {
             );
         }
         assert_eq!(
-            backend.client_capabilities.deref().read().await.deref(),
-            TEST_CLIENT_CAPABILITIES.deref()
+            &*backend.client_capabilities.deref().read().await,
+            &*TEST_CLIENT_CAPABILITIES
         );
     }
 }
