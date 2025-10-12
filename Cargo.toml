@@ -13,6 +13,32 @@ members = [
     "xtask",
 ]
 
+[lints]
+workspace = true
+
+[workspace.lints.rust]
+warnings = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+
+cargo_common_metadata = "allow"
+cast_precision_loss = "allow"
+cast-possible-truncation = "allow"
+cast_lossless = "allow"
+cast_sign_loss = "allow"
+cognitive_complexity = "allow"
+items_after_statements = "allow"
+multiple_crate_versions = "allow"
+option_if_let_else = "allow"
+redundant_closure_for_method_calls = "allow"
+too_many_lines = "allow"
+significant_drop_tightening = "allow"
+
 [lib]
 path = "src/lib.rs"
 

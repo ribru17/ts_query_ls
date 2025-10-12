@@ -3,6 +3,9 @@ name = "xtask"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 clap = { version = "4.5.37", features = ["derive"] }
 schemars = "0.8.22"
