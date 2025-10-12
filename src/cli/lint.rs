@@ -20,7 +20,7 @@ use crate::{
 };
 
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct LintOptions {
+pub struct LintOptions {
     pub fix: bool,
     pub ignore_missing_language: bool,
 }
@@ -101,7 +101,8 @@ pub(super) async fn lint_file(
             else {
                 continue;
             };
-            let Some(mut changes) = edit.changes.and_then(|mut changes| changes.remove(&uri)) else {
+            let Some(mut changes) = edit.changes.and_then(|mut changes| changes.remove(&uri))
+            else {
                 continue;
             };
             edits.append(&mut changes);
@@ -181,7 +182,7 @@ pub async fn lint_directories(
         directories
     };
     let workspace = workspace
-        .unwrap_or(env::current_dir().expect("Failed to get current directory"))
+        .unwrap_or_else(|| env::current_dir().expect("Failed to get current directory"))
         .canonicalize()
         .expect("Workspace path should be valid");
     let workspace = Arc::new(workspace);

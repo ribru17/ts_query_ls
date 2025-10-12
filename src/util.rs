@@ -287,7 +287,7 @@ pub fn get_language_name(uri: &Url, options: &Options) -> Option<String> {
                 .parser_aliases
                 .get(capture.as_str())
                 .cloned()
-                .unwrap_or(capture.as_str().to_owned())
+                .unwrap_or_else(|| capture.as_str().to_owned())
         })
 }
 
@@ -731,7 +731,7 @@ pub async fn get_work_done_token<C: LspClient>(
 /// Remove unnecessary backslashes from the given string content.
 pub fn remove_unnecessary_escapes(input: &str) -> String {
     let mut result = String::new();
-    let mut chars = input.chars().peekable();
+    let mut chars = input.chars();
 
     while let Some(c) = chars.next() {
         if c == '\\' {

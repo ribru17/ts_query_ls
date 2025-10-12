@@ -66,6 +66,7 @@ pub async fn completion<C: LspClient>(
                 insert_text_format: Some(InsertTextFormat::SNIPPET),
                 text_edit: Some(CompletionTextEdit::Edit(TextEdit {
                     range: Range::new(Position::new(0, 0), Position::new(0, line_len)),
+                    #[allow(clippy::literal_string_with_formatting_args)]
                     new_text: String::from("; inherits: ${1:foo}"),
                 })),
                 ..Default::default()
@@ -743,6 +744,7 @@ mod test {
                 insert_text_format: Some(InsertTextFormat::SNIPPET),
                 text_edit: Some(CompletionTextEdit::Edit(TextEdit {
                     range: Range { start: Position { line: 0, character: 24 }, end: Position { line: 0, character: 25 } },
+                    #[allow(clippy::literal_string_with_formatting_args)]
                     new_text: String::from("#set! ${1:text} ${2:text}") })),
                 ..Default::default()
             },
@@ -824,6 +826,7 @@ the `inherits:` keyword, and there must be no spaces in-between module names.
                 insert_text_format: Some(InsertTextFormat::SNIPPET),
                 text_edit: Some(CompletionTextEdit::Edit(TextEdit {
                     range: Range::new(Position::new(0, 0), Position::new(0, 6)),
+                    #[allow(clippy::literal_string_with_formatting_args)]
                     new_text: String::from("; inherits: ${1:foo}"),
                 })),
                 ..Default::default()

@@ -8,8 +8,8 @@ use tracing_subscriber::registry::LookupSpan;
 pub struct LspLogLayer(Client);
 
 impl LspLogLayer {
-    pub fn new(client: Client) -> Self {
-        LspLogLayer(client)
+    pub const fn new(client: Client) -> Self {
+        Self(client)
     }
 }
 

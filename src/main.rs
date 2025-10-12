@@ -137,8 +137,8 @@ struct ImportedUri {
 }
 
 impl ImportedUri {
-    fn new(start_col: u32, end_col: u32, name: String, uri: Option<Url>) -> ImportedUri {
-        ImportedUri {
+    const fn new(start_col: u32, end_col: u32, name: String, uri: Option<Url>) -> Self {
+        Self {
             start_col,
             end_col,
             name,

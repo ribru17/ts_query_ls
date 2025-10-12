@@ -193,7 +193,7 @@ mod test {
                 name: String::from("@fold.imports"),
                 kind: SymbolKind::VARIABLE,
                 location: Location {
-                    uri: cpp_folds_uri.clone(),
+                    uri: cpp_folds_uri,
                     range: make_range(2, 20, 2, 33),
                 },
                 deprecated: None,
@@ -226,7 +226,7 @@ mod test {
                 name: String::from("@constant"),
                 kind: SymbolKind::VARIABLE,
                 location: Location {
-                    uri: other_highlights_uri.clone(),
+                    uri: other_highlights_uri,
                     range: make_range(13, 2, 13, 11),
                 },
                 deprecated: None,

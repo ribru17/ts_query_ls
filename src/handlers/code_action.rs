@@ -35,7 +35,7 @@ impl From<CodeActions> for serde_json::Value {
 
 impl From<CodeActions> for u8 {
     fn from(e: CodeActions) -> Self {
-        e as u8
+        e as Self
     }
 }
 
@@ -44,11 +44,11 @@ impl TryFrom<u8> for CodeActions {
 
     fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
         match value {
-            0 => Ok(CodeActions::RemoveBackslash),
-            1 => Ok(CodeActions::PrefixUnderscore),
-            2 => Ok(CodeActions::Remove),
-            3 => Ok(CodeActions::Trim),
-            4 => Ok(CodeActions::Enquote),
+            0 => Ok(Self::RemoveBackslash),
+            1 => Ok(Self::PrefixUnderscore),
+            2 => Ok(Self::Remove),
+            3 => Ok(Self::Trim),
+            4 => Ok(Self::Enquote),
             _ => Err("Invalid value"),
         }
     }
