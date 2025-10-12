@@ -12,7 +12,7 @@ use crate::{
     Backend, LspClient, QUERY_LANGUAGE, SymbolInfo,
     util::{
         FORMAT_IGNORE_REGEX, INHERITS_REGEX, NodeUtil, PosUtil, capture_at_pos,
-        get_imported_module_under_cursor, uri_to_basename,
+        get_imported_module_under_cursor, remove_unnecessary_escapes, uri_to_basename,
     },
 };
 
@@ -129,6 +129,93 @@ pub async fn hover<C: LspClient>(
                         kind: MarkupKind::Markdown,
                         value,
                     }),
+                })
+            } else if let Some(language) = language_data.as_ref().map(|ld| &ld.language) {
+                let syms = (0..language.node_kind_count() as u16)
+                    .filter(|&id| {
+                        if !(language.node_kind_is_visible(id)
+                            || language.node_kind_is_supertype(id))
+                            || !language.node_kind_is_named(id)
+                        {
+                            return false;
+                        }
+                        language
+                            .node_kind_for_id(id)
+                            .is_some_and(|kind| kind == sym.label)
+                    })
+                    .collect::<Vec<_>>();
+                if syms.is_empty() {
+                    None
+                } else {
+                    Some(Hover {
+                        contents: HoverContents::Markup(MarkupContent {
+                            kind: MarkupKind::Markdown,
+                            value: format!(
+                                "Symbol IDs: {}",
+                                syms.iter()
+                                    .map(ToString::to_string)
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            ),
+                        }),
+                        range,
+                    })
+                }
+            } else {
+                None
+            }
+        }
+        "anonymous" => {
+            if let Some(language) = language_data.as_ref().map(|ld| &ld.language) {
+                let string_content =
+                    remove_unnecessary_escapes(&capture_text[1..capture_text.len() - 1]);
+                let syms = (0..language.node_kind_count() as u16)
+                    .filter(|&id| {
+                        if !language.node_kind_is_visible(id)
+                            || language.node_kind_is_supertype(id)
+                            || language.node_kind_is_named(id)
+                        {
+                            return false;
+                        }
+                        language
+                            .node_kind_for_id(id)
+                            .is_some_and(|kind| kind == string_content)
+                    })
+                    .collect::<Vec<_>>();
+                if syms.is_empty() {
+                    None
+                } else {
+                    Some(Hover {
+                        contents: HoverContents::Markup(MarkupContent {
+                            kind: MarkupKind::Markdown,
+                            value: format!(
+                                "Symbol IDs: {}",
+                                syms.iter()
+                                    .map(ToString::to_string)
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            ),
+                        }),
+                        range,
+                    })
+                }
+            } else {
+                None
+            }
+        }
+        "field" => {
+            if let Some(language) = language_data.as_ref().map(|ld| &ld.language) {
+                let sym = (1..=language.field_count() as u16).find(|&id| {
+                    language
+                        .field_name_for_id(id)
+                        .is_some_and(|name| name == capture_text)
+                });
+                sym.map(|sym| Hover {
+                    contents: HoverContents::Markup(MarkupContent {
+                        kind: MarkupKind::Markdown,
+                        value: format!("Field ID: {sym}"),
+                    }),
+                    range,
                 })
             } else {
                 None
@@ -448,6 +535,38 @@ An error node", BTreeMap::from([(String::from("error"), String::from("An error n
         end: Position::new(0, 21)
     },
     "*Document not found*", BTreeMap::default())]
+    #[case("(named_node)", Position { line: 0, character: 4 }, Range {
+        start: Position::new(0, 1),
+        end: Position::new(0, 11)
+    }, "Symbol IDs: 39", BTreeMap::default())]
+    #[case("(MISSING identifier)", Position { line: 0, character: 12 }, Range {
+        start: Position::new(0, 9),
+        end: Position::new(0, 19)
+    }, "Symbol IDs: 6, 7", BTreeMap::default())]
+    #[case("(definition/named_node)", Position { line: 0, character: 12 }, Range {
+        start: Position::new(0, 12),
+        end: Position::new(0, 22)
+    }, "Symbol IDs: 39", BTreeMap::default())]
+    #[case("\"MISSING\"", Position { line: 0, character: 0 }, Range {
+        start: Position::new(0, 0),
+        end: Position::new(0, 9)
+    }, "Symbol IDs: 18", BTreeMap::default())]
+    #[case(r#""MISSING""#, Position { line: 0, character: 2 }, Range {
+        start: Position::new(0, 0),
+        end: Position::new(0, 9)
+    }, "Symbol IDs: 18", BTreeMap::default())]
+    #[case(r#""MIS\SING""#, Position { line: 0, character: 4 }, Range {
+        start: Position::new(0, 0),
+        end: Position::new(0, 10)
+    }, "Symbol IDs: 18", BTreeMap::default())]
+    #[case("(missing_node name: (identifier) @variable !type)", Position { line: 0, character: 15 }, Range {
+        start: Position::new(0, 14),
+        end: Position::new(0, 18)
+    }, "Field ID: 1", BTreeMap::default())]
+    #[case("(missing_node name: (identifier) @variable !type)", Position { line: 0, character: 46 }, Range {
+        start: Position::new(0, 44),
+        end: Position::new(0, 48)
+    }, "Field ID: 5", BTreeMap::default())]
     #[tokio::test(flavor = "current_thread")]
     async fn hover(
         #[case] source: &str,
