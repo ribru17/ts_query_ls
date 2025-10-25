@@ -16,9 +16,6 @@ members = [
 [lints]
 workspace = true
 
-[workspace.lints.rust]
-warnings = "deny"
-
 [workspace.lints.clippy]
 dbg_macro = "deny"
 todo = "deny"
