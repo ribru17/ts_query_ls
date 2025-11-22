@@ -317,9 +317,15 @@ pub fn get_language(name: &str, options: &Options) -> Option<Language> {
 
     for directory in directories {
         for dylib_extension in DYLIB_EXTENSIONS {
-            let object_name = [name.as_str(), dylib_extension].concat();
-            let library_path = Path::new(directory).join(&object_name);
-            if let Ok(library) = unsafe { libloading::Library::new(library_path) } {
+            let object_name = format!("{name}{dylib_extension}");
+            let mut library_path = Path::new(directory).join(&object_name);
+            if let Ok(library) = unsafe {
+                libloading::Library::new(&library_path).or_else(|_| {
+                    let prefixed_object_name = format!("tree-sitter-{object_name}");
+                    library_path.set_file_name(prefixed_object_name);
+                    libloading::Library::new(library_path)
+                })
+            } {
                 let language = unsafe {
                     let language_fn: libloading::Symbol<unsafe extern "C" fn() -> Language> =
                         library
@@ -339,10 +345,14 @@ pub fn get_language(name: &str, options: &Options) -> Option<Language> {
 }
 
 fn get_language_object_wasm(name: &str, directory: &String) -> Option<Language> {
-    let object_name = format!("tree-sitter-{name}.wasm");
+    let object_name = format!("{name}.wasm");
     let mut language_store = WasmStore::new(&ENGINE).ok()?;
-    let library_path = Path::new(directory).join(&object_name);
-    if let Ok(wasm) = fs::read(library_path) {
+    let mut library_path = Path::new(directory).join(&object_name);
+    if let Ok(wasm) = fs::read(&library_path).or_else(|_| {
+        let prefixed_object_name = format!("tree-sitter-{object_name}");
+        library_path.set_file_name(prefixed_object_name);
+        fs::read(library_path)
+    }) {
         let lang = language_store.load_language(name, &wasm);
         return match lang {
             Err(err) => {
