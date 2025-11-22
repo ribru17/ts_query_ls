@@ -14,12 +14,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@1.88.0
         id: toolchain
         with:
           components: clippy
-      - uses: actions/cache@v3
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry/index/
@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@1.88.0
         id: toolchain
         with:
@@ -52,10 +52,10 @@ jobs:
           - ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@1.88.0
         id: toolchain
-      - uses: actions/cache@v3
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry/index/
@@ -73,10 +73,12 @@ jobs:
       NVIM_TS_DIR: .test/nvim-treesitter
     steps:
       - uses: actions/checkout@v4
-      - uses: tree-sitter/setup-action/cli@v1
+      - uses: tree-sitter/setup-action/cli@v2
+        with:
+          install-lib: false
       - uses: dtolnay/rust-toolchain@1.88.0
         id: toolchain
-      - uses: actions/cache@v3
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry/index/
@@ -91,7 +93,7 @@ jobs:
           echo ${{ github.workspace }}/target/release >> $GITHUB_PATH
 
       - name: Clone nvim-treesitter corpus
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: nvim-treesitter/nvim-treesitter
           ref: main
@@ -126,10 +128,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@1.88.0
         id: toolchain
-      - uses: actions/cache@v3
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry/index/
