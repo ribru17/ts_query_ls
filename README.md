@@ -52,7 +52,7 @@ its ancestor directories. Below is an example file:
 #### `parser_install_directories`
 
 A list of strings representing directories to search for parsers, of the form
-`<lang>.(so|dll|dylib)` or `tree-sitter-<lang>.wasm`.
+`<lang>.(so|dll|dylib|wasm)` or `tree-sitter-<lang>.(so|dll|dylib|wasm)`.
 
 Supports environment variable expansion of the form `${VAR}`.
 
