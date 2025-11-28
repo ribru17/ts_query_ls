@@ -1,6 +1,6 @@
 [package]
 name = "ts_query_ls"
-version = "3.12.0"
+version = "3.13.0"
 authors = ["Riley Bruins <ribru17@gmail.com>"]
 edition = "2024"
 description = "An LSP implementation for Tree-sitter's query files"
@@ -8,10 +8,7 @@ license = "MIT"
 repository = "https://github.com/ribru17/ts_query_ls"
 
 [workspace]
-members = [
-    ".",
-    "xtask",
-]
+members = [".", "xtask"]
 
 [lints]
 workspace = true
@@ -59,7 +56,11 @@ schemars = { version = "0.8.22", optional = true, features = ["derive"] }
 serde = "1.0.210"
 serde_json = "1.0.132"
 streaming-iterator = "0.1.9"
-tokio = { version = "1.40.0", features = ["rt-multi-thread", "macros", "io-std"] }
+tokio = { version = "1.40.0", features = [
+    "rt-multi-thread",
+    "macros",
+    "io-std",
+] }
 tower-lsp = "0.20.0"
 tracing = "0.1.41"
 tracing-subscriber = "0.3.18"
