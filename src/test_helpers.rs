@@ -23,6 +23,8 @@ pub mod helpers {
         LazyLock::new(|| Url::parse("file:///tmp/queries/js/test.scm").unwrap());
     pub static QUERY_TEST_URI: LazyLock<Url> =
         LazyLock::new(|| Url::parse("file:///tmp/queries/query/test.scm").unwrap());
+    pub static RUST_TEST_URI: LazyLock<Url> =
+        LazyLock::new(|| Url::parse("file:///tmp/queries/rust/test.scm").unwrap());
     pub static CPP_HIGHLIGHTS_WS_URI: LazyLock<Url> = LazyLock::new(|| {
         Url::from_file_path(concat!(
             env!("CARGO_MANIFEST_DIR"),
