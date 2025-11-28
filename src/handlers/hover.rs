@@ -555,6 +555,14 @@ An error node", BTreeMap::from([(String::from("error"), String::from("An error n
         start: Position::new(0, 0),
         end: Position::new(0, 9)
     }, "Symbol IDs: 18", BTreeMap::default())]
+    #[case(r#"(MISSING "MISSING")"#, Position { line: 0, character: 12 }, Range {
+        start: Position::new(0, 9),
+        end: Position::new(0, 18)
+    }, "Symbol IDs: 18", BTreeMap::default())]
+    #[case(r#"(definition/"MISSING")"#, Position { line: 0, character: 14 }, Range {
+        start: Position::new(0, 12),
+        end: Position::new(0, 21)
+    }, "Symbol IDs: 18", BTreeMap::default())]
     #[case(r#""MIS\SING""#, Position { line: 0, character: 4 }, Range {
         start: Position::new(0, 0),
         end: Position::new(0, 10)
