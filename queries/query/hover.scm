@@ -32,13 +32,7 @@
 
 (definition/named_node) @capture
 
-(anonymous_node
-  (string
-    (string_content)) @anonymous)
-
-(named_node
-  (string
-    (string_content)) @anonymous)
+name: (string) @anonymous
 
 (named_node
   (identifier) @identifier.node)
