@@ -538,7 +538,7 @@ An error node", BTreeMap::from([(String::from("error"), String::from("An error n
     #[case("(named_node)", Position { line: 0, character: 4 }, Range {
         start: Position::new(0, 1),
         end: Position::new(0, 11)
-    }, "Symbol IDs: 39", BTreeMap::default())]
+    }, "Symbol IDs: 40", BTreeMap::default())]
     #[case("(MISSING identifier)", Position { line: 0, character: 12 }, Range {
         start: Position::new(0, 9),
         end: Position::new(0, 19)
@@ -546,7 +546,7 @@ An error node", BTreeMap::from([(String::from("error"), String::from("An error n
     #[case("(definition/named_node)", Position { line: 0, character: 12 }, Range {
         start: Position::new(0, 12),
         end: Position::new(0, 22)
-    }, "Symbol IDs: 39", BTreeMap::default())]
+    }, "Symbol IDs: 40", BTreeMap::default())]
     #[case("\"MISSING\"", Position { line: 0, character: 0 }, Range {
         start: Position::new(0, 0),
         end: Position::new(0, 9)
