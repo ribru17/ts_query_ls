@@ -75,3 +75,4 @@ cc = "1.1.30"
 pretty_assertions = "1.4.1"
 rstest = "0.26.1"
 tower = { version = "0.5.1", features = ["util"] }
+tree-sitter-rust = "0.24.0"

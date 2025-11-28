@@ -306,8 +306,13 @@ pub fn get_language_name_raw(path: &Path, options: &Options) -> Option<String> {
 
 /// Get the language object of the given name.
 pub fn get_language(name: &str, options: &Options) -> Option<Language> {
-    // Return query language object for mock tests
-    if cfg!(test) && name == "query" {
+    // Return test language objects for mocks
+    #[cfg(test)]
+    if name == "rust" {
+        use crate::RUST_LANGUAGE;
+
+        return Some(RUST_LANGUAGE.clone());
+    } else if name == "query" {
         return Some(QUERY_LANGUAGE.clone());
     }
 

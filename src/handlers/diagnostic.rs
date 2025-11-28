@@ -477,30 +477,36 @@ async fn get_diagnostics_recursively(
                     }
                 }
                 "supertype" => {
-                    let Some(supertypes) = supertypes else {
-                        continue;
-                    };
-                    let Some(symbols) = symbols else {
+                    let (Some(supertypes), Some(symbols)) = (supertypes, symbols) else {
                         continue;
                     };
                     let supertype_text = capture_text;
                     let sym = SymbolInfo {
-                        label: supertype_text.clone(),
+                        label: supertype_text,
                         named: true,
                     };
                     if let Some(subtypes) = supertypes.get(&sym) {
                         let subtype = capture.node.next_named_sibling().unwrap();
+                        let named = subtype.kind() == "identifier";
                         let subtype_text = subtype.text(rope);
+                        let subtype_text = if named {
+                            subtype_text
+                        } else {
+                            remove_unnecessary_escapes(&subtype_text[1..subtype_text.len() - 1])
+                        };
                         let subtype_sym = SymbolInfo {
-                            label: subtype_text.clone(),
-                            named: true,
+                            label: subtype_text,
+                            named,
                         };
                         let range = subtype.lsp_range(rope);
                         // Only run this check when subtypes is not empty, to account for parsers
                         // generated with ABI < 15
                         if !subtypes.is_empty() && !subtypes.contains(&subtype_sym) {
                             diagnostics.push(Diagnostic {
-                                message: format!("Node \"{subtype_text}\" is not a subtype of \"{supertype_text}\""),
+                                message: format!(
+                                    "Node \"{}\" is not a subtype of \"{}\"",
+                                    subtype_sym.label, sym.label
+                                ),
                                 severity: ERROR_SEVERITY,
                                 range,
                                 code: DiagnosticCode::InvalidSubtype.into(),
@@ -508,7 +514,7 @@ async fn get_diagnostics_recursively(
                             });
                         } else if subtypes.is_empty() && !symbols.contains(&subtype_sym) {
                             diagnostics.push(Diagnostic {
-                                message: format!("Invalid node type: \"{subtype_text}\""),
+                                message: format!("Invalid node type: \"{}\"", subtype_sym.label),
                                 severity: ERROR_SEVERITY,
                                 range,
                                 code: DiagnosticCode::InvalidNode.into(),
@@ -517,7 +523,7 @@ async fn get_diagnostics_recursively(
                         }
                     } else {
                         diagnostics.push(Diagnostic {
-                            message: format!("Node \"{supertype_text}\" is not a supertype"),
+                            message: format!("Node \"{}\" is not a supertype", sym.label),
                             severity: ERROR_SEVERITY,
                             range,
                             code: DiagnosticCode::InvalidSupertype.into(),
@@ -1017,8 +1023,8 @@ mod test {
             diagnostic::{DiagnosticCode, ERROR_SEVERITY, HINT_SEVERITY, WARNING_SEVERITY},
         },
         test_helpers::helpers::{
-            CPP_HIGHLIGHTS_WS_URI, Document, FOO_HIGHLIGHTS_WS_URI, QUERY_TEST_URI, TEST_URI,
-            TestService, initialize_server,
+            CPP_HIGHLIGHTS_WS_URI, Document, FOO_HIGHLIGHTS_WS_URI, QUERY_TEST_URI, RUST_TEST_URI,
+            TEST_URI, TestService, initialize_server,
         },
     };
 
@@ -2480,6 +2486,32 @@ mod test {
                 message: String::from("_ already captured by this alternation (fix available)"),
                 code: DiagnosticCode::RedundantAlternant.into(),
                 data: Some(CodeActions::Remove.into()),
+                ..Default::default()
+            },
+        ],
+        None,
+    )]
+    #[case(
+        &[(
+            RUST_TEST_URI.clone(),
+            r#"(_pattern/"_") @function.method"#,
+        )],
+        Options::default(),
+        &[],
+        None,
+    )]
+    #[case(
+        &[(
+            RUST_TEST_URI.clone(),
+            r#"(_pattern/")") @function.method"#,
+        )],
+        Options::default(),
+        &[
+            Diagnostic {
+                range: Range::new(Position::new(0, 10), Position::new(0, 13)),
+                severity: ERROR_SEVERITY,
+                message: String::from("Node \")\" is not a subtype of \"_pattern\""),
+                code: DiagnosticCode::InvalidSubtype.into(),
                 ..Default::default()
             },
         ],
