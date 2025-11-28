@@ -37,6 +37,10 @@
     (string_content)) @anonymous)
 
 (named_node
+  (string
+    (string_content)) @anonymous)
+
+(named_node
   (identifier) @identifier.node)
 
 (named_node
