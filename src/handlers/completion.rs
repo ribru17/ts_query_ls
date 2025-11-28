@@ -119,8 +119,16 @@ pub async fn completion<C: LspClient>(
                 subtypes
                     .iter()
                     .map(|sub| CompletionItem {
-                        label: sub.label.clone(),
-                        kind: Some(CompletionItemKind::CLASS),
+                        label: if sub.named {
+                            sub.label.clone()
+                        } else {
+                            format!("\"{}\"", sub.label)
+                        },
+                        kind: Some(if sub.named {
+                            CompletionItemKind::CLASS
+                        } else {
+                            CompletionItemKind::CONSTANT
+                        }),
                         ..Default::default()
                     })
                     .collect(),
@@ -355,13 +363,15 @@ mod test {
         CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse,
         CompletionTextEdit, Documentation, InsertTextFormat, MarkupContent, MarkupKind,
         PartialResultParams, Position, Range, TextDocumentIdentifier, TextDocumentPositionParams,
-        TextEdit, WorkDoneProgressParams, request::Completion,
+        TextEdit, Url, WorkDoneProgressParams, request::Completion,
     };
     use ts_query_ls::{
         Options, Predicate, PredicateParameter, PredicateParameterArity, PredicateParameterType,
     };
 
-    use crate::test_helpers::helpers::{QUERY_TEST_URI, TestService, initialize_server};
+    use crate::test_helpers::helpers::{
+        QUERY_TEST_URI, RUST_TEST_URI, TestService, initialize_server,
+    };
 
     static NODE_COMPLETIONS: LazyLock<Vec<CompletionItem>> = LazyLock::new(|| {
         vec![
@@ -543,8 +553,104 @@ mod test {
         ]
     });
 
+    static RUST_SUBTYPE_COMPLETIONS: LazyLock<Vec<CompletionItem>> = LazyLock::new(|| {
+        vec![
+            CompletionItem {
+                label: String::from("\"_\""),
+                kind: Some(CompletionItemKind::CONSTANT),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("_literal_pattern"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("captured_pattern"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("const_block"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("generic_pattern"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("identifier"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("macro_invocation"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("mut_pattern"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("or_pattern"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("range_pattern"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("ref_pattern"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("reference_pattern"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("remaining_field_pattern"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("scoped_identifier"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("slice_pattern"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("struct_pattern"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("tuple_pattern"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: String::from("tuple_struct_pattern"),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            },
+        ]
+    });
+
     #[rstest]
     #[case(
+        &QUERY_TEST_URI,
         r#"((identifier) @constant
 (#match? @cons "^[A-Z][A-Z\\d_]*$"))"#,
         Position { line: 1, character: 14 },
@@ -563,6 +669,7 @@ mod test {
         }],
     )]
     #[case(
+        &QUERY_TEST_URI,
         r#"((ident) @constant
 (#match? @constant "^[A-Z][A-Z\\d_]*$"))"#,
         Position { line: 0, character: 6 },
@@ -577,6 +684,7 @@ mod test {
         },
     )]
     #[case(
+        &QUERY_TEST_URI,
         r"((constant) @constant
 ; @co
 )
@@ -586,18 +694,28 @@ mod test {
         &[]
     )]
     #[case(
+        &QUERY_TEST_URI,
         r"(definition/)",
         Position { line: 0, character: 12 },
         &Options::default(),
         &SUBTYPE_COMPLETIONS
     )]
     #[case(
+        &QUERY_TEST_URI,
         r"(definition/a)",
         Position { line: 0, character: 13 },
         &Options::default(),
         &SUBTYPE_COMPLETIONS
     )]
     #[case(
+        &RUST_TEST_URI,
+        r"(_pattern/)",
+        Position { line: 0, character: 10 },
+        &Options::default(),
+        &RUST_SUBTYPE_COMPLETIONS
+    )]
+    #[case(
+        &QUERY_TEST_URI,
         r"(constant) @cons ",
         Position { line: 0, character: 13 },
         &Options { valid_captures: HashMap::from([(String::from("test"),
@@ -619,6 +737,7 @@ mod test {
         ]
     )]
     #[case(
+        &QUERY_TEST_URI,
         r"(constant) @ ",
         Position { line: 0, character: 12 },
         &Options { valid_captures: HashMap::from([(String::from("test"),
@@ -640,6 +759,7 @@ mod test {
         ]
     )]
     #[case(
+        &QUERY_TEST_URI,
         r"( (constant) @constant (#eq? @) ) ",
         Position { line: 0, character: 30 },
         &Options { valid_captures: HashMap::from([(String::from("test"),
@@ -657,6 +777,7 @@ mod test {
         ]
     )]
     #[case(
+        &QUERY_TEST_URI,
         r"( (constant) @constant (#eq? @cons) ) ",
         Position { line: 0, character: 34 },
         &Options { valid_captures: HashMap::from([(String::from("test"),
@@ -674,6 +795,7 @@ mod test {
         ]
     )]
     #[case(
+        &QUERY_TEST_URI,
         r"( (constant) @constant (#) ) ",
         Position { line: 0, character: 25 },
         &Options {
@@ -751,6 +873,7 @@ mod test {
         ]
     )]
     #[case(
+        &QUERY_TEST_URI,
         r"((constant ! ) @constant)",
         Position { line: 0, character: 12 },
         &Options { valid_captures: HashMap::from([(String::from("test"),
@@ -759,6 +882,7 @@ mod test {
         &FIELD_COMPLETIONS
     )]
     #[case(
+        &QUERY_TEST_URI,
         r"((constant !oper ) @constant)",
         Position { line: 0, character: 16 },
         &Options { valid_captures: HashMap::from([(String::from("test"),
@@ -767,6 +891,7 @@ mod test {
         &FIELD_COMPLETIONS
     )]
     #[case(
+        &QUERY_TEST_URI,
         r"; inherits: ",
         Position { line: 0, character: 12 },
         &Options { valid_captures: HashMap::from([(String::from("test"),
@@ -786,6 +911,7 @@ mod test {
         ]
     )]
     #[case(
+        &QUERY_TEST_URI,
         r"; inherits: ",
         Position { line: 0, character: 4 },
         &Options { valid_captures: HashMap::from([(String::from("test"),
@@ -794,6 +920,7 @@ mod test {
         &[]
     )]
     #[case(
+        &QUERY_TEST_URI,
         r"; inhe",
         Position { line: 0, character: 6 },
         &Options { valid_captures: HashMap::from([(String::from("test"),
@@ -835,13 +962,14 @@ the `inherits:` keyword, and there must be no spaces in-between module names.
     )]
     #[tokio::test(flavor = "current_thread")]
     async fn server_completions(
+        #[case] uri: &Url,
         #[case] source: &str,
         #[case] position: Position,
         #[case] options: &Options,
         #[case] expected_completions: &[CompletionItem],
     ) {
         // Arrange
-        let mut service = initialize_server(&[(QUERY_TEST_URI.clone(), source)], options).await;
+        let mut service = initialize_server(&[(uri.clone(), source)], options).await;
 
         // Act
         let actual_completions = service
@@ -849,9 +977,7 @@ the `inherits:` keyword, and there must be no spaces in-between module names.
                 context: None,
                 text_document_position: TextDocumentPositionParams {
                     position,
-                    text_document: TextDocumentIdentifier {
-                        uri: QUERY_TEST_URI.clone(),
-                    },
+                    text_document: TextDocumentIdentifier { uri: uri.clone() },
                 },
                 partial_result_params: PartialResultParams::default(),
                 work_done_progress_params: WorkDoneProgressParams::default(),
