@@ -407,8 +407,7 @@ ts_query_ls profile --help
 
 ### Packaging
 
-- [ ] [`homebrew`](https://github.com/Homebrew/homebrew-core)
-      ([it's complicated](https://github.com/Homebrew/homebrew-core/pull/197587))
+- [x] [`homebrew`](https://github.com/Homebrew/homebrew-core)
 - [x] [`nixpkgs`](https://github.com/NixOS/nixpkgs)
 - [x] [`mason.nvim`](https://github.com/mason-org/mason-registry)
 - [x] [`AUR`](https://aur.archlinux.org/)
