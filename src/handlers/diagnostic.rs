@@ -2508,6 +2508,13 @@ mod test {
         Options::default(),
         &[
             Diagnostic {
+                range: Range::new(Position::new(0, 0), Position::new(0, 31)),
+                severity: ERROR_SEVERITY,
+                message: String::from("Invalid pattern structure"),
+                code: DiagnosticCode::InvalidPatternStructure.into(),
+                ..Default::default()
+            },
+            Diagnostic {
                 range: Range::new(Position::new(0, 10), Position::new(0, 13)),
                 severity: ERROR_SEVERITY,
                 message: String::from("Node \")\" is not a subtype of \"_pattern\""),
