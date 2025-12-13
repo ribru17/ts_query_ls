@@ -407,6 +407,7 @@ ts_query_ls profile --help
 
 ### Packaging
 
+- [x] [crates.io](https://crates.io/crates/ts_query_ls)
 - [x] [`homebrew`](https://github.com/Homebrew/homebrew-core)
 - [x] [`nixpkgs`](https://github.com/NixOS/nixpkgs)
 - [x] [`mason.nvim`](https://github.com/mason-org/mason-registry)
