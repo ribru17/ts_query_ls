@@ -84,7 +84,7 @@ pub async fn check_directories(
         }))
     });
     join_all(tasks).await;
-    if format && format_directories(directories, true).await != 0 {
+    if format && format_directories(directories, true, options.formatting_options).await != 0 {
         exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
     }
     exit_code.load(std::sync::atomic::Ordering::Relaxed)

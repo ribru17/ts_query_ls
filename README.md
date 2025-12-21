@@ -111,6 +111,16 @@ options are:
     predicate or directive
   - Default: `true`
 
+#### `formatting_options`
+
+An optional object specifying formatting style preferences. Currently supported
+options are:
+
+- `dot_prefix_predicates`
+  - Whether to use dot-prefixed predicates; i.e., prefer the form `.foo?` to the
+    form `#foo?`.
+  - Default: `false`
+
 #### `valid_captures`
 
 A map from query file name to valid captures. Valid captures are represented as
