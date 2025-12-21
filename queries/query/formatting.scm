@@ -245,19 +245,19 @@
   (parameters
     (comment) @format.prepend-newline
     .
-    _ @format.cancel-prepend)
+    (_) @format.cancel-prepend)
   (#is-start-of-line? @format.prepend-newline))
 
 (predicate
   (parameters
-    _ @format.prepend-space @format.conditional-newline))
+    (_) @format.prepend-space @format.conditional-newline))
 
 (predicate
   (parameters
     .
     (capture)
     .
-    _ @format.prepend-space @format.lookahead-newline @format.conditional-newline))
+    (_) @format.prepend-space @format.lookahead-newline @format.conditional-newline))
 
 ; Comment related handlers
 (comment) @format.append-newline @format.comment-fix
