@@ -10,12 +10,13 @@ use tracing::warn;
 use tree_sitter::{
     Node, Query, QueryCursor, QueryMatch, QueryPredicateArg, StreamingIterator as _, TreeCursor,
 };
+use ts_query_ls::FormattingOptions;
 
 use crate::QUERY_LANGUAGE;
 use crate::util::{ByteUtil, NodeUtil as _, TextProviderRope};
 use crate::{Backend, LspClient};
 
-pub fn formatting<C: LspClient>(
+pub async fn formatting<C: LspClient>(
     backend: &Backend<C>,
     params: &DocumentFormattingParams,
 ) -> Option<Vec<TextEdit>> {
@@ -26,13 +27,14 @@ pub fn formatting<C: LspClient>(
     };
     let rope = &doc.rope;
     let root = &doc.tree.root_node();
+    let fmt_options = backend.options.read().await.formatting_options;
 
-    format_document(rope, root).map(|formatted_doc| {
+    format_document(rope, root, fmt_options).map(|formatted_doc| {
         diffs(rope.to_string().as_str(), &formatted_doc, rope.clone()).collect()
     })
 }
 
-pub fn range_formatting<C: LspClient>(
+pub async fn range_formatting<C: LspClient>(
     backend: &Backend<C>,
     params: &DocumentRangeFormattingParams,
 ) -> Option<Vec<TextEdit>> {
@@ -44,8 +46,9 @@ pub fn range_formatting<C: LspClient>(
     let rope = &doc.rope;
     let root = &doc.tree.root_node();
     let range = params.range;
+    let fmt_options = backend.options.read().await.formatting_options;
 
-    format_document(rope, root).map(|formatted_doc| {
+    format_document(rope, root, fmt_options).map(|formatted_doc| {
         diffs(rope.to_string().as_str(), &formatted_doc, rope.clone())
             .filter(|d| d.range.end >= range.start && d.range.start <= range.end)
             .collect()
@@ -145,11 +148,11 @@ struct FormatMap {
     conditional_newline: HashSet<usize>,
     lookahead_newline: HashSet<usize>,
     comment_fix: HashSet<usize>,
-    make_pound: HashSet<usize>,
+    make_prefix: HashSet<usize>,
     remove: HashSet<usize>,
 }
 
-pub fn format_document(rope: &Rope, root: &Node) -> Option<String> {
+pub fn format_document(rope: &Rope, root: &Node, options: FormattingOptions) -> Option<String> {
     if root.has_error() {
         return None;
     }
@@ -183,7 +186,7 @@ pub fn format_document(rope: &Rope, root: &Node) -> Option<String> {
                 "format.conditional-newline" => &mut map.conditional_newline,
                 "format.lookahead-newline" => &mut map.lookahead_newline,
                 "format.comment-fix" => &mut map.comment_fix,
-                "format.make-pound" => &mut map.make_pound,
+                "format.make-prefix" => &mut map.make_prefix,
                 "format.remove" => &mut map.remove,
                 _ => panic!("Unsupported format &mut capture"),
             };
@@ -193,7 +196,7 @@ pub fn format_document(rope: &Rope, root: &Node) -> Option<String> {
 
     let mut lines = vec![String::new()];
 
-    format_iter(rope, root, &mut lines, &map, 0, &mut root.walk());
+    format_iter(rope, root, &mut lines, &map, 0, &mut root.walk(), options);
 
     Some(lines.join("\n") + "\n")
 }
@@ -205,6 +208,7 @@ fn format_iter<'a>(
     map: &FormatMap,
     mut level: usize,
     cursor: &mut TreeCursor<'a>,
+    options: FormattingOptions,
 ) {
     if !cursor.goto_first_child() {
         return;
@@ -253,8 +257,15 @@ fn format_iter<'a>(
                         .unwrap()
                         .push_str([";", mat.get(1).unwrap().as_str()].concat().as_str());
                 }
-            } else if map.make_pound.contains(id) {
-                lines.last_mut().unwrap().push('#');
+            } else if map.make_prefix.contains(id) {
+                lines
+                    .last_mut()
+                    .unwrap()
+                    .push(if options.dot_prefix_predicates {
+                        '.'
+                    } else {
+                        '#'
+                    });
             // Stop recursively formatting on leaf nodes (or strings, which should not have their
             // inner content touched)
             } else if child.child_count() == 0 || child.kind() == "string" {
@@ -267,7 +278,7 @@ fn format_iter<'a>(
                     .collect::<Vec<String>>();
                 append_lines(lines, &text);
             } else {
-                format_iter(rope, &child, lines, map, level, cursor);
+                format_iter(rope, &child, lines, map, level, cursor, options);
             }
             if map.indent_begin.contains(id) {
                 level += 1;
@@ -345,11 +356,12 @@ mod test {
     use rstest::rstest;
     use tower_lsp::lsp_types::{
         DidChangeTextDocumentParams, DocumentFormattingParams, DocumentRangeFormattingParams,
-        FormattingOptions, Position, Range, TextDocumentContentChangeEvent, TextDocumentIdentifier,
+        Position, Range, TextDocumentContentChangeEvent, TextDocumentIdentifier,
         VersionedTextDocumentIdentifier, WorkDoneProgressParams,
         notification::DidChangeTextDocument,
         request::{Formatting, RangeFormatting},
     };
+    use ts_query_ls::FormattingOptions;
 
     use crate::{
         Options,
@@ -360,28 +372,50 @@ mod test {
     #[case(
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/before_trailing_whitespace.scm")),
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/after_trailing_whitespace.scm")),
+        FormattingOptions::default(),
     )]
     #[case(
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/before_predicates.scm")),
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/after_predicates.scm")),
+        FormattingOptions::default(),
     )]
     #[case(
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/before_missing.scm")),
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/after_missing.scm")),
+        FormattingOptions::default(),
     )]
     #[case(
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/before_syntax_error.scm")),
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/after_syntax_error.scm")),
+        FormattingOptions::default(),
     )]
     #[case(
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/before_complex.scm")),
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/formatting_test_files/after_complex.scm")),
+        FormattingOptions::default(),
+    )]
+    #[case(
+        "(#foo? bar)\n",
+        "(.foo? bar)\n",
+        FormattingOptions {
+            dot_prefix_predicates: true
+        },
     )]
     #[tokio::test(flavor = "current_thread")]
-    async fn server_formatting(#[case] before: &str, #[case] after: &str) {
+    async fn server_formatting(
+        #[case] before: &str,
+        #[case] after: &str,
+        #[case] fmt_options: FormattingOptions,
+    ) {
         // Arrange
-        let mut service =
-            initialize_server(&[(TEST_URI.clone(), before)], &Options::default()).await;
+        let mut service = initialize_server(
+            &[(TEST_URI.clone(), before)],
+            &Options {
+                formatting_options: fmt_options,
+                ..Default::default()
+            },
+        )
+        .await;
 
         // Act
         let mut edits = service
@@ -390,7 +424,7 @@ mod test {
                     uri: TEST_URI.clone(),
                 },
                 work_done_progress_params: WorkDoneProgressParams::default(),
-                options: FormattingOptions::default(),
+                options: tower_lsp::lsp_types::FormattingOptions::default(),
             })
             .await
             .unwrap_or_default();
@@ -550,7 +584,7 @@ mod test {
                 },
                 work_done_progress_params: WorkDoneProgressParams::default(),
                 range,
-                options: FormattingOptions::default(),
+                options: tower_lsp::lsp_types::FormattingOptions::default(),
             })
             .await
             .unwrap_or_default();

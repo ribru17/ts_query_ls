@@ -143,6 +143,10 @@ pub struct Options {
     #[serde(default)]
     pub diagnostic_options: DiagnosticOptions,
 
+    /// Options related to formatting
+    #[serde(default)]
+    pub formatting_options: FormattingOptions,
+
     /// An inclusive range of ABI versions supported by your tool. The end of the range must be
     /// greater than or equal to the start.
     pub supported_abi_versions: Option<std::ops::RangeInclusive<u32>>,
@@ -156,6 +160,7 @@ impl Default for Options {
             valid_directives: BTreeMap::default(),
             valid_captures: HashMap::default(),
             diagnostic_options: DiagnosticOptions::default(),
+            formatting_options: FormattingOptions::default(),
             parser_aliases: BTreeMap::default(),
             parser_install_directories: Vec::default(),
             supported_abi_versions: Option::default(),
@@ -170,7 +175,7 @@ fn prefixes_schema(gen_: &mut schemars::r#gen::SchemaGenerator) -> schemars::sch
 }
 
 /// Options related to diagnostics
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DiagnosticOptions {
     /// The style for predicate string arguments
@@ -191,7 +196,16 @@ impl Default for DiagnosticOptions {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default, Clone)]
+/// Options related to formatting
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default, Copy)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct FormattingOptions {
+    /// Whether to use dot-prefixed predicates; i.e., prefer the form `.foo?` to the form `#foo?`.
+    #[serde(default)]
+    pub dot_prefix_predicates: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default, Clone, Copy)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum StringArgumentStyle {

@@ -63,7 +63,8 @@
 ] @format.append-space
 
 (predicate
-  "." @format.cancel-append @format.make-pound)
+  name: _ @format.cancel-append @format.make-prefix
+  name: (identifier))
 
 ("." @format.prepend-space @format.cancel-append
   .

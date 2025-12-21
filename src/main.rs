@@ -13,7 +13,7 @@ use std::{
     sync::{Arc, LazyLock, RwLock},
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use ts_query_ls::Options;
+use ts_query_ls::{FormattingOptions, Options};
 
 use dashmap::DashMap;
 use ropey::Rope;
@@ -279,14 +279,14 @@ impl<C: LspClient> LanguageServer for Backend<C> {
     }
 
     async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
-        Ok(formatting::formatting(self, &params))
+        Ok(formatting::formatting(self, &params).await)
     }
 
     async fn range_formatting(
         &self,
         params: DocumentRangeFormattingParams,
     ) -> Result<Option<Vec<TextEdit>>> {
-        Ok(formatting::range_formatting(self, &params))
+        Ok(formatting::range_formatting(self, &params).await)
     }
 
     async fn semantic_tokens_full(
@@ -361,6 +361,10 @@ enum Commands {
         /// Only check that formatting is valid, do not write.
         #[arg(long, short)]
         check: bool,
+
+        /// String representing server's JSON configuration.
+        #[arg(long)]
+        config: Option<String>,
     },
     /// Check the query files in the given directories for errors. This command performs a superset
     /// of the work done by the lint command; it reads the query's language to validate query
@@ -440,8 +444,27 @@ fn get_config_str(config: Option<String>) -> String {
 async fn main() {
     let args = Arguments::parse();
     match args.commands {
-        Some(Commands::Format { directories, check }) => {
-            std::process::exit(format_directories(&directories, check).await);
+        Some(Commands::Format {
+            directories,
+            check,
+            config,
+        }) => {
+            let fmt_options = if let Some(config) = config {
+                let Ok(options) = serde_json::from_str::<Options>(&config) else {
+                    eprintln!("Could not parse the provided configuration");
+                    std::process::exit(1);
+                };
+                options.formatting_options
+            } else if let Ok(config) = fs::read_to_string(Path::new(".tsqueryrc.json")) {
+                let Ok(options) = serde_json::from_str::<Options>(&config) else {
+                    eprintln!("Could not parse the configuration file");
+                    std::process::exit(1);
+                };
+                options.formatting_options
+            } else {
+                FormattingOptions::default()
+            };
+            std::process::exit(format_directories(&directories, check, fmt_options).await);
         }
         Some(Commands::Check {
             directories,

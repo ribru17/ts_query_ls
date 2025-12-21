@@ -16,6 +16,17 @@
         }
       ]
     },
+    "formatting_options": {
+      "description": "Options related to formatting",
+      "default": {
+        "dot_prefix_predicates": false
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/FormattingOptions"
+        }
+      ]
+    },
     "language_retrieval_patterns": {
       "description": "A list of patterns to aid the LSP in finding a language, given a file path. Patterns must have one capture group which represents the language name. Ordered from highest to lowest precedence.",
       "default": [
@@ -99,6 +110,17 @@
         "warn_unused_underscore_captures": {
           "description": "Whether to warn on `_`-prefixed captures which are not referenced by a predicate or directive (default `true`)",
           "default": true,
+          "type": "boolean"
+        }
+      }
+    },
+    "FormattingOptions": {
+      "description": "Options related to formatting",
+      "type": "object",
+      "properties": {
+        "dot_prefix_predicates": {
+          "description": "Whether to use dot-prefixed predicates; i.e., prefer the form `.foo?` to the form `#foo?`.",
+          "default": false,
           "type": "boolean"
         }
       }

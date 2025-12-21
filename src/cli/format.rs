@@ -7,13 +7,18 @@ use std::{
 use anstyle::{AnsiColor, Color, Style};
 use futures::future::join_all;
 use ropey::Rope;
+use ts_query_ls::FormattingOptions;
 
 use crate::{
     handlers::formatting,
     util::{get_scm_files, parse},
 };
 
-pub async fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
+pub async fn format_directories(
+    directories: &[PathBuf],
+    check: bool,
+    fmt_options: FormattingOptions,
+) -> i32 {
     if directories.is_empty() {
         eprintln!("No directories were specified to be formatted. No work was done.");
         return 1;
@@ -44,7 +49,9 @@ pub async fn format_directories(directories: &[PathBuf], check: bool) -> i32 {
             };
             let rope = Rope::from(contents.as_str());
             let tree = parse(&rope, None);
-            let Some(formatted) = formatting::format_document(&rope, &tree.root_node()) else {
+            let Some(formatted) =
+                formatting::format_document(&rope, &tree.root_node(), fmt_options)
+            else {
                 exit_code.store(1, std::sync::atomic::Ordering::Relaxed);
                 eprintln!("No formatting performed -- invalid syntax detected at {path_str:?}");
                 return;
