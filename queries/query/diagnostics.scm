@@ -18,10 +18,7 @@
     (string_content) @string))
 
 (parameters
-  [
-    (identifier)
-    "_"
-  ] @identifier)
+  (identifier) @identifier)
 
 (named_node
   .
