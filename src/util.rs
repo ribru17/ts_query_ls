@@ -317,8 +317,7 @@ pub fn get_language(name: &str, options: &Options) -> Option<Language> {
     }
 
     let directories = &options.parser_install_directories;
-    let name = name.replace('-', "_");
-    let language_fn_name = format!("tree_sitter_{name}");
+    let language_fn_name = format!("tree_sitter_{}", name.replace('-', "_"));
 
     for directory in directories {
         for dylib_extension in DYLIB_EXTENSIONS {
@@ -342,7 +341,7 @@ pub fn get_language(name: &str, options: &Options) -> Option<Language> {
                 return Some(language);
             }
         }
-        if let Some(lang) = get_language_object_wasm(name.as_str(), directory) {
+        if let Some(lang) = get_language_object_wasm(name, directory) {
             return Some(lang);
         }
     }
@@ -358,7 +357,7 @@ fn get_language_object_wasm(name: &str, directory: &String) -> Option<Language> 
         library_path.set_file_name(prefixed_object_name);
         fs::read(library_path)
     }) {
-        let lang = language_store.load_language(name, &wasm);
+        let lang = language_store.load_language(name.replace('-', "_").as_str(), &wasm);
         return match lang {
             Err(err) => {
                 warn!("Error loading language {name}: {err}");
