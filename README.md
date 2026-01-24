@@ -210,44 +210,25 @@ must be greater than or equal to the start.
 }
 ```
 
-### Example setup (for Neovim):
+### Example setup (for Neovim 0.11+):
 
 ```lua
--- Disable the (slow) builtin query linter
-vim.g.query_lint_on = {}
-
-vim.api.nvim_create_autocmd('FileType', {
-  pattern = 'query',
-  callback = function(ev)
-    if vim.bo[ev.buf].buftype == 'nofile' then
-      return
-    end
-    vim.lsp.start {
-      name = 'ts_query_ls',
-      cmd = { '/path/to/ts_query_ls/target/release/ts_query_ls' },
-      root_dir = vim.fs.root(0, { '.tsqueryrc.json', 'queries' }),
-      -- OPTIONAL: Override the query omnifunc
-      on_attach = function(_, buf)
-        vim.bo[buf].omnifunc = 'v:lua.vim.lsp.omnifunc'
-      end,
-      init_options = {
-        parser_install_directories = {
-          -- If using nvim-treesitter with lazy.nvim
-          vim.fs.joinpath(
-            vim.fn.stdpath('data'),
-            '/lazy/nvim-treesitter/parser/'
-          ),
-        },
-        parser_aliases = {
-          ecma = 'javascript',
-        },
-        language_retrieval_patterns = {
-          'languages/src/([^/]+)/[^/]+\\.scm$',
-        },
-      },
-    }
-  end,
+vim.lsp.config('tsqueryls', {
+  cmd = { 'ts_query_ls' },
+  filetypes = { 'query' },
+  root_dir = vim.fs.root(0, { '.tsqueryrc.json', 'queries' }),
+  settings = {
+    parser_install_directories = {
+      vim.fn.stdpath('data') .. '/site/parser/', -- if using nvim-treesitter default config
+    },
+    -- other ts_query_ls options
+    -- ...
+  },
 })
+vim.lsp.enable('tsqueryls')
+
+-- Disable the builtin query linter (redundant with ts_query_ls)
+vim.g.query_lint_on = {}
 ```
 
 ### Run in VSCode
