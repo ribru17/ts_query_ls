@@ -67,7 +67,7 @@ tokio = { version = "1.40.0", features = [
 tower-lsp = "0.20.0"
 tracing = "0.1.41"
 tracing-subscriber = "0.3.18"
-tree-sitter = { version = "0.26.3", features = ["std", "wasm"] }
+tree-sitter = { version = "0.26.6", features = ["std", "wasm"] }
 tree-sitter-tsquery = "0.8.0"
 uuid = { version = "1.17.0", features = ["v4"], default-features = false }
 
