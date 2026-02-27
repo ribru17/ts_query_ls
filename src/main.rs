@@ -389,6 +389,10 @@ enum Commands {
         /// Apply fixes to diagnostics that have them.
         #[arg(long)]
         fix: bool,
+
+        /// List of languages to be ignored, e.g. `--ignore c lua ...`.
+        #[arg(long, short, value_parser, num_args = 1..)]
+        ignore: Vec<String>,
     },
     /// Lint the query files in the given directories for errors. This differs from `check` because
     /// it does not perform a full semantic analysis (e.g. analyzing for impossible patterns), but
@@ -468,6 +472,7 @@ async fn main() {
         }
         Some(Commands::Check {
             directories,
+            ignore,
             workspace,
             config,
             format,
@@ -475,7 +480,7 @@ async fn main() {
         }) => {
             let config_str = get_config_str(config);
             std::process::exit(
-                check_directories(&directories, config_str, workspace, format, fix).await,
+                check_directories(&directories, ignore, config_str, workspace, format, fix).await,
             );
         }
         Some(Commands::Lint {

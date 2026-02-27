@@ -21,6 +21,7 @@ static LANGUAGE_CACHE: LazyLock<DashMap<String, Arc<LanguageData>>> = LazyLock::
 
 pub async fn check_directories(
     directories: &[PathBuf],
+    ignore: Vec<String>,
     config: String,
     workspace: Option<PathBuf>,
     format: bool,
@@ -51,6 +52,12 @@ pub async fn check_directories(
         let absolute_path = path.canonicalize().expect("Path should be valid");
         let uri = Url::from_file_path(&absolute_path).expect("Path should be absolute");
         let language_name = util::get_language_name(&uri, &options);
+        if let Some(language_name) = &language_name
+            && ignore.contains(language_name)
+        {
+            return None;
+        }
+
         let language_data = language_name.and_then(|name| {
             LANGUAGE_CACHE.get(&name).as_deref().cloned().or_else(|| {
                 util::get_language(&name, &options)
