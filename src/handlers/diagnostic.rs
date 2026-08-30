@@ -395,7 +395,7 @@ async fn get_diagnostics_recursively(
         let mut matches = cursor.matches(&DEFINITIONS_QUERY, tree.root_node(), &provider);
         let mut diagnostics = Vec::new();
         while let Some(match_) = matches.next() {
-            for capture in match_.captures {
+            for capture in match_.captures() {
                 if let Some(offset) = if cache {
                     get_pattern_diagnostic_cached(
                         capture.node,
@@ -447,7 +447,7 @@ async fn get_diagnostics_recursively(
     let provider = &TextProviderRope(rope);
     let mut matches = cursor.matches(&DIAGNOSTICS_QUERY, tree.root_node(), provider);
     while let Some(match_) = matches.next() {
-        for capture in match_.captures {
+        for capture in match_.captures() {
             let capture_name = DIAGNOSTICS_QUERY.capture_names()[capture.index as usize];
             let capture_text = capture.node.text(rope);
             let range = capture.node.lsp_range(rope);
@@ -606,7 +606,7 @@ async fn get_diagnostics_recursively(
                     );
                     let mut valid = false;
                     while let Some(m) = matches.next() {
-                        if m.captures
+                        if m.captures()
                             .iter()
                             .any(|cap| cap.node.text(rope) == capture_text)
                         {
@@ -650,7 +650,7 @@ async fn get_diagnostics_recursively(
                             );
                             let mut valid = false;
                             while let Some(m) = matches.next() {
-                                if m.captures
+                                if m.captures()
                                     .iter()
                                     .any(|cap| cap.node.text(rope) == capture_text)
                                 {

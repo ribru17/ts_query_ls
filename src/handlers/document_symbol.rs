@@ -28,7 +28,7 @@ pub fn document_symbol<C: LspClient>(
     let mut matches = cursor.matches(&CAPTURES_QUERY, tree.root_node(), provider);
 
     while let Some(match_) = matches.next() {
-        for capture in match_.captures {
+        for capture in match_.captures() {
             let capture_node = capture.node;
             let node_text = capture_node.text(rope);
             let parent = capture_node.parent().unwrap();

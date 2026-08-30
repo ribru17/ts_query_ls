@@ -71,7 +71,7 @@ pub async fn profile_directories(directories: &[PathBuf], config: String, per_fi
                 cursor.matches(&PATTERN_DEFINITION_QUERY, tree.root_node(), source_bytes);
 
             while let Some(match_) = matches.next() {
-                for capture in match_.captures {
+                for capture in match_.captures() {
                     let now = Instant::now();
                     let _ = Query::new(
                         &lang,

@@ -68,21 +68,20 @@ pub fn document_highlight<C: LspClient>(
     } else if current_node.kind() == "identifier" {
         Some(
             cursor
-                .matches(ident_query, tree.root_node(), &provider)
-                .map_deref(|match_| {
-                    match_.captures.iter().filter_map(|cap| {
-                        if cap.node.parent()?.kind() == current_node.parent()?.kind()
-                            && cap.node.text(rope) == current_node.text(rope)
-                        {
-                            return Some(cap.node);
-                        }
-                        None
-                    })
+                .captures(ident_query, tree.root_node(), &provider)
+                .map_deref(|(match_, capture_index)| {
+                    let cap = match_.captures()[*capture_index];
+                    if cap.node.parent()?.kind() == current_node.parent()?.kind()
+                        && cap.node.text(rope) == current_node.text(rope)
+                    {
+                        return Some(cap.node.lsp_range(rope));
+                    }
+                    None
                 })
                 .flatten()
-                .map(|node| DocumentHighlight {
+                .map(|range| DocumentHighlight {
                     kind: Some(DocumentHighlightKind::TEXT),
-                    range: node.lsp_range(rope),
+                    range,
                 })
                 .collect(),
         )

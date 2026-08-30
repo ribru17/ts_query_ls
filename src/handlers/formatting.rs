@@ -168,7 +168,7 @@ pub fn format_document(rope: &Rope, root: &Node, options: FormattingOptions) -> 
                 continue 'matches;
             }
         }
-        for capture in match_.captures {
+        for capture in match_.captures() {
             let name = FORMAT_QUERY.capture_names()[capture.index as usize];
             if name.starts_with('_') {
                 continue;

@@ -189,15 +189,14 @@ pub fn get_references<'a>(
     rope: &'a Rope,
 ) -> impl Iterator<Item = Node<'a>> + 'a {
     cursor
-        .matches(query, root.child_with_descendant(*node).unwrap(), provider)
-        .map_deref(|match_| {
-            match_.captures.iter().filter_map(|cap| {
-                if cap.node.kind() == node.kind() && cap.node.text(rope) == node.text(rope) {
-                    Some(cap.node)
-                } else {
-                    None
-                }
-            })
+        .captures(query, root.child_with_descendant(*node).unwrap(), provider)
+        .map_deref(|(match_, capture_index)| {
+            let cap = match_.captures()[*capture_index];
+            if cap.node.kind() == node.kind() && cap.node.text(rope) == node.text(rope) {
+                Some(cap.node)
+            } else {
+                None
+            }
         })
         .flatten()
 }
@@ -462,7 +461,7 @@ pub fn capture_at_pos<'t>(
 
     let mut innermost_capture = None;
     while let Some(match_) = matches.next() {
-        for capture in match_.captures {
+        for capture in match_.captures() {
             if capture.node.start_position() > point || capture.node.end_position() <= point {
                 continue;
             }

@@ -305,7 +305,7 @@ pub async fn completion<C: LspClient>(
         let mut seen = HashSet::new();
         let mut text_edit = if in_capture { text_edit } else { None };
         while let Some(match_) = iter.next() {
-            for capture in match_.captures {
+            for capture in match_.captures() {
                 let node_text = capture.node.text(rope);
                 if let Some(CompletionTextEdit::Edit(edit)) = text_edit.as_mut() {
                     edit.new_text.clone_from(&node_text);

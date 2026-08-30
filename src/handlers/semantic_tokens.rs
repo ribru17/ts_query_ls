@@ -65,7 +65,7 @@ fn get_semantic_tokens<C: LspClient>(
     let mut prev_col = 0;
 
     while let Some(match_) = matches.next() {
-        for cap in match_.captures {
+        for cap in match_.captures() {
             let capture_name = SEM_TOK_QUERY.capture_names()[cap.index as usize];
             let node = &cap.node;
             let node_text = node.text(rope);
