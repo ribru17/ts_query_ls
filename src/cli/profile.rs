@@ -95,7 +95,7 @@ pub async fn profile_directories(directories: &[PathBuf], config: String, per_fi
         .into_iter()
         .flat_map(|r| r.unwrap_or_default())
         .collect::<Vec<_>>();
-    results.sort_unstable_by(|a, b| a.2.cmp(&b.2));
+    results.sort_unstable_by_key(|a| a.2);
     for (path, row, time) in results {
         let time = format!("{:.2}ms", time as f64 / 1000.0);
         if per_file {

@@ -150,7 +150,7 @@ pub(super) async fn lint_file(
     if !lint_options.fix || edits.is_empty() {
         return None;
     }
-    edits.sort_unstable_by(|a, b| b.range.start.cmp(&a.range.start));
+    edits.sort_unstable_by_key(|a| std::cmp::Reverse(a.range.start));
     let mut rope = doc.rope;
     for edit in edits {
         let range = edit.range;

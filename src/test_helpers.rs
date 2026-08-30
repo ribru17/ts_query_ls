@@ -118,6 +118,8 @@ pub mod helpers {
             });
         }
 
+        #[allow(unknown_lints, reason = "clippy version differences")]
+        #[allow(clippy::unused_async_trait_impl, reason = "trait shenanigans")]
         async fn send_request<R>(&self, params: R::Params) -> tower_lsp::jsonrpc::Result<R::Result>
         where
             R: tower_lsp::lsp_types::request::Request,
