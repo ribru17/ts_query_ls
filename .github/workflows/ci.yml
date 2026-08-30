@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@1.95.0
         id: toolchain
         with:
           components: clippy
@@ -35,7 +35,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@1.95.0
         id: toolchain
         with:
           components: rustfmt
@@ -53,7 +53,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@1.95.0
         id: toolchain
       - uses: actions/cache@v4
         with:
@@ -76,7 +76,7 @@ jobs:
       - uses: tree-sitter/setup-action/cli@v2
         with:
           install-lib: false
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@1.95.0
         id: toolchain
       - uses: actions/cache@v4
         with:
@@ -129,7 +129,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@1.95.0
         id: toolchain
       - uses: actions/cache@v4
         with:
